@@ -1,0 +1,40 @@
+{
+  "general": {
+    "plotOnOff": "off"
+  },
+  "input": {
+    "inputName": "example.1",
+    "inputFormat": "td",
+    "inputResolution": 21600.0,
+    "inputConvTdDd": true,
+    "inputFolder": "/Data"
+  },
+    "output": {
+    "outputName": "PROHO.txt",
+    "outputHist": "PROHO.hst"
+  },
+  "stat": {
+    "statOnOff": "off",
+    "iqrCnfd": 2.5
+  },
+  "regression": {
+    "regressOnOff": "off",
+    "regModel": 3,
+    "regOrder": 1,
+    "elimTrend": false,
+    "elimSeas": true
+  },
+  "median": {
+    "medianOnOff": "on",
+    "fixedHour": false,
+    "constHour": 12
+  },
+  "reference": {
+    "referenceOnOff": "off"
+  },    
+  "homogen": {
+    "homogenOnOff": "on",
+    "probCritVal": 0.95,
+    "limitDepedence": 0.4
+  }
+}

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+rm ../LOKI/gnuplot/*
+
+rm ../LOKI/gnuplot/eps/*
+
+rm -r ../Build/ ../CMakeCache.txt ../CMakeFiles/ ../cmake_install.cmake ../Makefile ../LOKI.*
+
+rm -r ../LOKI/CMakeFiles/ ../LOKI/cmake_install.cmake ../LOKI/Makefile
+
+cd ../Development
+
+cmake ../CMakeLists.txt
+
+cd ../
+
+make
