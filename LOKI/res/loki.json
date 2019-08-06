@@ -1,6 +1,6 @@
 {
   "general": {
-    "plotOnOff": "off"
+    "plotOnOff": "on"
   },
   "input": {
     "inputName": "example.1",
