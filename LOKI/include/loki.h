@@ -15,7 +15,7 @@
 
 using json = nlohmann::json;
 
-class t_proho
+class t_loki
 {
    
  public:
@@ -31,7 +31,7 @@ class t_proho
 };
 
 template<typename T>
-inline T t_proho::getValue(const std::initializer_list<std::string> & il)
+inline T t_loki::getValue(const std::initializer_list<std::string> & il)
 {
    json::value_type tmp;
    

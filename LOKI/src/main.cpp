@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -25,7 +25,7 @@
 
 #include "newmat/newmat.h"
 #include "logger.hpp"
-#include "proho.h"
+#include "loki.h"
 #include "load.h"
 #include "coredata.h"
 #include "version.h"
@@ -52,7 +52,7 @@ const char* const COMPILED = __DATE__ " @ " __TIME__;
 int main(int argc, char ** argv)
 {
   
-  LOG1(":.main::*** Software: PROHO (app started) ");
+  LOG1(":.main::*** Software: LOKI (app started) ");
   time_t now = time(0); tm* localtm = localtime(&now);
   clock_t start = clock();
   
@@ -96,7 +96,7 @@ int main(int argc, char ** argv)
   hfile << "[2019-03-13] [mel] -> [plot] Added gnuplot for simple figures ploting; Added external class for time-string handling\n";
   hfile << "[2019-05-01] [mel] -> [load] Data file's decoder improving\n";
   
-  /// PROHO::DATA LOADING
+  /// LOKI::DATA LOADING
   t_load load(setting);
   
   map<double, double>  testval;
@@ -119,7 +119,7 @@ int main(int argc, char ** argv)
   }
   else {  }
   
-  /// PROHO::SET LOG FILE
+  /// LOKI::SET LOG FILE
   if(!testval.empty() || !Testval.empty()) {
      
     LOG1(":.main::...Loaded data file");
@@ -155,13 +155,13 @@ int main(int argc, char ** argv)
   //tstSYNTH();
   
   
-  /// PROHO::DATA Filling to the coredata class
-  ofile << "# Software: PROHO\n";
+  /// LOKI::DATA Filling to the coredata class
+  ofile << "# Software: LOKI\n";
   ofile << "# Version: " << version.Version() << "\n";
   ofile << "# ----------------\n";
   ofile << "# Protocol created: " << asctime(localtm) << endl;
   
-  /// PROHO::Copy pointers into the coredata object.   TU MAM ASI PROBLEM S ROZHODOVANIM
+  /// LOKI::Copy pointers into the coredata object.   TU MAM ASI PROBLEM S ROZHODOVANIM
   if (inputFormat == "dd") {
     
     /// Pointer
@@ -173,7 +173,7 @@ int main(int argc, char ** argv)
       LOG1(":.main::...Pointer to coredata obj.");
     }
 
-    /// PROHO::Call Applications
+    /// LOKI::Call Applications
     if (statOnOff     == "on") { LOG1(":.main::...Request for appStat");     new t_appStat(setting, coredata);     }
     if (regressOnOff  == "on") { LOG1(":.main::...Request for appRegress");  new t_appRegress(setting, coredata);  }
     if (medianOnOff   == "on") { LOG1(":.main::...Request for appMedian");   new t_appMedian(setting, coredata);   }    
@@ -195,7 +195,7 @@ int main(int argc, char ** argv)
       LOG1(":.main::...Pointer to Coredata obj.");
     }
     
-    /// PROHO::Call Applications
+    /// LOKI::Call Applications
     if ( convTdDd ) {
 
       if (statOnOff     == "on") { LOG1(":.main::...Request for appStat");     new t_appStat(setting, Coredata);     }
@@ -234,11 +234,11 @@ int main(int argc, char ** argv)
   
   if ( setting  ) delete setting  ;
   
-  /// PROHO::Finish
+  /// LOKI::Finish
   clock_t stop = clock();
   double duration = double(stop - start) / CLOCKS_PER_SEC;
   
-  LOG1(":.main::*** PROHO (app finished)");
+  LOG1(":.main::*** LOKI (app finished)");
   LOG1(":.main::*** TOTAL TIME TAKEN: ", duration, " [s]!");
   
   return 0;

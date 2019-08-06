@@ -10,8 +10,8 @@
     "inputFolder": "/Data"
   },
     "output": {
-    "outputName": "PROHO.txt",
-    "outputHist": "PROHO.hst"
+    "outputName": "LOKI.txt",
+    "outputHist": "LOKI.hst"
   },
   "stat": {
     "statOnOff": "off",

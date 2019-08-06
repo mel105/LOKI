@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -377,7 +377,7 @@ int t_appRegress::_plotTimeSeries()
       return -1;
     }   
     
-    ofstream mLine((_gnp + "/PROHO/gnuplot/trendDD"));
+    ofstream mLine((_gnp + "/LOKI/gnuplot/trendDD"));
     
     for (m_dd::iterator i = _data.begin(); i != _data.end(); ++i) {
       
@@ -421,7 +421,7 @@ int t_appRegress::_plotTimeSeries()
       return -1;
     }   
     
-    ofstream mLine((_gnp + "/PROHO/gnuplot/seasDD"));
+    ofstream mLine((_gnp + "/LOKI/gnuplot/seasDD"));
     
     for (m_dd::iterator i = _data.begin(); i != _data.end(); ++i) {
       

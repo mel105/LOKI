@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -162,7 +162,7 @@ int t_appHomogen::_plotTimeSeries()
   m_dd mDeseas = fromTDtoDD.FromTDtoDD(_deseas);
   m_dd mTk = fromTDtoDD.FromTDtoDD(_TK);  
   
-  ofstream mLine((_gnp + "/PROHO/gnuplot/homogenDD"));
+  ofstream mLine((_gnp + "/LOKI/gnuplot/homogenDD"));
   
   for(m_dd::iterator it = mData.begin(); it != mData.end(); ++it) {
     

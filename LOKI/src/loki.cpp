@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the loki C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -19,11 +19,11 @@
 
 #pragma once
 
-#include "proho.h"
+#include "loki.h"
 
 using json = nlohmann::json;
 
-void t_proho::OpenFile(const std::string & filePath)
+void t_loki::OpenFile(const std::string & filePath)
 {
    _fs = std::ifstream(filePath);
 

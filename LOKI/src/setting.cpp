@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -18,7 +18,7 @@
 ***************************************************************************************************/
 
 #include "logger.hpp"
-#include "proho.h"
+#include "loki.h"
 #include "setting.h"
 #include "workingdir.h"
 
@@ -29,49 +29,49 @@ t_setting::t_setting()
   /// Get address of current working dir.
   t_workingDir workingDir;  string current_working_dir = workingDir.GetCurrentWorkingDir();
   
-  /// PROHO Declaration
-  t_proho proho;
+  /// LOKI Declaration
+  t_loki loki;
   
-  /// Open configure file proho.json
-  proho.OpenFile((current_working_dir + "/PROHO/res/proho.json").c_str());
+  /// Open configure file loki.json
+  loki.OpenFile((current_working_dir + "/LOKI/res/loki.json").c_str());
   
-  /// PROHO::general
-  string plotOnOff {proho.getValue<string>({ "general", "plotOnOff"})}; _plotOnOff = plotOnOff;
+  /// LOKI::general
+  string plotOnOff {loki.getValue<string>({ "general", "plotOnOff"})}; _plotOnOff = plotOnOff;
   
-  /// PROHO::input
-  string inputName {proho.getValue<string>({"input", "inputName"})}; _loadSetting.push_back(inputName);
-  string inputFormat {proho.getValue<string>({"input", "inputFormat"})}; _loadSetting.push_back(inputFormat);
-  string inputFolder {proho.getValue<string>({"input", "inputFolder"})}; _loadSetting.push_back(inputFolder);
-  bool inputConvTdDd {proho.getValue<bool>({"input", "inputConvTdDd"})}; _inputConvTdDd = inputConvTdDd;
-  double inputResolution {proho.getValue<double>({"input", "inputResolution"})}; _inputResolution = inputResolution;
+  /// LOKI::input
+  string inputName {loki.getValue<string>({"input", "inputName"})}; _loadSetting.push_back(inputName);
+  string inputFormat {loki.getValue<string>({"input", "inputFormat"})}; _loadSetting.push_back(inputFormat);
+  string inputFolder {loki.getValue<string>({"input", "inputFolder"})}; _loadSetting.push_back(inputFolder);
+  bool inputConvTdDd {loki.getValue<bool>({"input", "inputConvTdDd"})}; _inputConvTdDd = inputConvTdDd;
+  double inputResolution {loki.getValue<double>({"input", "inputResolution"})}; _inputResolution = inputResolution;
   
-  /// PROHO::output
-  string outputName {proho.getValue<string>({"output", "outputName"})}; _outputName = outputName;
-  string outputHist {proho.getValue<string>({"output", "outputHist"})}; _outputHist = outputHist;
+  /// LOKI::output
+  string outputName {loki.getValue<string>({"output", "outputName"})}; _outputName = outputName;
+  string outputHist {loki.getValue<string>({"output", "outputHist"})}; _outputHist = outputHist;
   
-  /// PROHO::stat
-  string statOnOff {proho.getValue<string>({"stat", "statOnOff"})};  _statOnOff = statOnOff;
-  double iqrCnfd   {proho.getValue<double>({"stat", "iqrCnfd"})};    _iqrCnfd   = iqrCnfd;
+  /// LOKI::stat
+  string statOnOff {loki.getValue<string>({"stat", "statOnOff"})};  _statOnOff = statOnOff;
+  double iqrCnfd   {loki.getValue<double>({"stat", "iqrCnfd"})};    _iqrCnfd   = iqrCnfd;
   
-  /// PROHO::regression
-  string regressOnOff {proho.getValue<string>({"regression", "regressOnOff"})}; _regressOnOff = regressOnOff;
-  int regModel        {proho.getValue<int>({"regression", "regModel"})};        _regModel     = regModel;
-  int regOrder        {proho.getValue<int>({"regression", "regOrder"})};        _regOrder     = regOrder;   
-  bool elimTrend      {proho.getValue<bool>({"regression", "elimTrend"})};      _elimTrend    = elimTrend;
-  bool elimSeas       {proho.getValue<bool>({"regression", "elimSeas"})};       _elimSeas     = elimSeas;
+  /// LOKI::regression
+  string regressOnOff {loki.getValue<string>({"regression", "regressOnOff"})}; _regressOnOff = regressOnOff;
+  int regModel        {loki.getValue<int>({"regression", "regModel"})};        _regModel     = regModel;
+  int regOrder        {loki.getValue<int>({"regression", "regOrder"})};        _regOrder     = regOrder;   
+  bool elimTrend      {loki.getValue<bool>({"regression", "elimTrend"})};      _elimTrend    = elimTrend;
+  bool elimSeas       {loki.getValue<bool>({"regression", "elimSeas"})};       _elimSeas     = elimSeas;
   
-  /// PROHO::median
-  string medianOnOff {proho.getValue<string>({"median", "medianOnOff"})}; _medianOnOff = medianOnOff;
-  bool fixedHour     {proho.getValue<bool>({"median", "fixedHour"})};     _fixedHour   = fixedHour;
-  int constHour      {proho.getValue<int>({"median", "constHour"})};      _constHour   = constHour;
+  /// LOKI::median
+  string medianOnOff {loki.getValue<string>({"median", "medianOnOff"})}; _medianOnOff = medianOnOff;
+  bool fixedHour     {loki.getValue<bool>({"median", "fixedHour"})};     _fixedHour   = fixedHour;
+  int constHour      {loki.getValue<int>({"median", "constHour"})};      _constHour   = constHour;
   
-  /// PROHO::reference
-  string referenceOnOff {proho.getValue<string>({"reference", "referenceOnOff"})}; _referenceOnOff = referenceOnOff;
+  /// LOKI::reference
+  string referenceOnOff {loki.getValue<string>({"reference", "referenceOnOff"})}; _referenceOnOff = referenceOnOff;
   
-  /// PROHO::homogenization
-  string homogenOnOff {proho.getValue<string>({"homogen", "homogenOnOff"})}; _homogenOnOff = homogenOnOff;
-  double probCritVal {proho.getValue<double>({"homogen", "probCritVal"})}; _probCritVal = probCritVal;  
-  double limitDepedence {proho.getValue<double>({"homogen", "limitDepedence"})}; _limitDepedence = limitDepedence;
+  /// LOKI::homogenization
+  string homogenOnOff {loki.getValue<string>({"homogen", "homogenOnOff"})}; _homogenOnOff = homogenOnOff;
+  double probCritVal {loki.getValue<double>({"homogen", "probCritVal"})}; _probCritVal = probCritVal;  
+  double limitDepedence {loki.getValue<double>({"homogen", "limitDepedence"})}; _limitDepedence = limitDepedence;
   
   
   /// Log

@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
  (c) 2019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 
@@ -213,7 +213,7 @@ void t_appStat::_procStat()
     
     if(_fmt == "dd") {
       
-      ofstream mLine((_gnp + "/PROHO/gnuplot/line"));
+      ofstream mLine((_gnp + "/LOKI/gnuplot/line"));
       for (m_dd::iterator i = _data.begin(); i != _data.end(); ++i) {
         
         mLine << i->first << "  " << i->second << endl;
@@ -227,7 +227,7 @@ void t_appStat::_procStat()
     }
     else {
       
-      ofstream mLine((_gnp + "/PROHO/gnuplot/line"));
+      ofstream mLine((_gnp + "/LOKI/gnuplot/line"));
       for (m_td::iterator i = _Data.begin(); i != _Data.end(); ++i) {
         
         t_timeStamp epo = i->first;
