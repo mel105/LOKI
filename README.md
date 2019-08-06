@@ -1,6 +1,6 @@
-# PROHO
+# LOKI
 
-PROHO (PROcess of HOmogenization) is the application designed to analyse/homogenize climatological (temperature, pressure, water vapor pressure), GNSS (atmospheric delays, IWV) or other time-series.
+LOKI is the tool designed to change-point detection in climatological (temperature, pressure, water vapor pressure), GNSS (atmospheric delays, IWV) or other time-series.
 
 ##### Core developer: Michal Elias 
 ##### Email: misko_elias@yahoo.com 
@@ -19,7 +19,7 @@ PROHO uses Third party tools/libraries
 
 > sudo apt-get install gnuplot
 
-### Run PROHO
+### Run LOKI
 
 1. cd Development
 2. cmake ../CMakeLists.txt (*)
