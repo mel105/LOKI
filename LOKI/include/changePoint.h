@@ -46,8 +46,13 @@ class t_changePoint
  public:
    
    ///   Constructor
-   t_changePoint( t_setting  * setting,  
-                  t_coredata * coredata);
+   t_changePoint( t_setting* setting,  
+                  t_coredata* coredata);
+   
+   t_changePoint( t_setting* setting,  
+                  t_coredata* coredata,
+                  int& iBeg,
+                  int& iEnd);
    
    ///   Destructor   
    virtual ~t_changePoint(){};

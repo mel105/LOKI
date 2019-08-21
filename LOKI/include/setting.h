@@ -37,7 +37,7 @@ class t_setting
    string getMedianOnOff();
    string getReferenceOnOff();
    string getStatOnOff();
-   string getHomogenOnOff();
+   string getDetectionOnOff();
    
    double getIqrCnfd();
    double getConfInter();
@@ -69,7 +69,7 @@ class t_setting
    string _medianOnOff;
    string _referenceOnOff;
    string _plotOnOff;
-   string _homogenOnOff;
+   string _detectionOnOff;
    
    double _iqrCnfd;   
    double _probCritVal;

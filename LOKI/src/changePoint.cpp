@@ -75,6 +75,69 @@ t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata)
   this->_detectChangePoint();
 }
 
+t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata, int& iBeg, int& iEnd)
+{
+  
+  // Default setting
+  _resultOfStationarity = "non-stationary";
+  _shift = 999.999;
+  
+  /// Get setting & create log info
+  double probCritVal = setting->getProbCritVal(); _prob = probCritVal;
+  double limitDependence = setting->getLimitDependence(); _limitDependence = limitDependence;
+  
+  string regressOnOff = setting->getRegressOnOff(); 
+  string medianOnOff = setting->getMedianOnOff(); 
+  string referenceOnOff = setting->getReferenceOnOff(); 
+  
+  if ( regressOnOff == "on" || medianOnOff == "on") {
+    
+    // request to process the data without seasonal model.
+    _data = coredata -> getData("elimSeasonal");
+  }
+  else if ( referenceOnOff == "on" ) {
+    
+    // request to process the data without seasonal model.
+    //_data = coredata -> getData("elimSeasonal");
+    // ked budem mat hotove, tak hornu podmienku len rozsirim.
+  }
+  else {
+    
+    // request to process the original data (even with the seasonal model).
+    _data = coredata -> getData("origval");
+  }
+  
+  // get only the data within the interval <iBeg, iEnd>;
+  m_dd tData;
+  int idx = 0;
+  for (m_dd::iterator iter = _data.begin(); iter != _data.end(); ++iter) {
+    
+    if ( idx > iBeg && idx < iEnd) {
+      
+      tData[iter->first] = iter->second;
+    }
+    idx++;
+  }
+  
+  _data.clear();
+  _data = tData;
+  tData.clear();
+  
+  if(!_data.empty()){
+    
+    LOG1(":......t_changePoint::......Loaded data container. Data size: ", _data.size());
+  }
+  else{
+    
+    ERR(":......t_changePoint::......Data container is empty!"); return;
+  }
+  
+  //cout << "som tu? " << _data.size() << endl;
+  
+  // process change point detection method
+  this->_detectChangePoint();
+}
+
 // === PUBLIC FUNCTIONS ===
 double t_changePoint::getShift()
 {
@@ -428,8 +491,8 @@ void t_changePoint::_estimateTStatistics()
     
     double kk = static_cast<double>(k); kk = kk + 1.0;
     
-    double constant = 0.0; constant = sqrt( ( kk * ( NN - kk ) ) / NN ); /// pomaha mi v pripade JB time series
-    //double constant = 0.0; constant = sqrt( NN /  ( kk * ( NN - kk ) ) ); /// standardne tropo series
+    //double constant = 0.0; constant = sqrt( ( kk * ( NN - kk ) ) / NN ); /// pomaha mi v pripade JB time series
+    double constant = 0.0; constant = sqrt( NN /  ( kk * ( NN - kk ) ) ); /// standardne tropo series
     
     double cumsum = 0.0; // _VAL[0]; // from left to right
     

@@ -34,7 +34,7 @@
 
 #include "appStat.h"
 #include "appRegress.h"
-#include "appHomogen.h"
+#include "appDetection.h"
 #include "appMedian.h"
 
 // - tst 
@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
   string outputHist = setting->getOutputHist();
   string statOnOff = setting->getStatOnOff();
   string regressOnOff = setting->getRegressOnOff();
-  string homogenOnOff = setting->getHomogenOnOff();
+  string detectionOnOff = setting->getDetectionOnOff();
   string medianOnOff = setting->getMedianOnOff();
   
   bool convTdDd = setting->getInputConvTdDd(); //cout << convTdDd << endl;
@@ -177,7 +177,7 @@ int main(int argc, char ** argv)
     if (statOnOff     == "on") { LOG1(":.main::...Request for appStat");     new t_appStat(setting, coredata);     }
     if (regressOnOff  == "on") { LOG1(":.main::...Request for appRegress");  new t_appRegress(setting, coredata);  }
     if (medianOnOff   == "on") { LOG1(":.main::...Request for appMedian");   new t_appMedian(setting, coredata);   }    
-    if (homogenOnOff  == "on") { LOG1(":.main::...Request for appHomogen");  new t_appHomogen(setting, coredata);  }
+    if (detectionOnOff  == "on") { LOG1(":.main::...Request for appdetection");  new t_appDetection(setting, coredata);  }
 
     
     /// Delete
@@ -201,7 +201,7 @@ int main(int argc, char ** argv)
       if (statOnOff     == "on") { LOG1(":.main::...Request for appStat");     new t_appStat(setting, Coredata);     }
       if (regressOnOff  == "on") { LOG1(":.main::...Request for appRegress");  new t_appRegress(setting, Coredata);  }
       if (medianOnOff   == "on") { LOG1(":.main::...Request for appMedian");   new t_appMedian(setting, Coredata);   }      
-      if (homogenOnOff  == "on") { LOG1(":.main::...Request for appHomogen");  new t_appHomogen(setting, Coredata);  }
+      if (detectionOnOff  == "on") { LOG1(":.main::...Request for appdetection");  new t_appDetection(setting, Coredata);  }
 
     
     }
@@ -210,7 +210,7 @@ int main(int argc, char ** argv)
       if (statOnOff     == "on") { LOG1(":.main::...Request for appStat");     new t_appStat(setting, coredata);     }
       if (regressOnOff  == "on") { LOG1(":.main::...Request for appRegress");  new t_appRegress(setting, coredata);  }
       if (medianOnOff   == "on") { LOG1(":.main::...Request for appMedian");   new t_appMedian(setting, coredata);   }      
-      if (homogenOnOff  == "on") { LOG1(":.main::...Request for appHomogen");  new t_appHomogen(setting, coredata);  }
+      if (detectionOnOff  == "on") { LOG1(":.main::...Request for appdetection");  new t_appDetection(setting, coredata);  }
 
     }
     

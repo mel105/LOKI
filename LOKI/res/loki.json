@@ -1,11 +1,11 @@
 {
   "general": {
-    "plotOnOff": "on"
+    "plotOnOff": "off"
   },
   "input": {
-    "inputName": "example.1",
+    "inputName": "example.3",
     "inputFormat": "td",
-    "inputResolution": 21600.0,
+    "inputResolution": 86400.0,
     "inputConvTdDd": true,
     "inputFolder": "/Data"
   },
@@ -26,14 +26,14 @@
   },
   "median": {
     "medianOnOff": "on",
-    "fixedHour": false,
+    "fixedHour": true,
     "constHour": 12
   },
   "reference": {
     "referenceOnOff": "off"
   },    
-  "homogen": {
-    "homogenOnOff": "on",
+  "detection": {
+    "detectionOnOff": "on",
     "probCritVal": 0.95,
     "limitDepedence": 0.4
   }

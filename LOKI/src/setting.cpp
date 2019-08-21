@@ -68,10 +68,10 @@ t_setting::t_setting()
   /// LOKI::reference
   string referenceOnOff {loki.getValue<string>({"reference", "referenceOnOff"})}; _referenceOnOff = referenceOnOff;
   
-  /// LOKI::homogenization
-  string homogenOnOff {loki.getValue<string>({"homogen", "homogenOnOff"})}; _homogenOnOff = homogenOnOff;
-  double probCritVal {loki.getValue<double>({"homogen", "probCritVal"})}; _probCritVal = probCritVal;  
-  double limitDepedence {loki.getValue<double>({"homogen", "limitDepedence"})}; _limitDepedence = limitDepedence;
+  /// LOKI::detectionization
+  string detectionOnOff {loki.getValue<string>({"detection", "detectionOnOff"})}; _detectionOnOff = detectionOnOff;
+  double probCritVal {loki.getValue<double>({"detection", "probCritVal"})}; _probCritVal = probCritVal;  
+  double limitDepedence {loki.getValue<double>({"detection", "limitDepedence"})}; _limitDepedence = limitDepedence;
   
   
   /// Log
@@ -105,7 +105,7 @@ int    t_setting::getConstHour() { return _constHour; }
 bool   t_setting::getFixedHour() { return _fixedHour; }
 // reference
 string t_setting::getReferenceOnOff() { return _referenceOnOff; }
-// homogenization
-string t_setting::getHomogenOnOff() { return _homogenOnOff; }
+// detectionization
+string t_setting::getDetectionOnOff() { return _detectionOnOff; }
 double t_setting::getProbCritVal() { return _probCritVal; }
 double t_setting::getLimitDependence() { return _limitDepedence; }

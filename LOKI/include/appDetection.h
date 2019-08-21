@@ -70,37 +70,40 @@ using json = nlohmann::json;
 using namespace std;
 using namespace NEWMAT;
 
-class t_appHomogen
+class t_appDetection
 {
    
-   typedef map<double, double>  m_dd;
+   typedef map<double, double> m_dd;
    typedef map<string, double> m_td;
+   typedef map<int, int> m_ii;
    
   public:
 
    ///   Constructor
-   t_appHomogen( t_setting  * setting,  
+   t_appDetection( t_setting  * setting,  
 		  t_coredata * coredata);
    
    ///   Destructor   
-   virtual ~t_appHomogen(){};
+   virtual ~t_appDetection(){};
     
  protected:
    
    //   int _addTimeSeries();
+   //bool _verifyChangePointRepeatability();
+   //void _verifiedProtocol();
+   //void _nonVerifiedProtocol();
+   
    int _prepareData();
    int _plotTimeSeries();
-   int _processHomogenization();
+   int _processChangePointDetection();
    int _checkDeseasData();
-   bool _verifyChangePointRepeatability();
-   void _verifiedProtocol();
-   void _nonVerifiedProtocol();   
+   map<int, int> _prepareIntervals( vector<int>& idxVec );
    
    //vector<string> _timeData;
    vector<t_timeStamp> _timeData;
    
-   t_coredata * _coredata;
-   t_setting  * _setting;
+   t_coredata* _coredata;
+   t_setting* _setting;
    
    m_td _Data;
       
@@ -108,6 +111,7 @@ class t_appHomogen
    m_dd _TK;
    m_dd _deseas;
    
+   int _N; // number of original data
    int _counter;
    int _suspectedChangeIdx;
    
@@ -136,6 +140,5 @@ class t_appHomogen
    
    vector<double> _containerOfChps;
    vector<double> _containerOfSfts;
-   
 };
 #endif
