@@ -305,7 +305,7 @@ int t_appDetection::_processChangePointDetection()
         
         suspectedPointIdx = suspectedPointIdx + iBeg;
         
-        cout << "Indexy: " << iBeg << "  " << iEnd << endl;
+        cout << "\n\nSub-casova rada od/do: " << iBeg << "  " << iEnd << "  " << changePoint->getResult() << "\n";
         
         if ( changePoint->getResult() == "stationary" && idxIt % 2 != 0 ) {
           
@@ -381,15 +381,17 @@ map<int, int> t_appDetection::_prepareIntervals( vector<int>& idxVec )
   // sort data in vector first
   sort(idxVec.begin(), idxVec.end());
 //#ifdef DEBUG
-  for (auto x : idxVec)
-     cout << x << " zde "; 
+  for (int i = 0; i < idxVec.size()-1; i++) {
+    
+    cout << "Casova rada od/do: " << idxVec[i] << "  " <<  idxVec[i+1] << "\n" << endl;
+  }
 //#endif
   
   m_ii intervals;
   
   if ( idxVec.size() < 3) {
     
-    cout << " Error::t_appDetection::_prepareIntervals::IdxVec<3! " << endl;
+    cout << " Warning::t_appDetection::_prepareIntervals::IdxVec<3! Change point detection is interrupted!\n" << endl;
   }
   else {
     
