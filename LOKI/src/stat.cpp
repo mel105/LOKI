@@ -1,9 +1,9 @@
 /************************************************************************************************** 
- PROHO - software development library
+ LOKI - software development library
   
- (c) 2019 Michal Elias
+ (c) 019 Michal Elias
   
- This file is part of the PROHO C++ library.
+ This file is part of the LOKI C++ library.
   
  This library is free software; you can redistribute it and/or  modify it under the terms of the GNU
  General Public License as  published by the Free Software Foundation; either version 3 of the 

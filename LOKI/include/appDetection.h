@@ -138,7 +138,7 @@ class t_appDetection
    string _referenceOnOff;
    string _adjustString;
    
-   vector<double> _containerOfChps;
-   vector<double> _containerOfSfts;
+   vector<string> _listOfChpsString;
+   vector<double> _listOfChpsMJD;
 };
 #endif

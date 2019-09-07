@@ -262,21 +262,25 @@ int t_appDetection::_processChangePointDetection()
   // Get vector of all TK statistics
   _TK = changePoint->getTK();
   
-  //#ifdef DEBUG
+#ifdef DEBUG
   cout << "\n# Suspected time No# " << _counter
        << "\n# Detection's result " << _result
        << "\n# [epoch-idx]        " << _suspectedChangeIdx
        << "\n# [epoch-timestamp]  " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp()
-       << "\n# [epoch-mjd]        " << fixed << setprecision(1) << _suspectChp
        << "\n# [shift]            " << fixed << setprecision(2) << _shift
        << "\n# [Critical value]   " << _CV
        << "\n# [Max Tk value]     " << _maxTk
        << "\n# [ACF[1]]           " << _acf
        << "\n# [P-Value]          " << _pVal << endl;
-  //#endif
+#endif
   
   if ( _result == "non-stationary" ) {
     
+    // add change point into the container
+    _listOfChpsString.push_back( (_timeData[_suspectedChangeIdx -1]).timeStamp() );
+     t_timeStamp convMjd((_timeData[_suspectedChangeIdx -1]).timeStamp());
+    _listOfChpsMJD.push_back( convMjd.mjd() );
+          
     /// Part B: If non-stationary, define itnervals for multi change-point detection
     vector<int> idxVec;
     idxVec.push_back(0);
@@ -284,17 +288,19 @@ int t_appDetection::_processChangePointDetection()
     idxVec.push_back(_N);
     
     m_ii inter; inter = this->_prepareIntervals( idxVec );
-    
+     
     /// Part C: If the original time series is non-stationary, provide multi change-point detection.
     int iNo = 1;  
     
     while (!inter.empty()) {
+       
+#ifdef DEBUG
+       cout << "\n\n Loop: " << iNo << endl;
+#endif
+       
+       int idxIt = 1;
       
-      cout << "\n\n Loop: " << iNo << endl;
-      
-      int idxIt = 1;
-      
-      for ( m_ii::iterator it = inter.begin(); it != inter.end(); ++it) {
+       for ( m_ii::iterator it = inter.begin(); it != inter.end(); ++it) {
         
         int iBeg = it->first;
         int iEnd = it->second;
@@ -304,9 +310,11 @@ int t_appDetection::_processChangePointDetection()
         int suspectedPointIdx = changePoint->getIdxMaxPOS();
         
         suspectedPointIdx = suspectedPointIdx + iBeg;
-        
-        cout << "\n\nSub-casova rada od/do: " << iBeg << "  " << iEnd << "  " << changePoint->getResult() << "\n";
-        
+       
+#ifdef DEBUG
+        cout << "\n\nAnalysed time serie [from/to/result]: " << iBeg << "  " << iEnd << "  " << changePoint->getResult() << "\n";
+#endif
+	  
         if ( changePoint->getResult() == "stationary" && idxIt % 2 != 0 ) {
           
           idxVec.erase( remove( idxVec.begin(), idxVec.end(), iBeg) );
@@ -320,9 +328,14 @@ int t_appDetection::_processChangePointDetection()
         if ( changePoint->getResult() == "non-stationary" ) {
           
           idxVec.push_back( suspectedPointIdx );
+	   
+	  // add change point into the container
+	  _listOfChpsString.push_back( (_timeData[suspectedPointIdx -1]).timeStamp() );
+	   t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
+	  _listOfChpsMJD.push_back( convMjd.mjd() );
         }
         
-        //#ifdef DEBUG
+#ifdef DEBUG
         cout << "\n# Detection's result " << changePoint->getResult()
              << "\n# [epoch-idx]        " << suspectedPointIdx
              << "\n# [epoch-timestamp]  " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()
@@ -332,11 +345,11 @@ int t_appDetection::_processChangePointDetection()
              << "\n# [ACF[1]]           " << changePoint->getACF()  
              << "\n# [P-Value]          " << changePoint->getPValue()
              << endl;
-        //#endif
+#endif
         
         idxIt++;
         inter.erase(iBeg);
-      }
+       }
       
       inter = this->_prepareIntervals( idxVec );
       iNo++;
@@ -344,8 +357,15 @@ int t_appDetection::_processChangePointDetection()
 
   }
   
+   
+//#ifdef DEBUG
+   cout << "List of detected change point(s) [time stamp/mjd]:\n";
+     for (int i = 0; i<_listOfChpsString.size(); i++) {
+	
+	cout <<  _listOfChpsString[i] << "  " << _listOfChpsMJD[i] << endl;
+     }
+//#endif
 
-  //
   // delete pointers
   if ( changePoint  ) delete changePoint;
   
@@ -380,18 +400,20 @@ map<int, int> t_appDetection::_prepareIntervals( vector<int>& idxVec )
   
   // sort data in vector first
   sort(idxVec.begin(), idxVec.end());
-//#ifdef DEBUG
+#ifdef DEBUG
   for (int i = 0; i < idxVec.size()-1; i++) {
     
-    cout << "Casova rada od/do: " << idxVec[i] << "  " <<  idxVec[i+1] << "\n" << endl;
+    cout << "Analysed time seried [from/to/result]: " << idxVec[i] << "  " <<  idxVec[i+1] << "\n" << endl;
   }
-//#endif
+#endif
   
   m_ii intervals;
   
   if ( idxVec.size() < 3) {
     
+#ifdef DEBUG
     cout << " Warning::t_appDetection::_prepareIntervals::IdxVec<3! Change point detection is interrupted!\n" << endl;
+#endif
   }
   else {
     

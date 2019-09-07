@@ -65,7 +65,7 @@ void tstLoad()
   // -------------------------
   map<double, double> test;
        
-  ifstream dir("/home/michal/Work/PROHO/DAT/change.dat");
+  ifstream dir("/home/michal/Work/LOKI/DAT/change.dat");
   
   string ymd, hms, line;
   double vals;
