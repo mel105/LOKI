@@ -29,6 +29,7 @@
 #include "load.h"
 #include "coredata.h"
 #include "version.h"
+#include "help.h"
 #include "timeStamp.h"
 #include "setting.h"
 
@@ -57,7 +58,7 @@ int main(int argc, char ** argv)
   clock_t start = clock();
   
   /// Set&Get Version
-  t_version version("1","0","0", "alpha");
+  t_version version("0","0","12", "alpha");
   LOG1(":.main::*** Version: " , version.Version());
   LOG1(":.main::*** Compiled: ", COMPILED);
   
@@ -237,9 +238,21 @@ int main(int argc, char ** argv)
   /// LOKI::Finish
   clock_t stop = clock();
   double duration = double(stop - start) / CLOCKS_PER_SEC;
-  
+   
   LOG1(":.main::*** LOKI (app finished)");
   LOG1(":.main::*** TOTAL TIME TAKEN: ", duration, " [s]!");
   
+   // Version
+   if(argc == 2 && strcmp(argv[1], "--version")==0) {
+      cout << "\n\nLOKI [--version]: " << version.Version() << endl;
+   }   
+   
+   // help
+   if(argc == 2 && strcmp(argv[1], "--help")==0) {
+      cout << "\n\nLOKI [--help]\n" <<endl;
+      t_help lh; lh.lokiHelp();
+   }
+  
+   
   return 0;
 }
