@@ -3,11 +3,11 @@
     "plotOnOff": "off"
   },
   "input": {
-    "inputName": "example.3",
+    "inputName": "ALGO.dat.orig",
     "inputFormat": "td",
     "inputResolution": 86400.0,
     "inputConvTdDd": true,
-    "inputFolder": "/Data"
+    "inputFolder": "/Data/COST"
   },
     "output": {
     "outputName": "LOKI.txt",
