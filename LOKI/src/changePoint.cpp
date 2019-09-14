@@ -124,7 +124,7 @@ t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata, int& iBe
   tData.clear();
   
   if(!_data.empty()){
-    
+
     LOG1(":......t_changePoint::......Loaded data container. Data size: ", _data.size());
   }
   else{
@@ -132,10 +132,19 @@ t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata, int& iBe
     ERR(":......t_changePoint::......Data container is empty!"); return;
   }
   
-  //cout << "som tu? " << _data.size() << endl;
+//  cout << "am I here? " << _data.size() << endl;
   
-  // process change point detection method
   this->_detectChangePoint();
+  /*
+  if (_data.size() > 300 ) {
+
+    // process change point detection method
+    this->_detectChangePoint();
+  } else {
+    
+    cout << " asi nema cenu pocitat change point, ak je rozmer rady maly." << endl;
+  }
+   */ 
 }
 
 // === PUBLIC FUNCTIONS ===
@@ -251,32 +260,33 @@ string t_changePoint::getResult()
 void t_changePoint::_detectChangePoint()
 {
 
+//  cout << "DB 0" << endl;
   /// The dependecy estimation: full time series
   this->_estimateDependency();
-
+//  cout << "DB 1" << endl;
   /// Estimate T_k statistics!
   this->_estimateTStatistics();
-
+//  cout << "DB 2" << endl;
   /// Critical values estimation: calculated by the asymptotic distribution:  
   this->_estimateCritValue();
-
+//  cout << "DB 3" << endl;
   /// Estimate Means; before & after
   this->_estimateMeans();
-
+//  cout << "DB 4" << endl;
   /// Estimate shift
   this->_estimateShift();
-
+//  cout << "DB 5" << endl;
   /// Estimate Sigma*L (see Antoch et al. (1995))
   //  Warning: After the estimateSignaStarL method calling, we'll get new vector _dataVal, 
   //           that contains vals repaired by shift and centered to zero.
   this->_estimateSigmaStarL();
-
+//  cout << "DB 6" << endl;
   /// Estimate p-Value
   this->_estimatePValue();
-
+//  cout << "DB 7" << endl;
   /// Test H0 hypothesis
   this->_testHypothesis();
-
+//  cout << "DB 8" << endl;
    /*
     if(_resultOfStationarity == "non-stationary") {
     /// TODO: problem with confidence interval calculation.
@@ -428,6 +438,8 @@ void t_changePoint::_estimateMeans()
   vector<double> data_to_k;
   vector<double> data_af_k;
   
+  //cout << _idxMaxPOS << " <<== Hondota idxMaxPOS | _dataVec.size ==>  " << _dataVec.size() << endl;
+  
   for(unsigned int i = 0; i < _idxMaxPOS-1; i++) {
     
     data_to_k.push_back(_dataVec[i]);
@@ -438,6 +450,7 @@ void t_changePoint::_estimateMeans()
     data_af_k.push_back(_dataVec[j]);
   }
   
+
   t_stat before(data_to_k); before.calcMean(); _meanBefore = before.getMean();
   t_stat  after(data_af_k);  after.calcMean(); _meanAfter  = after.getMean();
   
@@ -517,7 +530,7 @@ void t_changePoint::_estimateTStatistics()
   if(TK.rbegin() != TK.rend()) {
     
     _maxTK     = TK.rbegin()->first;
-    _idxMaxPOS = TK.rbegin()->second;
+    _idxMaxPOS = TK.rbegin()->second + 1;
     
 #ifdef DEBUG
     cout << "Max tk " << _maxTK << " at " << _idxMaxPOS << endl;

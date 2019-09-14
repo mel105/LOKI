@@ -3,7 +3,7 @@
     "plotOnOff": "off"
   },
   "input": {
-    "inputName": "ALGO.dat.orig",
+    "inputName": "TRAK.dat",
     "inputFormat": "td",
     "inputResolution": 86400.0,
     "inputConvTdDd": true,

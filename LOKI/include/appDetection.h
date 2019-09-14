@@ -105,6 +105,8 @@ class t_appDetection
    t_coredata* _coredata;
    t_setting* _setting;
    
+   m_ii _statInter;
+   
    m_td _Data;
       
    m_dd _data;
