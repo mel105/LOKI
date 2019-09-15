@@ -88,18 +88,13 @@ class t_appDetection
     
  protected:
    
-   //   int _addTimeSeries();
-   //bool _verifyChangePointRepeatability();
-   //void _verifiedProtocol();
-   //void _nonVerifiedProtocol();
-   
    int _prepareData();
    int _plotTimeSeries();
    int _processChangePointDetection();
    int _checkDeseasData();
+   
    map<int, int> _prepareIntervals( vector<int>& idxVec );
    
-   //vector<string> _timeData;
    vector<t_timeStamp> _timeData;
    
    t_coredata* _coredata;
@@ -140,6 +135,7 @@ class t_appDetection
    string _referenceOnOff;
    string _adjustString;
    
+   vector<string> _inpSett;
    vector<string> _listOfChpsString;
    vector<double> _listOfChpsMJD;
 };

@@ -41,7 +41,7 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
   _result = "stationary";
   
   /// Get setting & create log info
-  vector<string> inpSett = setting->getLoadSetting(); _fmt = inpSett[1];
+  _inpSett = setting->getLoadSetting(); _fmt = _inpSett[1];
   string outputName = setting->getOutputName(); _out = outputName;
   string outputHist = setting->getOutputHist(); _hst = outputHist;   
   string plotOnOff = setting->getPlotOnOff(); _plot = plotOnOff;
@@ -205,6 +205,10 @@ int t_appDetection::_processChangePointDetection()
   ofile << "\n# ********************************************* \n";
   ofile << "#   Change point detection and Detectionization   \n";
   ofile << "# ********************************************* \n\n";
+  ofile << "\n# File name: " << _inpSett [0] << endl;
+  ofile << "# File format: " << _inpSett [1] << endl;
+  ofile << "# File folder: " << _inpSett [2] << "\n\n" <<endl;
+  
 //  ofile.close();
   
   // Pointers definition
@@ -264,18 +268,6 @@ int t_appDetection::_processChangePointDetection()
   _TK = changePoint->getTK();
 
   LOG1(":...t_appDetection::......Loop: 0");
-
-#ifdef DEBUG
-  cout << "\n# Suspected time No# " << _counter
-       << "\n# Detection's result " << _result
-       << "\n# [epoch-idx]        " << _suspectedChangeIdx
-       << "\n# [epoch-timestamp]  " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp()
-       << "\n# [shift]            " << fixed << setprecision(2) << _shift
-       << "\n# [Critical value]   " << _CV
-       << "\n# [Max Tk value]     " << _maxTk
-       << "\n# [ACF[1]]           " << _acf
-       << "\n# [P-Value]          " << _pVal << endl;
-#endif
   
   if ( _result == "non-stationary" ) {
     
@@ -283,6 +275,24 @@ int t_appDetection::_processChangePointDetection()
     _listOfChpsString.push_back( (_timeData[_suspectedChangeIdx -1]).timeStamp() );
      t_timeStamp convMjd((_timeData[_suspectedChangeIdx -1]).timeStamp());
     _listOfChpsMJD.push_back( convMjd.mjd() );
+        
+    //#ifdef DEBUG
+    t_timeStamp convLow(( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp());
+    t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp());          
+    ofile
+       << "\n# TS beg [idx]       " << 0
+       << "\n# TS end [idx]       " << _timeData.size()
+       << "\n# Chp [idx]          " << _suspectedChangeIdx
+       << "\n# Chp [Stamp/MJD]    " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp()               << "  "  << convMjd.mjd()
+       << "\n# Conf. Inter [from] " << ( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp() << "  "  << convLow.mjd()
+       << "\n#             [to]   " << ( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp() << "  "  << convUpp.mjd()
+       << "\n# Shift [-]          " << fixed << setprecision(2) << changePoint->getShift()
+       << "\n# Critical value     " << changePoint->getCritVal()
+       << "\n# Max Tk             " << changePoint->getMaxTK()
+       << "\n# ACF[1]             " << changePoint->getACF()  
+       << "\n# P-Value            " << changePoint->getPValue()
+       << endl;
+    //#endif    
     
     /// Part B: If non-stationary, define itnervals for multi change-point detection
     /// -------------------------------------------------------------------------------------------
@@ -333,21 +343,29 @@ int t_appDetection::_processChangePointDetection()
           t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
           _listOfChpsMJD.push_back( convMjd.mjd() );
           
+          cout << "appDetection " << changePoint->getLowConfInterIdx()+iBeg << "  " << suspectedPointIdx << "  " << changePoint->getUppConfInterIdx()+iBeg << endl;
+          
+          
+          //#ifdef DEBUG
+          t_timeStamp convLow(( _timeData[ changePoint->getLowConfInterIdx() + iBeg -1 ] ).timeStamp());
+          t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp());          
+        ofile
+             << "\n# TS beg [idx]    " << iBeg
+             << "\n# TS end [idx]    " << iEnd
+             << "\n# Chp [idx]       " << suspectedPointIdx
+             << "\n# Chp [Stamp/MJD] " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()                        << "  " << convMjd.mjd()
+             << "\n# CI.[from]       " << ( _timeData[ changePoint->getLowConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convLow.mjd()
+             << "\n#    [to]         " << ( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convUpp.mjd()                            
+             << "\n# Shift [-]       " << fixed << setprecision(2) << changePoint->getShift()
+             << "\n# Critical value  " << changePoint->getCritVal()
+             << "\n# Max Tk          " << changePoint->getMaxTK()
+             << "\n# ACF[1]          " << changePoint->getACF()  
+             << "\n# P-Value         " << changePoint->getPValue()
+             << endl;
+          //#endif
         }
         
-#ifdef DEBUG
-        cout << "\n# Detection's result " << changePoint->getResult()
-             << "\n# TS beg idx         " << iBeg
-             << "\n# TS end idx         " << iEnd
-             << "\n# [epoch-idx]        " << suspectedPointIdx
-             << "\n# [epoch-timestamp]  " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()
-             << "\n# [shift]            " << fixed << setprecision(2) << changePoint->getShift()
-             << "\n# [Critical value]   " << changePoint->getCritVal()
-             << "\n# [Max Tk value]     " << changePoint->getMaxTK()
-             << "\n# [ACF[1]]           " << changePoint->getACF()  
-             << "\n# [P-Value]          " << changePoint->getPValue()
-             << endl;
-#endif
+
         for(map<int,int>::iterator i = inter.begin(); i!=inter.end(); i++) {
           
           LOG1(":...t_appDetection::......Before the subseries removing: [From: ", i->first, " to: ", i->second, "]");
@@ -384,9 +402,9 @@ int t_appDetection::_processChangePointDetection()
   }
   
   //#ifdef DEBUG
-  ofile << "List of detected change point(s) [time stamp/mjd]:\n";
+  ofile << "\n\n# List of detected change point(s) [time stamp/mjd]:\n";
   for (int i = 0; i<_listOfChpsString.size(); i++) {
-    //cout <<  _listOfChpsString[i] << "  " << _listOfChpsMJD[i] << endl;
+    
     ofile <<  _listOfChpsString[i] << "  " << _listOfChpsMJD[i] << endl;
   }
   //#endif

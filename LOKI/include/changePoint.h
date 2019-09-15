@@ -62,14 +62,14 @@ class t_changePoint
    double getPValue();
    double getMaxTK();
    double getShift();
+   double getLowConfInterIdx();
+   double getUppConfInterIdx();
    
    int getIdxMaxPOS();
    
-   string getResult();
-   
    map<double, double> getTK();
    
-   // get confidence interval.
+   string getResult();
     
  protected:
    
@@ -81,8 +81,9 @@ class t_changePoint
    void _estimateShift();
    void _estimateSigmaStarL();
    void _estimatePValue();
+   void _estimateConfidenceInterval();
    void _testHypothesis();
-   
+
    int    _idxMaxPOS;
    
    double _maxTK;
@@ -96,10 +97,13 @@ class t_changePoint
    double _sigmaStar;
    double _PValue;
    double _limitDependence;
+   double _lowConfIdx;
+   double _uppConfIdx;
 
    string _resultOfStationarity;
    
    vector<double> _TK;
+   vector<double> _SK;   
    vector<double> _dataVec;
    
    m_dd _data;

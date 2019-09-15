@@ -3,7 +3,7 @@
     "plotOnOff": "off"
   },
   "input": {
-    "inputName": "TRAK.dat",
+    "inputName": "COSO.dat",
     "inputFormat": "td",
     "inputResolution": 86400.0,
     "inputConvTdDd": true,

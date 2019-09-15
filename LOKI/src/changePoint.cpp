@@ -36,7 +36,7 @@ t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata)
   _shift = 999.999;
   
   /// Get setting & create log info
-  double probCritVal = setting->getProbCritVal();     _prob            = probCritVal;
+  double probCritVal = setting->getProbCritVal(); _prob = probCritVal;
   double limitDependence = setting->getLimitDependence(); _limitDependence = limitDependence;
   string regressOnOff = setting->getRegressOnOff(); 
   string medianOnOff = setting->getMedianOnOff(); 
@@ -255,6 +255,32 @@ string t_changePoint::getResult()
   return _resultOfStationarity;
 }
 
+double t_changePoint::getLowConfInterIdx()
+{
+
+  double confIdx = 0;
+  
+  if (_lowConfIdx > 0) {
+    
+    confIdx = _lowConfIdx;
+  }
+       
+  return confIdx;
+}
+
+double t_changePoint::getUppConfInterIdx()
+{
+
+  double confIdx = _data.size();
+  
+  if (_uppConfIdx < _data.size()) {
+    
+    confIdx = _uppConfIdx;
+  }
+         
+  return confIdx;
+}
+
 // === PROTECTED FUNCTIONS ===
 // -
 void t_changePoint::_detectChangePoint()
@@ -287,12 +313,10 @@ void t_changePoint::_detectChangePoint()
   /// Test H0 hypothesis
   this->_testHypothesis();
 //  cout << "DB 8" << endl;
-   /*
-    if(_resultOfStationarity == "non-stationary") {
-    /// TODO: problem with confidence interval calculation.
-    //    _estimateConfidenceInterval();
-    }
-    */
+  if(_resultOfStationarity == "non-stationary") {
+    
+    this->_estimateConfidenceInterval();
+  }
 }
 
 // -
@@ -317,6 +341,50 @@ void t_changePoint::_testHypothesis()
 }
 
 
+// -
+void t_changePoint::_estimateConfidenceInterval()
+{
+  
+  double alphaCrit = 999.0;
+  
+  if (_prob ==  0.9) {
+    
+    alphaCrit = 4.696;
+  }
+  else if (_prob ==  0.95) {
+    
+    alphaCrit = 7.687;
+  }
+  else if (_prob ==  0.975) {
+    
+    alphaCrit = 11.033;
+  }
+  
+  else if (_prob ==  0.99) {
+    
+    alphaCrit = 15.868;
+  }
+  
+  else if (_prob ==  0.995) {
+    
+    alphaCrit = 19.767;
+  }
+  else {
+    
+    alphaCrit = 4.0;
+  }
+  
+  //double mValue = ( ( alphaCrit * pow( _SK[_idxMaxPOS], 2.0)) /
+  //                  pow(_shift, 2.0 ) ) + _idxMaxPOS;
+  
+  double mValue = ( ( alphaCrit * pow( _SK[_idxMaxPOS], 2.0)) /
+                    pow(_shift, 2.0 ) );
+  
+  _uppConfIdx = _idxMaxPOS + floor(mValue);
+  _lowConfIdx = _idxMaxPOS - floor(mValue);
+  
+  cout << "changePoint " << _lowConfIdx << "  " << _idxMaxPOS << "  " << _uppConfIdx << endl;
+}
 // -
 void t_changePoint::_estimatePValue()
 {
@@ -372,7 +440,7 @@ void t_changePoint::_estimateSigmaStarL()
   }
   
   int    n = VALSIGMA.size();
-  double L = pow(static_cast<double>(n), 1.0/3.0); L = ceil(L);
+  double L = pow(static_cast<double>(n), (1.0 / 3.0)); L = ceil(L);
   
   // get autocorrelation functions of reduced orig. vals.
   t_autoCov autoCov(VALSIGMA); ACF = autoCov.getAutoCov(); 
@@ -386,7 +454,7 @@ void t_changePoint::_estimateSigmaStarL()
     f0est = f0est + ( 2.0 * wght * ACF[i+1] * ACF[0] );
   }
   
-  _sigmaStar = sqrt(f0est);
+  _sigmaStar = sqrt(abs(f0est));
   
 #ifdef DEBUG
   /// Note: 
@@ -404,6 +472,7 @@ void t_changePoint::_estimateSigmaStarL()
 #endif
   
   // get updated critical value, if _acf > _limidDepedence
+
   if(_acf > _limitDependence) {
     
     _criticalVal = _criticalVal * _sigmaStar;
@@ -417,6 +486,7 @@ void t_changePoint::_estimateSigmaStarL()
        << "\n _critVal   " << _criticalVal << endl;
 #endif
   }
+  
 }
 
 // -
@@ -438,7 +508,7 @@ void t_changePoint::_estimateMeans()
   vector<double> data_to_k;
   vector<double> data_af_k;
   
-  //cout << _idxMaxPOS << " <<== Hondota idxMaxPOS | _dataVec.size ==>  " << _dataVec.size() << endl;
+  //cout << _idxMaxPOS << " <<== Hodnota idxMaxPOS | _dataVec.size ==>  " << _dataVec.size() << endl;
   
   for(unsigned int i = 0; i < _idxMaxPOS-1; i++) {
     
@@ -481,7 +551,64 @@ void t_changePoint::_estimateCritValue()
 #endif
 }
 
+
 // -
+void t_changePoint::_estimateTStatistics()
+{
+  
+  int N = _data.size(); double NN = static_cast<double>(N);
+  int k = 1;
+  
+  for ( m_dd::iterator i = _data.begin(); i != _data.end(); i++) {
+    
+    _dataVec.push_back(i->second); 
+  }
+  
+  t_stat stat(_dataVec); stat.calcMean(); double actualMean = stat.getMean();
+  
+  map<double, double> TK;
+  
+  while(k <= N-1) {
+        
+    double kk = static_cast<double>(k);
+    
+    double sum_k = 0.0;  for ( int i = 0; i < k; ++i ) { sum_k += _dataVec[i]; }
+    
+    double x_k  = sum_k / k;
+    
+    double sumK = 0.0; for ( int iDat = 0; iDat<N; ++iDat ) { sumK += pow(_dataVec[iDat] - x_k, 2.0); }
+    
+    double sum_n = 0.0;  for ( int j = k; j < N; ++j) { sum_n += _dataVec[j]; }
+    
+    double x_n = sum_n / ( N - k );
+    
+    double sumN = 0.0; for ( int iDat = 0; iDat<N; ++iDat ) { sumN += pow(_dataVec[iDat] - x_n, 2.0); }
+    
+    double sk = sqrt( (sumK + sumN) / (N-2) );  _SK.push_back(sk);
+    
+    double actualTK = sqrt( ((NN - kk) * kk) / NN ) * abs(x_k - x_n) * (1 / sk);
+    
+    _TK.push_back(actualTK);
+    TK[actualTK] = k;
+    
+    k++;
+  }
+  
+  if(TK.rbegin() != TK.rend()) {
+    
+    _maxTK     = TK.rbegin()->first;
+    _idxMaxPOS = TK.rbegin()->second + 1;
+    
+#ifdef DEBUG
+    cout << "Max tk " << _maxTK << " at " << _idxMaxPOS << endl;
+#endif
+  }
+}
+
+
+
+/*  
+// Implementacia podla prof. 
 void t_changePoint::_estimateTStatistics()
 {
   
@@ -506,6 +633,7 @@ void t_changePoint::_estimateTStatistics()
     
     //double constant = 0.0; constant = sqrt( ( kk * ( NN - kk ) ) / NN ); /// pomaha mi v pripade JB time series
     double constant = 0.0; constant = sqrt( NN /  ( kk * ( NN - kk ) ) ); /// standardne tropo series
+    //double constant = 0.0; constant = sqrt( ( NN - kk ) * kk / NN ); /// standardne tropo series
     
     double cumsum = 0.0; // _VAL[0]; // from left to right
     
@@ -538,6 +666,10 @@ void t_changePoint::_estimateTStatistics()
     
   }
 }
+
+
+*/
+
 
 // -
 void t_changePoint::_estimateDependency()
