@@ -1,9 +1,9 @@
 {
   "general": {
-    "plotOnOff": "off"
+    "plotOnOff": "on"
   },
   "input": {
-    "inputName": "COSO.dat",
+    "inputName": "VILL.dat",
     "inputFormat": "td",
     "inputResolution": 86400.0,
     "inputConvTdDd": true,
@@ -25,7 +25,7 @@
     "elimSeas": true
   },
   "median": {
-    "medianOnOff": "on",
+    "medianOnOff": "off",
     "fixedHour": true,
     "constHour": 12
   },
@@ -35,6 +35,6 @@
   "detection": {
     "detectionOnOff": "on",
     "probCritVal": 0.95,
-    "limitDepedence": 0.4
+    "limitDepedence": 0.5
   }
 }

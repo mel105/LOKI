@@ -59,8 +59,9 @@ map<double, double> t_deseas::getDeseas()
 
 // -
 void t_deseas::_setPeriod()
-{        
-  
+{    
+  _per = 365.25;
+  /*
   if(_res <= 0.0 || _res == 86400.0) {
     
     _per = 365.25;
@@ -70,6 +71,7 @@ void t_deseas::_setPeriod()
     double rat = 86400.0 / _res;
     _per = 365.25 * rat;
   }
+   */ 
 }
 
 

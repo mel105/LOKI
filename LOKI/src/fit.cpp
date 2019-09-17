@@ -94,7 +94,8 @@ vector<double> t_fit::getPVals() { return _pVal; }
 // ---------
 void t_fit::_setPeriod()
 {
-  
+  _period = 365.25;
+  /*
   if(_res <= 0.0 || _res == 86400.0) {
     
     _period = 365.25;
@@ -104,9 +105,10 @@ void t_fit::_setPeriod()
     double rat = 86400.0 / _res;
     // ToDo: Decide, how to setup the period.
     //_period = 365.25 * rat;
-    _period = 365.25;
+    _period = 365.25 ;
     
   }
+   */ 
 }
 
 // 
@@ -152,7 +154,7 @@ void t_fit::_setModel()
     
     // set time series period
     this->_setPeriod();
-    
+
     // Inicialization of fitter parameters.
     ColumnVector fit(4);  for(int i = 1; i <= 4; i++) { fit(i) = 1.0; } 
     

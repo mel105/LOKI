@@ -404,7 +404,7 @@ int t_appDetection::_processChangePointDetection()
   //#ifdef DEBUG
   ofile << "\n\n# List of detected change point(s) [time stamp/mjd]:\n";
   for (int i = 0; i<_listOfChpsString.size(); i++) {
-    
+    cout << _listOfChpsMJD[i] << endl;
     ofile <<  _listOfChpsString[i] << "  " << _listOfChpsMJD[i] << endl;
   }
   //#endif
