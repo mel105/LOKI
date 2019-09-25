@@ -3,26 +3,27 @@
     "plotOnOff": "on"
   },
   "input": {
-    "inputName": "VILL.dat",
-    "inputFormat": "td",
+    "inputName": "ZNOJ.txt",
+    "inputFolder": "/Data/JB/DATA_NEUP",
+    "inputFormat": "dd",
+    "inputDataCol": 3,
     "inputResolution": 86400.0,
-    "inputConvTdDd": true,
-    "inputFolder": "/Data/COST"
+    "inputConvTdDd": true
   },
     "output": {
     "outputName": "LOKI.txt",
     "outputHist": "LOKI.hst"
   },
   "stat": {
-    "statOnOff": "off",
+    "statOnOff": "on",
     "iqrCnfd": 2.5
   },
   "regression": {
-    "regressOnOff": "off",
-    "regModel": 3,
+    "regressOnOff": "on",
+    "regModel": 1,
     "regOrder": 1,
-    "elimTrend": false,
-    "elimSeas": true
+    "elimTrend": true,
+    "elimSeas": false
   },
   "median": {
     "medianOnOff": "off",
@@ -33,7 +34,7 @@
     "referenceOnOff": "off"
   },    
   "detection": {
-    "detectionOnOff": "on",
+    "detectionOnOff": "off",
     "probCritVal": 0.95,
     "limitDepedence": 0.5
   }

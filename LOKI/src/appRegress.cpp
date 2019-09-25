@@ -36,7 +36,7 @@ t_appRegress::t_appRegress(t_setting* setting,  t_coredata* coredata)
   _coredata = coredata;
    
   /// Get setting & create log info
-  vector<string> inpSett = setting->getLoadSetting(); _fmt = inpSett[1];
+  vector<string> inpSett = setting->getLoadSetting(); _fmt = inpSett[2];
   string outputName = setting->getOutputName(); _out = outputName;
   string outputHist = setting->getOutputHist(); _hst = outputHist;   
   string plotOnOff = setting->getPlotOnOff(); _plot = plotOnOff;

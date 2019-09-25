@@ -49,6 +49,7 @@ class t_setting
    int    getRegOrder();
    int    getOutMethod();
    int    getConstHour();
+   int    getInputDataCol();
    
    bool   getElimTrend();
    bool   getElimSeas();
@@ -79,6 +80,7 @@ class t_setting
    int    _regModel;
    int    _regOrder;
    int    _constHour;
+   int    _inputDataCol;
    
    bool   _elimTrend;
    bool   _elimSeas;

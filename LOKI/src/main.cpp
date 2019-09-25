@@ -58,7 +58,7 @@ int main(int argc, char ** argv)
   clock_t start = clock();
   
   /// Set&Get Version
-  t_version version("0","0","12", "alpha");
+  t_version version("0","0","19", "alpha");
   LOG1(":.main::*** Version: " , version.Version());
   LOG1(":.main::*** Compiled: ", COMPILED);
   
@@ -75,7 +75,7 @@ int main(int argc, char ** argv)
   
   vector <string> loadSetting = setting->getLoadSetting();
   string inputName = loadSetting[0];
-  string inputFormat = loadSetting[1];
+  string inputFormat = loadSetting[2];
   
   string outputName = setting->getOutputName();
   string outputHist = setting->getOutputHist();
@@ -104,8 +104,8 @@ int main(int argc, char ** argv)
   map<string, double> Testval;
 
   if ( inputFormat == "dd" ) {
-    
-    testval = load.getTestval();     
+
+    testval = load.getTestval();
   }
   else if ( inputFormat == "td" ) {
     
@@ -122,11 +122,11 @@ int main(int argc, char ** argv)
   
   /// LOKI::SET LOG FILE
   if(!testval.empty() || !Testval.empty()) {
-     
+    
     LOG1(":.main::...Loaded data file");
     if(inputFormat == "dd") {
        
-      LOG1(":.main::...Data container size: ", testval.size()); 
+      LOG1(":.main::...Data container size: ", testval.size());
     }
     else if(inputFormat == "td" && convTdDd == true) {
        
@@ -145,7 +145,7 @@ int main(int argc, char ** argv)
     
     ERR(":.main::...Data container is empty!"); return -1; 
   }
-
+  
   /*TEST LOADING*/
   //tstLoad();
   /*TEST AUTOCOV*/
@@ -164,7 +164,7 @@ int main(int argc, char ** argv)
   
   /// LOKI::Copy pointers into the coredata object.   TU MAM ASI PROBLEM S ROZHODOVANIM
   if (inputFormat == "dd") {
-    
+  
     /// Pointer
     t_coredata * coredata = new t_coredata(testval);
     
@@ -180,7 +180,6 @@ int main(int argc, char ** argv)
     if (medianOnOff   == "on") { LOG1(":.main::...Request for appMedian");   new t_appMedian(setting, coredata);   }    
     if (detectionOnOff  == "on") { LOG1(":.main::...Request for appdetection");  new t_appDetection(setting, coredata);  }
 
-    
     /// Delete
     if ( coredata ) delete coredata ;
   }

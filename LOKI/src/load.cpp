@@ -24,55 +24,58 @@
 #include "logger.hpp"
 #include "load.h"
 #include "workingdir.h"
+//#include <boost/algorithm/string.hpp>   
 
 using namespace std;
   
 // constructor
 // --------------------
-//t_load::t_load(
-//	       string dataName,
-//	       string dataFormat
-//	      )
-
 t_load::t_load( t_setting* setting )
 {
    
-   // get actual working dir
-   t_workingDir workingDir; 
-   string wDir = workingDir.GetCurrentWorkingDir();
-   
-   vector <string> loadSetting = setting->getLoadSetting();
-   bool convTdDd = setting->getInputConvTdDd();
+  // get actual working dir
+  t_workingDir workingDir; 
+  string wDir = workingDir.GetCurrentWorkingDir();
   
-   _dataName = loadSetting[0];
-   _dataFormat = loadSetting[1];
-   _dataFolderPath = (wDir+loadSetting[2]);
-   _convTdDd = convTdDd;
-   
-   if (_dataFormat == "d") {
+  vector <string> loadSetting = setting->getLoadSetting();
+  bool convTdDd = setting->getInputConvTdDd();
+  
+  _dataName = loadSetting[0];
+  _dataFolderPath = (wDir+loadSetting[1]);
+  _dataFormat = loadSetting[2];
+  _convTdDd = convTdDd;
+  _dataCol = setting->getInputDataCol();
     
-      // predpoklada sa, ze data format tvori len jeden stlpec
-   }
-   else if (_dataFormat == "dd") {
-      
-      // key: int    val: double
-      // key: double val: double
-      this->_twoColFormat();
-   }
-   else if (_dataFormat == "td") {
-      
-      // key: t_gtime val: double
-      this->_timeFormat();
-   }
-   else {
-      
-      ERR(":......t_load::......Requested input data format is not supported!");
-   }
+  if (_dataFormat == "d") {
+    
+    // will open the file with only the one column
+  }
+  else if (_dataFormat == "dd") {
+
+    // key: int    val: double
+    // key: double val: double
+    this->_doubleFormat();
+  }
+  else if (_dataFormat == "td") {
+    
+    // key: t_timeStamp val: double
+    this->_timeFormat();
+  }
+  else {
+    
+    ERR(":......t_load::......Requested input data format is not supported!");
+  }
 }
 
-map<double, double> t_load::getTestval(){ return _data;}
+map<double, double> t_load::getTestval() {
+  
+  return _data;
+}
 
-map<string, double> t_load::getTimeTestval(){ return _dataTime;}
+map<string, double> t_load::getTimeTestval() {
+  
+  return _dataTime;
+}
 
 
 // -
@@ -111,23 +114,86 @@ void t_load::_timeFormat()
   }
 }
 
-// -
-void t_load::_twoColFormat()
+// Loads the data file, when the time stamp is given as double.
+void t_load::_doubleFormat()
 {  
+
+  // No of cols in input data file
+  int nCols = this->_noOfCols();
+  
+  ifstream dir((_dataFolderPath+"/"+_dataName).c_str());
+  
+#ifdef DEBUG
+  
+  cout << "nCols = " << nCols << endl;;
+#endif
+ 
+  // If req. col is > than nCols, then set default col.
+  if (nCols <= _dataCol) {
+    
+     _dataCol = 1;
+  }
+  
+  // Load the data!
   _data.clear();
   
   string line;
   
-  ifstream dir((_dataFolderPath+"/"+_dataName).c_str());
-  
   while ( getline(dir, line) ) {
     
-    double timeKey, vals;
+    istringstream iss (line);
     
-    istringstream istr(line);
+    double timeKey;  iss >> timeKey;
     
-    istr >> timeKey >> vals;
+    int idx = 1;
     
-    _data[static_cast<double>(timeKey)] = vals;
+    for (int iCol = 1; iCol < nCols; iCol++) {
+    
+      double val;  iss >> val;
+    
+      if (idx == _dataCol) {
+        
+        _data[static_cast<double>(timeKey)] = val;        
+      } // if
+      
+      idx ++;
+    } // for
+  } // while
+  
+#ifdef DEBUG
+  for(map<double, double>::iterator i = _data.begin(); i!=_data.end(); ++i) {
+    
+     cout << fixed << setprecision(0) <<  i->first << "  " << setprecision(1) <<  i->second << endl;
   }
+#endif
+
+} // void
+  
+// -
+int t_load::_noOfCols() 
+{
+
+  ifstream dir((_dataFolderPath+"/"+_dataName).c_str());
+  
+  string mLine, tLine;
+  stringstream sStr;
+  
+  int nCols = 0;
+    
+  getline(dir, mLine);
+  sStr.clear();
+  sStr << mLine;
+
+  while (sStr >> tLine) {
+    
+    nCols++;
+  }
+  
+#ifdef DEBUG
+  
+  cout << "nCols = " << nCols << endl;;
+#endif
+ 
+  return nCols;
 }
+

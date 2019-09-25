@@ -40,8 +40,9 @@ t_setting::t_setting()
   
   /// LOKI::input
   string inputName {loki.getValue<string>({"input", "inputName"})}; _loadSetting.push_back(inputName);
-  string inputFormat {loki.getValue<string>({"input", "inputFormat"})}; _loadSetting.push_back(inputFormat);
   string inputFolder {loki.getValue<string>({"input", "inputFolder"})}; _loadSetting.push_back(inputFolder);
+  string inputFormat {loki.getValue<string>({"input", "inputFormat"})}; _loadSetting.push_back(inputFormat);
+  int inputDataCol {loki.getValue<int>({"input", "inputDataCol"})}; _inputDataCol = inputDataCol;
   bool inputConvTdDd {loki.getValue<bool>({"input", "inputConvTdDd"})}; _inputConvTdDd = inputConvTdDd;
   double inputResolution {loki.getValue<double>({"input", "inputResolution"})}; _inputResolution = inputResolution;
   
@@ -76,15 +77,17 @@ t_setting::t_setting()
   
   /// Log
   LOG2(":...t_setting::......Folder: ", inputFolder);
-  LOG2(":...t_setting::......File: ",   inputName);
+  LOG2(":...t_setting::......File: ", inputName);
   LOG2(":...t_setting::......Format: ", inputFormat);
-  LOG2(":...t_setting::......Plot: ",   plotOnOff);   
+  LOG2(":...t_setting::......Column: ", inputDataCol);   
+  LOG2(":...t_setting::......Plot: ", plotOnOff);   
 }
 
 // general
 string t_setting::getPlotOnOff() { return _plotOnOff; }
 // input
 vector <string> t_setting::getLoadSetting() { return _loadSetting; }
+int t_setting::getInputDataCol() { return _inputDataCol; }
 bool t_setting::getInputConvTdDd() { return _inputConvTdDd; }
 double t_setting::getInputResolution() { return _inputResolution; }
 // output   

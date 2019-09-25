@@ -52,16 +52,19 @@ class t_load
    
  protected:
    
+   int _noOfCols();
+   
    string _dataFolderPath; 
    string _dataName; 
    string _dataFormat;
    
+   int _dataCol;
    bool _convTdDd;
    
    map<double, double> _data;
    map<string, double> _dataTime;
    
-   void _twoColFormat();
+   void _doubleFormat();
    void _timeFormat();
    
 };
