@@ -1,11 +1,11 @@
 {
   "general": {
-    "plotOnOff": "on"
+    "plotOnOff": "off"
   },
   "input": {
-    "inputName": "ZNOJ.txt",
-    "inputFolder": "/Data/JB/DATA_NEUP",
-    "inputFormat": "dd",
+    "inputName": "example.2",
+    "inputFolder": "/Data",
+    "inputFormat": "td",
     "inputDataCol": 3,
     "inputResolution": 86400.0,
     "inputConvTdDd": true
@@ -26,7 +26,7 @@
     "elimSeas": false
   },
   "median": {
-    "medianOnOff": "off",
+    "medianOnOff": "on",
     "fixedHour": true,
     "constHour": 12
   },
@@ -34,7 +34,7 @@
     "referenceOnOff": "off"
   },    
   "detection": {
-    "detectionOnOff": "off",
+    "detectionOnOff": "on",
     "probCritVal": 0.95,
     "limitDepedence": 0.5
   }

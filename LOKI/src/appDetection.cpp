@@ -41,7 +41,7 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
   _result = "stationary";
   
   /// Get setting & create log info
-  _inpSett = setting->getLoadSetting(); _fmt = _inpSett[1];
+  _inpSett = setting->getLoadSetting(); _fmt = _inpSett[2];
   string outputName = setting->getOutputName(); _out = outputName;
   string outputHist = setting->getOutputHist(); _hst = outputHist;   
   string plotOnOff = setting->getPlotOnOff(); _plot = plotOnOff;
@@ -206,8 +206,8 @@ int t_appDetection::_processChangePointDetection()
   ofile << "#   Change point detection and Detectionization   \n";
   ofile << "# ********************************************* \n\n";
   ofile << "\n# File name: " << _inpSett [0] << endl;
-  ofile << "# File format: " << _inpSett [1] << endl;
-  ofile << "# File folder: " << _inpSett [2] << "\n\n" <<endl;
+  ofile << "# File folder: " << _inpSett [1] <<endl;
+  ofile << "# File format: " << _inpSett [2] << "\n\n" << endl;
   
 //  ofile.close();
   
