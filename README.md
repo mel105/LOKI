@@ -49,7 +49,7 @@ Configuring incomplete, errors occurred!
 
 ##### References
 1. https://nlohmann.github.io/json/
-2. 
+2. https://github.com/fjanisze/logger
 3. http://www.robertnz.net/nm_intro.htm
 4. https://people.mech.kuleuven.be/~tdelaet/bfl_doc/installation_guide/node6.html
 5. http://www.gnuplot.info/
