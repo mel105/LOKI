@@ -4,7 +4,7 @@ LOKI is the application designed to analyse climatological (temperature, pressur
 
 ##### Core developer: Michal Elias 
 ##### Email: misko_elias@yahoo.com 
-##### Web: TBD 
+##### Web: www.michalelias.com
 ##### Version: [0.0.11.-alpha]
 ##### Manual: TBD
 
