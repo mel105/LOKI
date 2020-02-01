@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/michal/Work/gitHub/LOKI
+CMAKE_SOURCE_DIR = /home/michal/Work/gitHub/Casper
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/michal/Work/gitHub/LOKI
+CMAKE_BINARY_DIR = /home/michal/Work/gitHub/Casper
 
 # Utility rule file for Experimental.
 
@@ -54,7 +54,7 @@ CMAKE_BINARY_DIR = /home/michal/Work/gitHub/LOKI
 include Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/progress.make
 
 Dependencies/json-3.5.0/CMakeFiles/Experimental:
-	cd /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0 && /usr/bin/ctest -D Experimental
+	cd /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0 && /usr/bin/ctest -D Experimental
 
 Experimental: Dependencies/json-3.5.0/CMakeFiles/Experimental
 Experimental: Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build.make
@@ -67,10 +67,10 @@ Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build: Experimental
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build
 
 Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/clean:
-	cd /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0 && $(CMAKE_COMMAND) -P CMakeFiles/Experimental.dir/cmake_clean.cmake
+	cd /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0 && $(CMAKE_COMMAND) -P CMakeFiles/Experimental.dir/cmake_clean.cmake
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/clean
 
 Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/depend:
-	cd /home/michal/Work/gitHub/LOKI && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/michal/Work/gitHub/LOKI /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0 /home/michal/Work/gitHub/LOKI /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0 /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/michal/Work/gitHub/Casper && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/michal/Work/gitHub/Casper /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0 /home/michal/Work/gitHub/Casper /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0 /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/depend
 

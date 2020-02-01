@@ -48,10 +48,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/michal/Work/gitHub/LOKI
+CMAKE_SOURCE_DIR = /home/michal/Work/gitHub/Casper
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/michal/Work/gitHub/LOKI
+CMAKE_BINARY_DIR = /home/michal/Work/gitHub/Casper
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -126,14 +126,14 @@ install/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	cd /home/michal/Work/gitHub/LOKI && $(CMAKE_COMMAND) -E cmake_progress_start /home/michal/Work/gitHub/LOKI/CMakeFiles /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0/CMakeFiles/progress.marks
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/michal/Work/gitHub/LOKI/CMakeFiles 0
+	cd /home/michal/Work/gitHub/Casper && $(CMAKE_COMMAND) -E cmake_progress_start /home/michal/Work/gitHub/Casper/CMakeFiles /home/michal/Work/gitHub/Casper/Dependencies/json-3.5.0/CMakeFiles/progress.marks
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/michal/Work/gitHub/Casper/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
 clean:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/clean
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/clean
 .PHONY : clean
 
 # The main clean target
@@ -143,22 +143,22 @@ clean/fast: clean
 
 # Prepare targets for installation.
 preinstall: all
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/preinstall
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/preinstall
 .PHONY : preinstall
 
 # Prepare targets for installation.
 preinstall/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/preinstall
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/preinstall
 .PHONY : preinstall/fast
 
 # clear depends
 depend:
-	cd /home/michal/Work/gitHub/LOKI && $(CMAKE_COMMAND) -H$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
+	cd /home/michal/Work/gitHub/Casper && $(CMAKE_COMMAND) -H$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/rule
 
 # Convenience name for target.
@@ -168,12 +168,12 @@ ContinuousSubmit: Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/rule
 
 # fast build rule for target.
 ContinuousSubmit/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousSubmit.dir/build
 .PHONY : ContinuousSubmit/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/rule
 
 # Convenience name for target.
@@ -183,12 +183,12 @@ ContinuousMemCheck: Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/ru
 
 # fast build rule for target.
 ContinuousMemCheck/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousMemCheck.dir/build
 .PHONY : ContinuousMemCheck/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/rule
 
 # Convenience name for target.
@@ -198,12 +198,12 @@ ContinuousConfigure: Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/
 
 # fast build rule for target.
 ContinuousConfigure/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousConfigure.dir/build
 .PHONY : ContinuousConfigure/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/rule
 
 # Convenience name for target.
@@ -213,12 +213,12 @@ ExperimentalSubmit: Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/ru
 
 # fast build rule for target.
 ExperimentalSubmit/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalSubmit.dir/build
 .PHONY : ExperimentalSubmit/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/rule
 
 # Convenience name for target.
@@ -228,12 +228,12 @@ ExperimentalMemCheck: Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.di
 
 # fast build rule for target.
 ExperimentalMemCheck/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalMemCheck.dir/build
 .PHONY : ExperimentalMemCheck/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/rule
 
 # Convenience name for target.
@@ -243,12 +243,12 @@ ExperimentalTest: Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/rule
 
 # fast build rule for target.
 ExperimentalTest/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalTest.dir/build
 .PHONY : ExperimentalTest/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/rule
 
 # Convenience name for target.
@@ -258,12 +258,12 @@ ContinuousTest: Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/rule
 
 # fast build rule for target.
 ContinuousTest/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousTest.dir/build
 .PHONY : ContinuousTest/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/rule
 
 # Convenience name for target.
@@ -273,12 +273,12 @@ ContinuousUpdate: Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/rule
 
 # fast build rule for target.
 ContinuousUpdate/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousUpdate.dir/build
 .PHONY : ContinuousUpdate/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/rule
 
 # Convenience name for target.
@@ -288,12 +288,12 @@ ExperimentalBuild: Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/rule
 
 # fast build rule for target.
 ExperimentalBuild/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalBuild.dir/build
 .PHONY : ExperimentalBuild/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/rule
 
 # Convenience name for target.
@@ -303,12 +303,12 @@ NightlyMemoryCheck: Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/ru
 
 # fast build rule for target.
 NightlyMemoryCheck/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyMemoryCheck.dir/build
 .PHONY : NightlyMemoryCheck/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/rule
 
 # Convenience name for target.
@@ -318,12 +318,12 @@ NightlyBuild: Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/rule
 
 # fast build rule for target.
 NightlyBuild/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyBuild.dir/build
 .PHONY : NightlyBuild/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/rule
 
 # Convenience name for target.
@@ -333,12 +333,12 @@ ExperimentalUpdate: Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/ru
 
 # fast build rule for target.
 ExperimentalUpdate/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalUpdate.dir/build
 .PHONY : ExperimentalUpdate/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/rule
 
 # Convenience name for target.
@@ -348,12 +348,12 @@ ContinuousBuild: Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/rule
 
 # fast build rule for target.
 ContinuousBuild/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousBuild.dir/build
 .PHONY : ContinuousBuild/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/rule
 
 # Convenience name for target.
@@ -363,12 +363,12 @@ Continuous: Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/rule
 
 # fast build rule for target.
 Continuous/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Continuous.dir/build
 .PHONY : Continuous/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/rule
 
 # Convenience name for target.
@@ -378,12 +378,12 @@ Experimental: Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/rule
 
 # fast build rule for target.
 Experimental/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Experimental.dir/build
 .PHONY : Experimental/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/rule
 
 # Convenience name for target.
@@ -393,12 +393,12 @@ ExperimentalConfigure: Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.
 
 # fast build rule for target.
 ExperimentalConfigure/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalConfigure.dir/build
 .PHONY : ExperimentalConfigure/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/rule
 
 # Convenience name for target.
@@ -408,12 +408,12 @@ NightlyStart: Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/rule
 
 # fast build rule for target.
 NightlyStart/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyStart.dir/build
 .PHONY : NightlyStart/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/rule
 
 # Convenience name for target.
@@ -423,12 +423,12 @@ NightlyTest: Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/rule
 
 # fast build rule for target.
 NightlyTest/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyTest.dir/build
 .PHONY : NightlyTest/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/rule
 
 # Convenience name for target.
@@ -438,12 +438,12 @@ NightlyUpdate: Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/rule
 
 # fast build rule for target.
 NightlyUpdate/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyUpdate.dir/build
 .PHONY : NightlyUpdate/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/rule
 
 # Convenience name for target.
@@ -453,12 +453,12 @@ ContinuousCoverage: Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/ru
 
 # fast build rule for target.
 ContinuousCoverage/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousCoverage.dir/build
 .PHONY : ContinuousCoverage/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/rule
 
 # Convenience name for target.
@@ -468,12 +468,12 @@ ExperimentalStart: Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/rule
 
 # fast build rule for target.
 ExperimentalStart/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalStart.dir/build
 .PHONY : ExperimentalStart/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/rule
 
 # Convenience name for target.
@@ -483,12 +483,12 @@ Nightly: Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/rule
 
 # fast build rule for target.
 Nightly/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/build.make Dependencies/json-3.5.0/CMakeFiles/Nightly.dir/build
 .PHONY : Nightly/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/rule
 
 # Convenience name for target.
@@ -498,12 +498,12 @@ NightlyConfigure: Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/rule
 
 # fast build rule for target.
 NightlyConfigure/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyConfigure.dir/build
 .PHONY : NightlyConfigure/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/rule
 
 # Convenience name for target.
@@ -513,12 +513,12 @@ NightlyCoverage: Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/rule
 
 # fast build rule for target.
 NightlyCoverage/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyCoverage.dir/build
 .PHONY : NightlyCoverage/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/rule
 
 # Convenience name for target.
@@ -528,12 +528,12 @@ ExperimentalCoverage: Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.di
 
 # fast build rule for target.
 ExperimentalCoverage/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ExperimentalCoverage.dir/build
 .PHONY : ExperimentalCoverage/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/rule
 
 # Convenience name for target.
@@ -543,12 +543,12 @@ NightlyMemCheck: Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/rule
 
 # fast build rule for target.
 NightlyMemCheck/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlyMemCheck.dir/build
 .PHONY : NightlyMemCheck/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/rule
 
 # Convenience name for target.
@@ -558,12 +558,12 @@ ContinuousStart: Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/rule
 
 # fast build rule for target.
 ContinuousStart/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/build.make Dependencies/json-3.5.0/CMakeFiles/ContinuousStart.dir/build
 .PHONY : ContinuousStart/fast
 
 # Convenience name for target.
 Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/rule:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/rule
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f CMakeFiles/Makefile2 Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/rule
 .PHONY : Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/rule
 
 # Convenience name for target.
@@ -573,7 +573,7 @@ NightlySubmit: Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/rule
 
 # fast build rule for target.
 NightlySubmit/fast:
-	cd /home/michal/Work/gitHub/LOKI && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/build
+	cd /home/michal/Work/gitHub/Casper && $(MAKE) -f Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/build.make Dependencies/json-3.5.0/CMakeFiles/NightlySubmit.dir/build
 .PHONY : NightlySubmit/fast
 
 # Help Target
@@ -627,6 +627,6 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
-	cd /home/michal/Work/gitHub/LOKI && $(CMAKE_COMMAND) -H$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
+	cd /home/michal/Work/gitHub/Casper && $(CMAKE_COMMAND) -H$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

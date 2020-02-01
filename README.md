@@ -1,14 +1,14 @@
-# LOKI
+# Casper
 
-LOKI is the application designed to analyse climatological (temperature, pressure, water vapor pressure), GNSS (atmospheric delays, IWV) or other time-series.
+Casper is the application designed to ...
 
 ##### Core developer: Michal Elias 
 ##### Email: misko_elias@yahoo.com 
-##### Web: www.michalelias.com/LOKI.htm
+##### Web: www.michalelias.com/Casper.htm
 ##### Version: [0.0.11.-alpha]
 ##### Manual: TBD
 
-LOKI uses Third party tools/libraries
+Casper uses Third party tools/libraries
 * JSON parser [1] to create a parser
 * Logger [2] to create a logger file
 * Newmat library [3], [4] for matrix calculations
@@ -19,13 +19,13 @@ LOKI uses Third party tools/libraries
 
 > sudo apt-get install gnuplot
 
-### Run LOKI
+### Run Casper
 
 1. cd Development
 2. cmake ../CMakeLists.txt (*)
 3. cd ..
 4. make
-5. ./Build/LOKI
+5. ./Build/Casper
 
 ##### (*) Problem with builder
 ```

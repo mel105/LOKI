@@ -1,12 +1,12 @@
 #!/bin/bash
 
-rm ../LOKI/gnuplot/*
+rm ../Casper/gnuplot/*
 
-rm ../LOKI/gnuplot/eps/*
+rm ../Casper/gnuplot/eps/*
 
-rm -r ../Build/ ../CMakeCache.txt ../CMakeFiles/ ../cmake_install.cmake ../Makefile ../LOKI.*
+rm -r ../Build/ ../CMakeCache.txt ../CMakeFiles/ ../cmake_install.cmake ../Makefile ../Casper.*
 
-rm -r ../LOKI/CMakeFiles/ ../LOKI/cmake_install.cmake ../LOKI/Makefile
+rm -r ../Casper/CMakeFiles/ ../Casper/cmake_install.cmake ../Casper/Makefile
 
 cd ../Development
 
