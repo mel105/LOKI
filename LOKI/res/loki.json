@@ -1,0 +1,41 @@
+{
+  "general": {
+    "plotOnOff": "off"
+  },
+  "input": {
+    "inputName": "example.2",
+    "inputFolder": "/Data",
+    "inputFormat": "td",
+    "inputDataCol": 3,
+    "inputResolution": 86400.0,
+    "inputConvTdDd": true
+  },
+    "output": {
+    "outputName": "LOKI.txt",
+    "outputHist": "LOKI.hst"
+  },
+  "stat": {
+    "statOnOff": "on",
+    "iqrCnfd": 2.5
+  },
+  "regression": {
+    "regressOnOff": "on",
+    "regModel": 1,
+    "regOrder": 1,
+    "elimTrend": true,
+    "elimSeas": false
+  },
+  "median": {
+    "medianOnOff": "on",
+    "fixedHour": true,
+    "constHour": 12
+  },
+  "reference": {
+    "referenceOnOff": "off"
+  },    
+  "detection": {
+    "detectionOnOff": "on",
+    "probCritVal": 0.95,
+    "limitDepedence": 0.5
+  }
+}
