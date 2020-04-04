@@ -11,22 +11,22 @@
     "inputConvTdDd": true
   },
     "output": {
-    "outputName": "LOKI.txt",
-    "outputHist": "LOKI.hst"
+    "outputName": "00LOKI.txt",
+    "outputHist": "00LOKI.hst"
   },
   "stat": {
-    "statOnOff": "on",
+    "statOnOff": "off",
     "iqrCnfd": 2.5
   },
   "regression": {
-    "regressOnOff": "on",
+    "regressOnOff": "off",
     "regModel": 1,
     "regOrder": 1,
     "elimTrend": true,
     "elimSeas": false
   },
   "median": {
-    "medianOnOff": "on",
+    "medianOnOff": "off",
     "fixedHour": true,
     "constHour": 12
   },
@@ -34,7 +34,7 @@
     "referenceOnOff": "off"
   },    
   "detection": {
-    "detectionOnOff": "on",
+    "detectionOnOff": "off",
     "probCritVal": 0.95,
     "limitDepedence": 0.5
   }

@@ -313,7 +313,7 @@ void t_stat::_calcSdev()
 void t_stat::_calcVare()
 {
    this->_calcSdev(); double stde = getSdev();
-   
+    
    _vare = pow(stde, 2.0);
    
 }

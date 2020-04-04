@@ -39,6 +39,7 @@
 #include "appMedian.h"
 
 // - tst 
+#include "chp_tst.h" 
 #include "load_tst.h"
 #include "autoCov_tst.h"
 #include "mjd_tst.h"
@@ -154,8 +155,9 @@ int main(int argc, char ** argv)
   //tstMJD();
   /*SYNTHETIC SHIFTS*/
   //tstSYNTH();
-  
-  
+  /*Chp method testing*/
+  manager();
+    
   /// LOKI::DATA Filling to the coredata class
   ofile << "# Software: LOKI\n";
   ofile << "# Version: " << version.Version() << "\n";
