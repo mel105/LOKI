@@ -1,4 +1,5 @@
 #include "appMedian.h"
+#include "appDetection.h"
 #include "chp_tst.h"
 #include "autoCov.h"
 #include "convTDtoDD.h"
@@ -111,36 +112,92 @@ void manager()
   //default_random_engine generator;
   uniform_int_distribution<> distPocet(1, 5);
   int pocet = distPocet(genPocet);
+  cout << "Pocet change pointov: " << pocet << endl;
   
   /// vygenerovana epocha
   /// Initialize Mersenne Twister pseudo-random number generator
   mt19937 genChangePoint(rd());
   //default_random_engine generator;
   uniform_int_distribution<> distChangePoint(floor(beg->first), floor(end->first));
-  for ( int iChp = 0; iChp <= pocet; ++iChp ) {
+  vector<int> epoIdxVec;
+  
+  for ( int iChp = 0; iChp < pocet; iChp++ ) {
     
-    int epo = distChangePoint(genChangePoint);
-    cout << epo << endl;
+    int epo = distChangePoint(genChangePoint); epoIdxVec.push_back(epo);
+    cout << "Vygenerovane idxs epoch: " << epo << endl;
   }
   
   /// vygenerovany offset
   /// Initialize Mersenne Twister pseudo-random number generator
   mt19937 genOffset(rd());
   //default_random_engine generator;
+  vector<double> offVec;
+  
   uniform_real_distribution<double> distOffset(-vare, vare);
-  for ( int iOff = 0; iOff <= pocet; ++iOff ) {
+  for ( int iOff = 0; iOff < pocet; iOff++ ) {
     
-    double offset = distOffset(genOffset);
-    cout << offset << endl;
+    double offset = distOffset(genOffset); offVec.push_back(offset);
+    
+    cout << "Vygenerovane offsety: " << offset << endl;
   }
 
+  /// ZAVEDENIE OFFSETOV DO ORIGINALNEJ RADY
+  #ifdef DEBUG
+  for (map<double, double>::iterator it = origData.begin(); it!=origData.end(); ++it)
+     cout << it->first << "  " << it->second << endl;
+
+  map<double, double>::iterator itFind;
+  
+  for (int iPoc = 0; iPoc < pocet; iPoc++) {
+    
+    itFind = origData.find(epoIdxVec[iPoc]);
+    
+    if (itFind != origData.end()) {
+      
+      cout << iPoc << "  " <<  epoIdxVec[iPoc] <<  "  " <<  itFind -> first << endl;
+    }
+  }
+  #endif
+  
+  int idx = 0;
+  
+  map<string, double> newTestval; newTestval = Testval;
+  for (int iO = 0; iO < pocet; iO++) {
+      
+    for (map<string, double>::iterator itSet = Testval.begin(); itSet != Testval.end(); ++itSet) {
+        
+      if (idx >= epoIdxVec[iO]) {
+
+        newTestval[itSet->first] = itSet->second + offVec[iO];
+      }
+      
+      idx++;
+    }
+  }
+  
+  //#ifdef DEBUG
+  int aIdx = 1;
+  for (map<string, double>::iterator it = Testval.begin(); it!=Testval.end(); ++it) {
+     
+     map<string, double>::iterator itNew = newTestval.find(it->first);
+  
+    if ( itNew != newTestval.end()) {
+       
+      t_timeStamp mTimeStamp(it->first);
+      cout << aIdx << "  " << mTimeStamp.timeStamp() << "  " << it->second << " " << itNew->second << endl;
+    }
+
+    aIdx++;
+  }
+  
+  //#endif
+     
   /// ELIMINOVANIE SEZONNEJ ZLOZKY
   t_coredata * coredata = new t_coredata(Testval);
-  new t_appMedian(setting, coredata);
-  
-  
-  
+  //  new t_appMedian(setting, coredata);
+   
   /// DETEKOVANIE CHANGE POINTU
+  //  new t_appDetection(setting, coredata);
   
   /// NAVRH PROTOKOLOV
   
@@ -153,6 +210,7 @@ void manager()
   
   
   /// Delete
+//  if ( 
   if ( coredata ) delete coredata ;
   if ( setting  ) delete setting  ;
 }
