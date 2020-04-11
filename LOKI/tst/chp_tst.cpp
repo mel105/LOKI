@@ -114,103 +114,89 @@ void manager()
   int pocet = distPocet(genPocet);
   cout << "Pocet change pointov: " << pocet << endl;
   
-  /// vygenerovana epocha
-  /// Initialize Mersenne Twister pseudo-random number generator
-  mt19937 genChangePoint(rd());
-  //default_random_engine generator;
-  uniform_int_distribution<> distChangePoint(floor(beg->first), floor(end->first));
-  vector<int> epoIdxVec;
-  
-  for ( int iChp = 0; iChp < pocet; iChp++ ) {
-    
-    int epo = distChangePoint(genChangePoint); epoIdxVec.push_back(epo);
-    cout << "Vygenerovane idxs epoch: " << epo << endl;
-  }
-  
-  /// vygenerovany offset
-  /// Initialize Mersenne Twister pseudo-random number generator
-  mt19937 genOffset(rd());
-  //default_random_engine generator;
-  vector<double> offVec;
-  
-  uniform_real_distribution<double> distOffset(-vare, vare);
-  for ( int iOff = 0; iOff < pocet; iOff++ ) {
-    
-    double offset = distOffset(genOffset); offVec.push_back(offset);
-    
-    cout << "Vygenerovane offsety: " << offset << endl;
-  }
-
-  /// ZAVEDENIE OFFSETOV DO ORIGINALNEJ RADY
-  #ifdef DEBUG
-  for (map<double, double>::iterator it = origData.begin(); it!=origData.end(); ++it)
-     cout << it->first << "  " << it->second << endl;
-
-  map<double, double>::iterator itFind;
-  
-  for (int iPoc = 0; iPoc < pocet; iPoc++) {
-    
-    itFind = origData.find(epoIdxVec[iPoc]);
-    
-    if (itFind != origData.end()) {
+   /// vygenerovana epocha
+   /// Initialize Mersenne Twister pseudo-random number generator
+   mt19937 genChangePoint(rd());
+   //default_random_engine generator;
+   uniform_int_distribution<> distChangePoint(floor(beg->first), floor(end->first));
+   vector<int> epoIdxVec;
+   
+   for ( int iChp = 0; iChp < pocet; iChp++ ) {
       
-      cout << iPoc << "  " <<  epoIdxVec[iPoc] <<  "  " <<  itFind -> first << endl;
-    }
-  }
-  #endif
+      int epo = distChangePoint(genChangePoint); epoIdxVec.push_back(epo);
+   }
   
-  int idx = 0;
-  
-  map<string, double> newTestval; newTestval = Testval;
-  for (int iO = 0; iO < pocet; iO++) {
+   /// vygenerovany offset
+   /// Initialize Mersenne Twister pseudo-random number generator
+   mt19937 genOffset(rd());
+   //default_random_engine generator;
+   vector<double> offVec;
+   
+   uniform_real_distribution<double> distOffset(-vare, vare);
+   for ( int iOff = 0; iOff < pocet; iOff++ ) {
       
-    for (map<string, double>::iterator itSet = Testval.begin(); itSet != Testval.end(); ++itSet) {
-        
-      if (idx >= epoIdxVec[iO]) {
+      double offset = distOffset(genOffset); offVec.push_back(offset);
+   }
+   
+   // synthetic data sorting
+   map<int, double> synthOff;
+   for (int i = 0; i<pocet; i++) { cout << "zoznam umelych dat  " << epoIdxVec[i] << " " << offVec[i] << endl; synthOff[epoIdxVec[i]] = offVec[i]; }
+         
+   /// ZAVEDENIE OFFSETOV DO ORIGINALNEJ RADY
+   map<string, double> newTestval; newTestval = Testval;
+   for (map<int, double>::iterator iO = synthOff.begin(); iO != synthOff.end(); iO++) { // 
+      
+      int idx = 0;      
 
-        newTestval[itSet->first] = itSet->second + offVec[iO];
+      for (map<string, double>::iterator itSet = Testval.begin(); itSet != Testval.end(); ++itSet) {
+        	 
+	 if (idx >= iO->first) {
+	    
+	    newTestval[itSet->first] = itSet->second + iO->second;
+	 }
+	 
+	 idx++;
+      } // end for loop
+   }
+   
+#ifdef DEBUG
+   int aIdx = 1;
+   for (map<string, double>::iterator it = Testval.begin(); it!=Testval.end(); ++it) {
+     
+      map<string, double>::iterator itNew = newTestval.find(it->first);
+      
+      if ( itNew != newTestval.end()) {
+	 
+	 t_timeStamp mTimeStamp(it->first);
+
+	 cout << aIdx << "  " << mTimeStamp.timeStamp() << "  " << it->second << " " << itNew->second << "  " << it->second - itNew->second << endl;
+
       }
       
-      idx++;
-    }
-  }
-  
-  //#ifdef DEBUG
-  int aIdx = 1;
-  for (map<string, double>::iterator it = Testval.begin(); it!=Testval.end(); ++it) {
-     
-     map<string, double>::iterator itNew = newTestval.find(it->first);
-  
-    if ( itNew != newTestval.end()) {
-       
-      t_timeStamp mTimeStamp(it->first);
-      cout << aIdx << "  " << mTimeStamp.timeStamp() << "  " << it->second << " " << itNew->second << endl;
-    }
-
-    aIdx++;
-  }
-  
-  //#endif
-     
-  /// ELIMINOVANIE SEZONNEJ ZLOZKY
-  t_coredata * coredata = new t_coredata(Testval);
-  //  new t_appMedian(setting, coredata);
+      aIdx++;
+   }
+#endif
    
-  /// DETEKOVANIE CHANGE POINTU
-  //  new t_appDetection(setting, coredata);
+   /// VLOZENIE DAT DO COREDATA
+   t_coredata * coredata = new t_coredata(newTestval);
+   
+   /// ELIMINOVANIE SEZONNEJ ZLOZKY
+   new t_appMedian(setting, coredata);
+   
+   /// DETEKOVANIE CHANGE POINTU
+   new t_appDetection(setting, coredata);
   
-  /// NAVRH PROTOKOLOV
+   /// NAVRH PROTOKOLOV
   
-  /// TP, FP, TN, FN STATISTKY A CELKOVE PREHLADY. NAPR:
-  ///   1. AKA JE CETNOST GENEROVANYCH CH.P. KEBY SOM ICH POLOHY ROZDELIL NA TRETINY V RAMCI ORIG.
-  ///      CASOVEJ RADY
-  ///   2. AKA JE USPESNOST DETEKOVANIA VZHLADOM K NASTAVENIU, T.J. POLOHA CHANGE POINTU VZ. 
-  ///      VELKOST SKOKU
-  ///   3. AKY JE EFEKT AR MODELU?
-  
-  
-  /// Delete
-//  if ( 
-  if ( coredata ) delete coredata ;
-  if ( setting  ) delete setting  ;
+   /// TP, FP, TN, FN STATISTKY A CELKOVE PREHLADY. NAPR:
+   ///   1. AKA JE CETNOST GENEROVANYCH CH.P. KEBY SOM ICH POLOHY ROZDELIL NA TRETINY V RAMCI ORIG.
+   ///      CASOVEJ RADY
+   ///   2. AKA JE USPESNOST DETEKOVANIA VZHLADOM K NASTAVENIU, T.J. POLOHA CHANGE POINTU VZ. 
+   ///      VELKOST SKOKU
+   ///   3. AKY JE EFEKT AR MODELU?
+   
+   
+   /// Delete
+   if ( coredata ) delete coredata ;
+   if ( setting  ) delete setting  ;
 }
