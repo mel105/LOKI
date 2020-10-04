@@ -58,7 +58,7 @@ void manager()
   map<double, double>  testval;
   map<string, double> Testval;
   
-  // todo: toto aj v maine treba doriesit. Uz neviem, ze ako som to riesil
+  // todo: .here possible problem
   if ( inputFormat == "dd" ) {
     
     testval = load.getTestval();
@@ -86,12 +86,12 @@ void manager()
   }
   */   
   
-  /// ak td, potom convertuj na dd.
+  /// if td, then convert to  dd.
   t_fromTDtoDD fromTDtoDD; map<double, double> origData = fromTDtoDD.FromTDtoDD(Testval);
-  map<double, double>::const_iterator beg = origData.begin(); // pociatok casovej rady
-  map<double, double>::reverse_iterator end = origData.rbegin(); // koniec casovej rady
+  map<double, double>::const_iterator beg = origData.begin(); // time series begining
+  map<double, double>::reverse_iterator end = origData.rbegin(); // end of time series
   
-  /// POPISNA STATISTIKA
+  /// statistic
   vector<double> toStat;
   for (map<double, double>::iterator it = origData.begin(); it != origData.end(); ++it) {
     
@@ -102,19 +102,18 @@ void manager()
   stat.calcSdev(); double sdev = stat.getSdev();
   stat.calcVare(); double vare = stat.getVare();
   
-  /// VYGENEROVANIE NAHODNEHO BODU ZMENY A NAHODNEHO SKOKU. BUDE POTREBA NAPISAT VHODNY GENERATOR.
+  /// synthetic change point generation
   /// Random seed
   random_device rd;
   
-  /// vygenerovany pocet zmien
   /// Initialize Mersenne Twister pseudo-random number generator
   mt19937 genPocet(rd());
   //default_random_engine generator;
   uniform_int_distribution<> distPocet(1, 5);
   int pocet = distPocet(genPocet);
-  cout << "Pocet change pointov: " << pocet << endl;
+  cout << "Number of change points: " << pocet << endl;
   
-   /// vygenerovana epocha
+   /// generated epoch
    /// Initialize Mersenne Twister pseudo-random number generator
    mt19937 genChangePoint(rd());
    //default_random_engine generator;
@@ -126,7 +125,7 @@ void manager()
       int epo = distChangePoint(genChangePoint); epoIdxVec.push_back(epo);
    }
   
-   /// vygenerovany offset
+   /// generated offset
    /// Initialize Mersenne Twister pseudo-random number generator
    mt19937 genOffset(rd());
    //default_random_engine generator;
@@ -140,9 +139,9 @@ void manager()
    
    // synthetic data sorting
    map<int, double> synthOff;
-   for (int i = 0; i<pocet; i++) { cout << "zoznam umelych dat  " << epoIdxVec[i] << " " << offVec[i] << endl; synthOff[epoIdxVec[i]] = offVec[i]; }
+   for (int i = 0; i<pocet; i++) { cout << "List of synthetic change points  " << epoIdxVec[i] << " " << offVec[i] << endl; synthOff[epoIdxVec[i]] = offVec[i]; }
          
-   /// ZAVEDENIE OFFSETOV DO ORIGINALNEJ RADY
+   ///
    map<string, double> newTestval; newTestval = Testval;
    for (map<int, double>::iterator iO = synthOff.begin(); iO != synthOff.end(); iO++) { // 
       
@@ -177,13 +176,13 @@ void manager()
    }
 #endif
    
-   /// VLOZENIE DAT DO COREDATA
+   /// data adding into the coredata
    t_coredata * coredata = new t_coredata(newTestval);
    
-   /// ELIMINOVANIE SEZONNEJ ZLOZKY
+   /// deseasonalising
    new t_appMedian(setting, coredata);
    
-   /// DETEKOVANIE CHANGE POINTU
+   /// change point detection
    new t_appDetection(setting, coredata);
   
    /// NAVRH PROTOKOLOV

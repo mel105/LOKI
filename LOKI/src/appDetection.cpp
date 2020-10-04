@@ -284,8 +284,8 @@ int t_appDetection::_processChangePointDetection()
        << "\n# TS end [idx]       " << _timeData.size()
        << "\n# Chp [idx]          " << _suspectedChangeIdx
        << "\n# Chp [Stamp/MJD]    " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp()               << "  "  << convMjd.mjd()
-       << "\n# Conf. Inter [from] " << ( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp() << "  "  << convLow.mjd()
-       << "\n#             [to]   " << ( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp() << "  "  << convUpp.mjd()
+//       << "\n# Conf. Inter [from] " << ( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp() << "  "  << convLow.mjd()
+//       << "\n#             [to]   " << ( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp() << "  "  << convUpp.mjd()
        << "\n# Shift [-]          " << fixed << setprecision(2) << changePoint->getShift()
        << "\n# Critical value     " << changePoint->getCritVal()
        << "\n# Max Tk             " << changePoint->getMaxTK()
@@ -343,19 +343,21 @@ int t_appDetection::_processChangePointDetection()
           t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
           _listOfChpsMJD.push_back( convMjd.mjd() );
           
-          cout << "appDetection " << changePoint->getLowConfInterIdx()+iBeg << "  " << suspectedPointIdx << "  " << changePoint->getUppConfInterIdx()+iBeg << endl;
+	  //cout << "appDetection " << changePoint->getLowConfInterIdx()+iBeg << "  " << suspectedPointIdx << "  " << changePoint->getUppConfInterIdx()+iBeg << endl;
           
           
           //#ifdef DEBUG
           t_timeStamp convLow(( _timeData[ changePoint->getLowConfInterIdx() + iBeg -1 ] ).timeStamp());
-          t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp());          
+          t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp());
+
+	  // todo: must to improve the confidence intervals estimation
         ofile
              << "\n# TS beg [idx]    " << iBeg
              << "\n# TS end [idx]    " << iEnd
              << "\n# Chp [idx]       " << suspectedPointIdx
              << "\n# Chp [Stamp/MJD] " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()                        << "  " << convMjd.mjd()
-             << "\n# CI.[from]       " << ( _timeData[ changePoint->getLowConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convLow.mjd()
-             << "\n#    [to]         " << ( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convUpp.mjd()                            
+//             << "\n# CI.[from]       " << ( _timeData[ changePoint->getLowConfInterIdx() - iBeg -1 ] ).timeStamp() << "  " << convLow.mjd()
+//             << "\n#    [to]         " << ( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convUpp.mjd()                            
              << "\n# Shift [-]       " << fixed << setprecision(2) << changePoint->getShift()
              << "\n# Critical value  " << changePoint->getCritVal()
              << "\n# Max Tk          " << changePoint->getMaxTK()
@@ -467,13 +469,13 @@ map<int, int> t_appDetection::_prepareIntervals( vector<int>& idxVec )
       
       // If the subseries interval is small (<300), probably does not have any sense to continue 
       // in change point detection process.
-      if ( (end - beg) <= 300 ) {
+     /* if ( (end - beg) <= 300 ) {
         
          _statInter[beg] = end;
       } else {
         
         intervals[beg] = end;
-      }
+      }*/
     }
   }
   

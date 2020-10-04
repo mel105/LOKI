@@ -156,7 +156,7 @@ int main(int argc, char ** argv)
   /*SYNTHETIC SHIFTS*/
   //tstSYNTH();
   /*Chp method testing*/
-  manager();
+  //manager();
     
   /// LOKI::DATA Filling to the coredata class
   ofile << "# Software: LOKI\n";

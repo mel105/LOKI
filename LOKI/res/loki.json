@@ -26,7 +26,7 @@
     "elimSeas": false
   },
   "median": {
-    "medianOnOff": "off",
+    "medianOnOff": "on",
     "fixedHour": true,
     "constHour": 12
   },
@@ -34,7 +34,7 @@
     "referenceOnOff": "off"
   },    
   "detection": {
-    "detectionOnOff": "off",
+    "detectionOnOff": "on",
     "probCritVal": 0.95,
     "limitDepedence": 0.5
   }

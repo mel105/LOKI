@@ -142,7 +142,7 @@ t_changePoint::t_changePoint(t_setting* setting,  t_coredata* coredata, int& iBe
     this->_detectChangePoint();
   } else {
     
-    cout << " asi nema cenu pocitat change point, ak je rozmer rady maly." << endl;
+    cout << " " << endl;
   }
    */ 
 }
@@ -323,13 +323,13 @@ void t_changePoint::_detectChangePoint()
 void t_changePoint::_testHypothesis()
 {
   
-//#ifdef DEBUG
+#ifdef DEBUG
   cout << fixed << setprecision(5)
      << " _testHypothesis\n"
-     << " \n_maxTK" << _maxTK
-     << " \n_criticalVal " << _criticalVal << endl;
-//#endif
-  
+     << " \n_maxTK: " << _maxTK
+     << " \n_criticalVal: " << _criticalVal << endl;
+#endif
+ 
   if(_maxTK > _criticalVal) {
     
     _resultOfStationarity = "non-stationary";                
