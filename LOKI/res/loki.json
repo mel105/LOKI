@@ -11,8 +11,8 @@
     "inputConvTdDd": true
   },
     "output": {
-    "outputName": "00LOKI.txt",
-    "outputHist": "00LOKI.hst"
+    "outputName": "LOKI.txt",
+    "outputHist": "LOKI.hst"
   },
   "stat": {
     "statOnOff": "off",
@@ -36,6 +36,6 @@
   "detection": {
     "detectionOnOff": "on",
     "probCritVal": 0.95,
-    "limitDepedence": 0.5
+    "limitDepedence": 0.4
   }
 }
