@@ -45,13 +45,27 @@ t_load::t_load( t_setting* setting )
   _dataFormat = loadSetting[2];
   _convTdDd = convTdDd;
   _dataCol = setting->getInputDataCol();
-    
+
+  // .check data file name and return file names vector
+  this->_checkDataNameString();
+}
+
+
+// .public functions
+void t_load::setDataFileName(string actualName){
+
+   _dataName = actualName;
+}
+
+// -
+void t_load::readData(){
+   
   if (_dataFormat == "d") {
     
     // will open the file with only the one column
   }
-  else if (_dataFormat == "dd") {
-
+   else if (_dataFormat == "dd") {
+      
     // key: int    val: double
     // key: double val: double
     this->_doubleFormat();
@@ -65,8 +79,10 @@ t_load::t_load( t_setting* setting )
     
     ERR(":......t_load::......Requested input data format is not supported!");
   }
+    
 }
 
+// -
 map<double, double> t_load::getTestval() {
   
   return _data;
@@ -77,6 +93,28 @@ map<string, double> t_load::getTimeTestval() {
   return _dataTime;
 }
 
+vector<string> t_load::getDataFiles() {
+   
+  return _dataFileNamesVector;
+}
+
+
+// Protected functions
+// -
+void t_load::_checkDataNameString()
+{
+
+   replace(_dataName.begin(), _dataName.end(), ';', ' ');  // ';' replaced by ' '
+   
+   stringstream ss(_dataName);
+   string temp;
+   while (ss >> temp) {
+
+       _dataFileNamesVector.push_back(temp);
+   }
+        
+//   cout << _dataFileNamesVector.size() << endl;
+}
 
 // -
 void t_load::_timeFormat()  

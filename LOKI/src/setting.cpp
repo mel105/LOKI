@@ -85,29 +85,36 @@ t_setting::t_setting()
 
 // general
 string t_setting::getPlotOnOff() { return _plotOnOff; }
+
 // input
 vector <string> t_setting::getLoadSetting() { return _loadSetting; }
 int t_setting::getInputDataCol() { return _inputDataCol; }
 bool t_setting::getInputConvTdDd() { return _inputConvTdDd; }
 double t_setting::getInputResolution() { return _inputResolution; }
+
 // output   
 string t_setting::getOutputName() { return _outputName; }
 string t_setting::getOutputHist() { return _outputHist; }
+
 // statistics
 string t_setting::getStatOnOff() { return _statOnOff; }
 double t_setting::getIqrCnfd() { return _iqrCnfd; }
+
 // regression
 string t_setting::getRegressOnOff() { return _regressOnOff; }
 int    t_setting::getRegModel() { return _regModel; }
 int    t_setting::getRegOrder() { return _regOrder; }
 bool   t_setting::getElimTrend() { return _elimTrend; } 
 bool   t_setting::getElimSeas() { return _elimSeas; }
+
 // median
 string t_setting::getMedianOnOff() { return _medianOnOff; }
 int    t_setting::getConstHour() { return _constHour; }
 bool   t_setting::getFixedHour() { return _fixedHour; }
+
 // reference
 string t_setting::getReferenceOnOff() { return _referenceOnOff; }
+
 // detectionization
 string t_setting::getDetectionOnOff() { return _detectionOnOff; }
 double t_setting::getProbCritVal() { return _probCritVal; }

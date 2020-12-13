@@ -383,7 +383,7 @@ void t_changePoint::_estimateConfidenceInterval()
   _uppConfIdx = _idxMaxPOS + floor(mValue);
   _lowConfIdx = _idxMaxPOS - floor(mValue);
   
-  cout << "changePoint " << _lowConfIdx << "  " << _idxMaxPOS << "  " << _uppConfIdx << endl;
+//  cout << ".change point detection result: " << _idxMaxPOS << endl;
 }
 // -
 void t_changePoint::_estimatePValue()

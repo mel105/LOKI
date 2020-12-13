@@ -47,8 +47,10 @@ class t_load
    virtual ~t_load(){};
    
    map<double, double> getTestval();
-
    map<string, double> getTimeTestval();
+   vector<string> getDataFiles();
+   void setDataFileName(string actualName);
+   void readData();
    
  protected:
    
@@ -63,9 +65,11 @@ class t_load
    
    map<double, double> _data;
    map<string, double> _dataTime;
+   vector<string> _dataFileNamesVector;
    
    void _doubleFormat();
    void _timeFormat();
+   void _checkDataNameString();
    
 };
 
