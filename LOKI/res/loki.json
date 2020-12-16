@@ -1,13 +1,13 @@
 {
   "general": {
-    "plotOnOff": "off"
+    "plotOnOff": "on"
   },
   "input": {
-    "inputName": "example.1",
+    "inputName": "example.2",
     "inputFolder": "/Data",
     "inputFormat": "td",
     "inputDataCol": 3,
-    "inputResolution": 21600.0,
+    "inputResolution": 86400.0,
     "inputConvTdDd": true
   },
     "output": {
