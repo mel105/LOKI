@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
    clock_t start = clock();
    
    /// .set and get version
-   t_version version("0","0","19", "alpha");
+   t_version version("0","0","21", "alpha");
    LOG1(":.main::*** Version: " , version.Version());
    LOG1(":.main::*** Compiled: ", COMPILED);
    
@@ -98,6 +98,7 @@ int main(int argc, char ** argv)
    hfile << "[2019-03-13] [mel] -> [plot] Added gnuplot for simple figures ploting; Added external class for time-string handling\n";
    hfile << "[2019-05-01] [mel] -> [load] Data file's decoder improving\n";
    hfile << "[2020-12-13] [mel] -> [main] Multi-files processing\n";
+   hfile << "[2020-12-15] [mel] -> [main] Multi-change point detection\n";   
    
    /// .data loading
    t_load load(setting);
@@ -106,7 +107,8 @@ int main(int argc, char ** argv)
    vector<string> dataNames = load.getDataFiles();
    
    for (auto i = dataNames.begin(); i!= dataNames.end(); ++i) {
-      
+	
+            
       // .set actual file name
       load.setDataFileName(*i);
       
@@ -176,6 +178,14 @@ int main(int argc, char ** argv)
       ofile << "# ----------------\n";
       ofile << "# Protocol created: " << asctime(localtm) << endl;
       
+      cout << "\n" << endl;
+      cout << "# File name: " << *i << endl;
+      cout << "\n" << endl;
+     
+      ofile << "\n" << endl;
+      ofile << "# File name: " << *i << endl;
+      ofile << "\n" << endl;
+      
       /// .copy pointers into the coredata object. ToDo: here could be problem with data decision. Check it!
       if (inputFormat == "dd") {
 	 
@@ -243,6 +253,7 @@ int main(int argc, char ** argv)
       ofile.close();
       hfile.close();
    }
+   
    
    if ( setting  ) delete setting  ;
    

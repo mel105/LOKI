@@ -92,6 +92,7 @@ class t_appDetection
    int _plotTimeSeries();
    int _processChangePointDetection();
    int _checkDeseasData();
+   void _basicInfo();
    
    map<int, int> _prepareIntervals( vector<int>& idxVec );
    
@@ -108,9 +109,10 @@ class t_appDetection
    m_dd _TK;
    m_dd _deseas;
    
-   int _N; // number of original data
+//   int _N; // number of original data
    int _counter;
    int _suspectedChangeIdx;
+   int _originalSize;
    
    double _CV;
    double _res;
@@ -134,9 +136,12 @@ class t_appDetection
    string _medianOnOff;
    string _referenceOnOff;
    string _adjustString;
+   string _firstRecord;
+   string _lastRecord;
    
    vector<string> _inpSett;
    vector<string> _listOfChpsString;
    vector<double> _listOfChpsMJD;
+   vector<int> _listOfChpsIdx;
 };
 #endif

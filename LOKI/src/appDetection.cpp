@@ -29,19 +29,20 @@
 
 using namespace NEWMAT;
 
-// contructor
-// -----------
+
+// .contructor
 t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
 {
    _coredata = coredata;
    _setting = setting;
    
-   /// .default setting
+   // .default setting
    _counter = 0;
    _result = "stationary";
    
-   /// .get setting & create log info
-   _inpSett = setting->getLoadSetting(); _fmt = _inpSett[2];
+   // .get setting & create log info
+   _inpSett = setting->getLoadSetting(); _fmt = _inpSett[2]; //_res = _inpSett[4];
+   //
    string outputName = setting->getOutputName(); _out = outputName;
    string outputHist = setting->getOutputHist(); _hst = outputHist;   
    string plotOnOff = setting->getPlotOnOff(); _plot = plotOnOff;
@@ -49,7 +50,7 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
    string medianOnOff = setting->getMedianOnOff(); _medianOnOff = medianOnOff;
    string referenceOnOff = setting->getReferenceOnOff(); _referenceOnOff = referenceOnOff;
    
-   /// .get actual working folder path
+   // .get actual working folder path
    t_workingDir workingDir; _gnp = workingDir.GetCurrentWorkingDir();
    
    bool conv = setting->getInputConvTdDd(); _conv = conv;
@@ -75,11 +76,6 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
       
       _Data = coredata -> getTimeData("origval");
       
-#ifdef DEBUG  
-      for(m_td::iterator it = _Data.begin(); it != _Data.end(); ++it)
-	cout << it->first << "  " << it->second << endl;
-#endif
-      
       if(!_Data.empty()) {
 	 
 	 LOG1(":...t_appDetection::......Loaded Original data container. Data size: ", _Data.size());
@@ -93,7 +89,10 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
       }
    }
    
-   /// .process time series homogenization
+   // .get basic info about the series
+   this->_basicInfo();
+   
+   // .process time series homogenization
    this->_processChangePointDetection();
    
    // .if request -> plot data
@@ -103,8 +102,29 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
    }
 }
 
-/// @Details
-///   - Function prepares data for further using!
+/*
+ *  .private functions
+ */
+
+// .function sumarizes basis info about the analysed time series
+void t_appDetection::_basicInfo()
+{
+   if (_fmt == "td" && !_Data.empty()) {
+      
+      _firstRecord = _Data.begin()->first;
+      _lastRecord = _Data.rbegin()->first;
+      _originalSize = _Data.size();
+   }
+   else if (_fmt == "dd" && !_data.empty()) {
+      
+   }
+   else {
+      // warning
+   }
+   
+}
+
+//  .function prepares data for further using!
 int t_appDetection::_prepareData()
 {
    
@@ -112,18 +132,12 @@ int t_appDetection::_prepareData()
    
    for(m_td::iterator it = _Data.begin(); it != _Data.end(); ++it) {
       
-      //t_timeStamp epo; epo = it->first;
-    _timeData.push_back(it->first);
+      _timeData.push_back(it->first);
    }
    
-   // convert data from string, double to the double, double
-   t_fromTDtoDD fromTDtoDD;  _data = fromTDtoDD.FromTDtoDD(_Data);
-   
-#ifdef DEBUG //ok: first epo is eliminated from rest of time epochs
-   for(m_dd::iterator it = _data.begin(); it != _data.end(); ++it)
-     cout << it->first << " prepared  " << it->second << endl;
-#endif
-   
+   // .convert data from string, double to the double, double
+   t_fromTDtoDD fromTDtoDD; _data = fromTDtoDD.FromTDtoDD(_Data);
+      
    if(!_data.empty()) {
       
       LOG1(":...t_appDetection::......Data transformation was successful. Data size: ", _data.size());
@@ -136,7 +150,7 @@ int t_appDetection::_prepareData()
    return 0;
 }
 
-// -
+// .manages the figures ploting
 int t_appDetection::_plotTimeSeries()
 {
    
@@ -144,18 +158,13 @@ int t_appDetection::_plotTimeSeries()
    
    t_plot mplot;
    
-   // Prepare data for plot
+   // .prepare data for plots creation
    if ( _data.empty() ||
 	_deseas.empty() ||
 	_TK.empty() ) {
       
       ERR(":...t_appDetection()::......Problem with plot creating!");
    }
-   
-#ifdef DEBUG //ok: 
-   for(m_dd::iterator it = _data.begin(); it != _data.end(); ++it)
-     cout << it->first << " plot  " << it->second << endl;
-#endif
    
    t_fromTDtoDD fromTDtoDD;
    m_dd mData = fromTDtoDD.FromTDtoDD(_data);
@@ -167,11 +176,9 @@ int t_appDetection::_plotTimeSeries()
    for(m_dd::iterator it = mData.begin(); it != mData.end(); ++it) {
       
       m_dd::iterator itD = mDeseas.find(it->first);
-      
       if (itD != mDeseas.end())	{
 	 
 	 m_dd::iterator itT = mTk.find(it->first);
-	 
 	 if (itT != mTk.end()) {
 	    
 	    mLine << fixed << setprecision(5)
@@ -186,7 +193,7 @@ int t_appDetection::_plotTimeSeries()
    
    mLine.close();
    
-   /// Plot
+   // .plot
    mplot.hTime();
    mplot.hDeseas();
    mplot.hTK();
@@ -196,38 +203,45 @@ int t_appDetection::_plotTimeSeries()
    return 0;
 }
 
-/// -
+// .function manages the change point detection process
 int t_appDetection::_processChangePointDetection()
 {
    
-   /// Output setting
+   // .output setting
    ofstream ofile(_out.c_str(), ios::out | ios::app);
-   ofile << "\n# ********************************************* \n";
-   ofile << "#   Change point detection and Detectionization   \n";
-   ofile << "# ********************************************* \n\n";
-   ofile << "\n# File name: " << _inpSett [0] << endl;
-   ofile << "# File folder: " << _inpSett [1] <<endl;
-   ofile << "# File format: " << _inpSett [2] << "\n\n" << endl;
+   ofile << "\n";
+   ofile << "# ******************************** \n";
+   ofile << "#   Change point detection results \n";
+   ofile << "# ******************************** \n";
+   ofile << "\n# First record:        " << _firstRecord  << endl;
+   ofile << "# Last record:         " << _lastRecord   << endl;   
+   ofile << "# File folder:         " << _inpSett [1]  << endl;
+   ofile << "# File format:         " << _inpSett [2]  << endl;
+   ofile << "# Data size:           " << _originalSize << endl;
+   ofile << "# Time resolution [s]: " << _res          << "\n" << endl;
    
-   //  ofile.close();
-   // 
-   // Pointers definition
+   // .results on screen
+   cout << "# ******************************** \n";
+   cout << "#   Change point detection results \n";
+   cout << "# ******************************** \n";
+   cout << "\n# First record:        " << _firstRecord  << endl;
+   cout << "# Last record:         " << _lastRecord   << endl;
+   cout << "# Data size:           " << _originalSize << endl;
+   cout << "# Time resolution [s]: " << _res          << endl;
+
+
+   // first epo, last epo, no of years
+   // .pointers to change point 
    t_changePoint * changePoint = 0;
    t_adjustSeries * adjustSeries = 0;
    
-   // Get deseasonalised data to change point detection process
+   // .if requested, get deseasonalised data to change point detection process
    if ( _regressOnOff == "on" || _medianOnOff == "on") {
       
       _deseas = _coredata -> getData("elimSeasonal");
       
-#ifdef DEBUG
-      for(m_dd::iterator i = _deseas.begin(); i != _deseas.end(); ++i)
-	cout << i->first << " appDetection " << i->second << endl;
-#endif
-      
       this -> _checkDeseasData(); _adjustString = "elimSeasonal";
-   }
-   else {
+   } else {
       
       WARN1(":...t_appDetection::......Seasonal model is not removed from the original data!");
       
@@ -236,204 +250,174 @@ int t_appDetection::_processChangePointDetection()
       this -> _checkDeseasData();  _adjustString = "origval";
    } 
    
-   _N = _deseas.size();
-  
-   /// Part A: Change point detection.
-   /// ---------------------------------------------------------------------------------------------
-   /// Provide process of change point detection
+   /*
+    * .change point detection object declaration.
+    */
+   
+   // .functions returns results of change point detection procedure
    changePoint = new t_changePoint( _setting, _coredata );
    
-   // Get index of suspected ch.p.
-   _suspectedChangeIdx = changePoint->getIdxMaxPOS();
-   
-   // Get shift
-   _shift = changePoint->getShift();
-   
-   // Get critical value
-   _CV = changePoint->getCritVal();
-   
-   // Get autocorrelation fun. value estimation (lag = 1)
-   _acf = changePoint->getACF();
-   
-   // Get p value
-   _pVal = changePoint->getPValue();
-   
-   // Get max TK statistic
-   _maxTk = changePoint->getMaxTK();
-   
-   // Get result about the stationarity
-   _result = changePoint->getResult();
-   
-   // Get vector of all TK statistics
-   _TK = changePoint->getTK();
+   // .get results
+   _suspectedChangeIdx = changePoint->getIdxMaxPOS(); // .estimated index of change point
+   _shift = changePoint->getShift(); // .estimated value of shigt
+   _CV = changePoint->getCritVal(); // .estimated critical value
+   _acf = changePoint->getACF(); // .estimated autocorrelation coefficient (lag = 1)
+   _pVal = changePoint->getPValue(); // .estimated p-value
+   _maxTk = changePoint->getMaxTK(); // .estimated max vlaue of Tk statistic
+   _result = changePoint->getResult(); // .get result - stationary or non-stationary
+   _TK = changePoint->getTK(); // .returns vector of Tk statistics
    
    LOG1(":...t_appDetection::......Loop: 0");
    
    if ( _result == "non-stationary" ) {
       
-      // add change point into the container
+      // .store change points into the specific containers
+      //   .list of potential change points epochs/possitions given as indexes
+      _listOfChpsIdx.push_back(_suspectedChangeIdx -1);
       _listOfChpsString.push_back( (_timeData[_suspectedChangeIdx -1]).timeStamp() );
       t_timeStamp convMjd((_timeData[_suspectedChangeIdx -1]).timeStamp());
+      //   .list of potential change points epochs/positions given as MJD (Modified Julian Date)
       _listOfChpsMJD.push_back( convMjd.mjd() );
       
-      //#ifdef DEBUG
       t_timeStamp convLow(( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp());
       t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp());          
-//      ofile
-      cout
-	<< "\n# TS beg [idx]       " << 0
+      ofile
+      	<< "\n# TS beg [idx]       " << 0
 	<< "\n# TS end [idx]       " << _timeData.size()
 	<< "\n# Chp [idx]          " << _suspectedChangeIdx
-	<< "\n# Chp [Stamp/MJD]    " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp()               << "  "  << convMjd.mjd()
-	//       << "\n# Conf. Inter [from] " << ( _timeData[ changePoint->getLowConfInterIdx() -1 ] ).timeStamp() << "  "  << convLow.mjd()
-	//       << "\n#             [to]   " << ( _timeData[ changePoint->getUppConfInterIdx() -1 ] ).timeStamp() << "  "  << convUpp.mjd()
+	<< "\n# Chp [Stamp/MJD]    " << ( _timeData[ _suspectedChangeIdx -1 ] ).timeStamp() << "  "  << convMjd.mjd()
 	<< "\n# Shift [-]          " << fixed << setprecision(2) << changePoint->getShift()
 	<< "\n# Critical value     " << changePoint->getCritVal()
 	<< "\n# Max Tk             " << changePoint->getMaxTK()
 	<< "\n# ACF[1]             " << changePoint->getACF()  
 	<< "\n# P-Value            " << changePoint->getPValue()
 	<< endl;
-      //#endif    
       
-      /// Part B: If non-stationary, define itnervals for multi change-point detection
-      /// -------------------------------------------------------------------------------------------
+      
+      /*
+       * .multi-change point detection procedure
+       */
+      
       vector<int> idxVec;
       idxVec.push_back(0);
       idxVec.push_back(_suspectedChangeIdx);
-      idxVec.push_back(_N);
+      idxVec.push_back(_originalSize);
       
       m_ii inter; 
-      inter = this->_prepareIntervals( idxVec );
+      inter = this->_prepareIntervals(idxVec);
       
-      /// Part C: If the original time series is non-stationary, provide multi change-point detection
-      /// -------------------------------------------------------------------------------------------
       int iNo = 1;  
-      cout << "appDet:inter " << inter.size() << endl;
       while (!inter.empty()) {
 	 
-	 cout << ":...t_appDetection::......Loop: " <<  iNo << endl;
 	 LOG1(":...t_appDetection::......Loop: ", iNo);
 	 
-	 int idxIt = 1;
-	 
 	 for ( m_ii::iterator it = inter.begin(); it != inter.end(); ++it) {
+      
+	    int iBeg = it->first; // .sub-series begin
+	    int iEnd = it->second; // .sub-series end
 	    
-	    int iBeg = it->first; // Analysed series begin
-	    int iEnd = it->second; // Analysed series end
+	    // .if subseries dimension is less than 300 records, then skip the change point detection process
+	    // Constant may be configurated in the future
+	    if ((iEnd - iBeg)<300) {
 	    
-	    cout << "from: " << iBeg << " to  " << iEnd << endl;
-	    
-	    cout << "db A" << endl;
-	    changePoint = new t_changePoint( _setting, _coredata, iBeg, iEnd );
-	    //        cout << "db B" << endl;
-	    int suspectedPointIdx = changePoint->getIdxMaxPOS();
-	    
-	    suspectedPointIdx = suspectedPointIdx + iBeg;
-	    
-	    LOG1(":...t_appDetection::......Analysed time series [from: ", iBeg, " to: ", iEnd, " with result of detection: ", changePoint->getResult(), "]");
-	    
-	    if ( changePoint->getResult() == "stationary" ) {
-	       
 	       _statInter[iBeg] = iEnd;
-	    }
-	    
-	    if ( changePoint->getResult() == "non-stationary" ) {
 	       
-	       idxVec.push_back( suspectedPointIdx );
+	       // .is subseries is stationary, then remove the first index of stationary interval.
+	       inter.erase(iBeg);
+	       idxVec.erase(remove(idxVec.begin(), idxVec.end(), iBeg), idxVec.end()); //?
+	    }else{
 	       
-	       // add change point into the container
-	       _listOfChpsString.push_back( (_timeData[suspectedPointIdx -1]).timeStamp() );
-	       t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
-	       _listOfChpsMJD.push_back( convMjd.mjd() );
+	       // .change point detection in defined sub-series that is defined by the idx interval <iBeg, iEnd>
+	       changePoint = new t_changePoint( _setting, _coredata, iBeg, iEnd );
 	       
-	       //cout << "appDetection " << changePoint->getLowConfInterIdx()+iBeg << "  " << suspectedPointIdx << "  " << changePoint->getUppConfInterIdx()+iBeg << endl;
-	       
-	       //#ifdef DEBUG
-	       t_timeStamp convLow(( _timeData[ changePoint->getLowConfInterIdx() + iBeg -1 ] ).timeStamp());
-	       t_timeStamp convUpp(( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp());
-	       
-	       // todo: confidence intervals estimation must be improved
-//	       ofile
-	       cout
-		 << "\n# TS beg [idx]    " << iBeg
-		 << "\n# TS end [idx]    " << iEnd
-		 << "\n# Chp [idx]       " << suspectedPointIdx
-		 << "\n# Chp [Stamp/MJD] " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()                        << "  " << convMjd.mjd()
-		   //             << "\n# CI.[from]       " << ( _timeData[ changePoint->getLowConfInterIdx() - iBeg -1 ] ).timeStamp() << "  " << convLow.mjd()
-		   //             << "\n#    [to]         " << ( _timeData[ changePoint->getUppConfInterIdx() + iBeg -1 ] ).timeStamp() << "  " << convUpp.mjd()                            
-		<< "\n# Shift [-]       " << fixed << setprecision(2) << changePoint->getShift()
-		<< "\n# Critical value  " << changePoint->getCritVal()
-		<< "\n# Max Tk          " << changePoint->getMaxTK()
-		<< "\n# ACF[1]          " << changePoint->getACF()  
-		<< "\n# P-Value         " << changePoint->getPValue()
-		<< endl;
-	       //#endif
-	    }
-	    
-	    for(map<int,int>::iterator i = inter.begin(); i!=inter.end(); i++) {
-	       
-	       LOG1(":...t_appDetection::......Before the subseries removing: [From: ", i->first, " to: ", i->second, "]");
-	    }
-	    
-	    //        cout << "db 0" << endl;
-	    idxIt++;
-	    inter.erase(iBeg);
-	    
-	    //        cout << "db 1" << endl;
-	    if (!inter.empty()) {
-          
-	       for(map<int,int>::iterator i = inter.begin(); i!=inter.end(); i++) {
+	       // .if subseries is stationary, save the results and remove first index of actually analysed subseries interval
+	       if ( changePoint->getResult() == "stationary" ) {
 		  
-		  LOG1(":...t_appDetection::......After the subseries removing: [From: ", i->first, " to: ", i->second, "]");
+		  _statInter[iBeg] = iEnd;
+//		  inter.erase(iBeg);
+		  idxVec.erase(remove(idxVec.begin(), idxVec.end(), iBeg), idxVec.end()); //?
+
+	       }else{
+		     
+		  // .suspected change point detected within the interval <iBeg, iEnd>
+		  int suspectedPointIdx = changePoint->getIdxMaxPOS();
+		  suspectedPointIdx = suspectedPointIdx + iBeg;
+		  
+		  // .seve new change point into the specific containers
+		  if (find(idxVec.begin(), idxVec.end(), suspectedPointIdx) != idxVec.end()) { continue; }
+		  else {idxVec.push_back(suspectedPointIdx);}
+
+		  if (find(_listOfChpsIdx.begin(), _listOfChpsIdx.end(), suspectedPointIdx) != _listOfChpsIdx.end()) { continue; }
+		  else {_listOfChpsIdx.push_back(suspectedPointIdx -1);}
+
+		  if (find(_listOfChpsString.begin(), _listOfChpsString.end(), (_timeData[suspectedPointIdx -1]).timeStamp()) != _listOfChpsString.end()) { continue; }
+		  else {_listOfChpsString.push_back( (_timeData[suspectedPointIdx -1]).timeStamp() );}
+		  
+		  t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
+		  if (find(_listOfChpsMJD.begin(), _listOfChpsMJD.end(),  convMjd.mjd()) != _listOfChpsMJD.end()) { continue; }
+		  else {  _listOfChpsMJD.push_back( convMjd.mjd() );  }
+		  
+
+//		  _listOfChpsIdx.push_back(suspectedPointIdx-1);
+//		  _listOfChpsString.push_back( (_timeData[suspectedPointIdx -1]).timeStamp() );
+//		  t_timeStamp convMjd((_timeData[suspectedPointIdx -1]).timeStamp());
+//		  _listOfChpsMJD.push_back( convMjd.mjd() );
+		  
+		  // ToDo: confidence intervals estimation must be improved
+		  ofile
+		    << "\n# TS beg [idx]    " << iBeg
+		    << "\n# TS end [idx]    " << iEnd
+		    << "\n# Chp [idx]       " << suspectedPointIdx
+		    << "\n# Chp [Stamp/MJD] " << ( _timeData[ suspectedPointIdx -1 ] ).timeStamp()                        << "  " << convMjd.mjd()
+		    << "\n# Shift [-]       " << fixed << setprecision(2) << changePoint->getShift()
+		    << "\n# Critical value  " << changePoint->getCritVal()
+		    << "\n# Max Tk          " << changePoint->getMaxTK()
+		    << "\n# ACF[1]          " << changePoint->getACF()  
+		    << "\n# P-Value         " << changePoint->getPValue()
+		    << endl;
+		  
+		  LOG1(":...t_appDetection::......Analysed time series [from: ", iBeg, " to: ", iEnd, " with result of detection: ", changePoint->getResult(), "]");
 	       }
-	    } else {
-	       
-	       LOG1(":...t_appDetection::......Container of subseries is empty!", inter.size());
 	    }
-	    
-	    //        cout << "db 2  " << inter.size() << endl;
-	 }  // end of loop via inter container
+	 }
 	 
-	 // Prepare intervals for sub-time series.
+	 // .prepare updated intervals for sub-time series.
 	 inter = this->_prepareIntervals( idxVec );
 	 
 	 iNo++;
-      } // while inter != empty
-   } // if _result == non-stationary
+      } 
+   } 
    else {
       
       _result == "stationary";
    }
    
-   //#ifdef DEBUG
-   ofile << "\n\n# List of detected change point(s) [time stamp/mjd]:\n";
+   ofile << "\n# List of detected change point(s) [idx/mjd/time stamp]:\n";
+   cout  << "\n# List of detected change point(s) [idx/mjd/time stamp]:\n";
    for (int i = 0; i<_listOfChpsString.size(); i++) {
-//      cout << _listOfChpsMJD[i] << endl;
-      ofile <<  _listOfChpsString[i] << "  " << _listOfChpsMJD[i] << endl;
+      ofile <<  _listOfChpsIdx[i] << "  " << _listOfChpsMJD[i] << "  " << _listOfChpsString[i] << endl;
+      cout  << setw(5) << _listOfChpsIdx[i] << "  " 
+	    << setw(5) << _listOfChpsMJD[i] << "  " 
+	    << setw(5) << _listOfChpsString[i] 
+	<< endl;
    }
-   //#endif
    
-   // delete pointers
+   // .delete pointers
    if ( changePoint  ) delete changePoint;
    if ( adjustSeries  ) delete adjustSeries;
    
    return 0;
-} // _process
+} 
 
-// --- 
+// .check deseasonalised data. 
+// ToDo. Momentalne len skontroluje, ze ci nie je prazda. Over este predpokladany velkost v zavislosti na time resolution
 int t_appDetection::_checkDeseasData() 
 {
    
    if ( _deseas.empty() ) {
       
       ERR(":......t_appDetection......No cleaned data to change-point detection!");
-   }
-   else {
-      
-#ifdef DEBUG
-      for(m_dd::iterator i = _deseas.begin(); i != _deseas.end(); ++i)
-	cout << i->first << " _checkDeseasData " << i->second << endl;
-#endif
+   } else {
       
       LOG1(":......t_appDetection......Loaded cleaned data to change-point detection!");
    }
@@ -441,72 +425,23 @@ int t_appDetection::_checkDeseasData()
    return 0;
 }
 
-// ---
+
+// .function returns intervals of subseries
 map<int, int> t_appDetection::_prepareIntervals( vector<int>& idxVec )
 {
    
-   // sort data in vector first
    sort(idxVec.begin(), idxVec.end());
-   
-//#ifdef DEBUG
-   for (int i = 0; i < idxVec.size()-1; i++) {
-      
-      cout << "Analysed time series[from/to]: " << idxVec[i] << "  " <<  idxVec[i+1] << "\n" << endl;
+
+   m_ii intervals;
+     
+   for (int i = 0; i<idxVec.size()-1; ++i) {
+
+      int beg = idxVec[i];
+      int end = idxVec[i+1];
+
+      // .container of non-stationary intervals
+      intervals[beg] = end;
    }
-//#endif
-   
-  m_ii intervals;
-   
-   if ( idxVec.size() < 3) {
-      
-//#ifdef DEBUG
-      cout << " Warning::t_appDetection::_prepareIntervals::IdxVec<3!\n" << endl;
-//#endif
-   }
-   else {
-      
-      for ( int i = 0; i < idxVec.size()-1; i++ ) {
-	 
-	 int beg = idxVec[i];
-	 int end = idxVec[i+1];
-	 
-	 // If the subseries interval is small (<300), probably does not have any sense to continue 
-	 // in change point detection process.
-	 if ( (end - beg) <= 300 ) {
-	    
-	    // .container of stationary intervals
-	    _statInter[beg] = end;
-	 } else {
-	    
-	    // container of non-stationary intervals
-	    intervals[beg] = end;
-	 }
-      }
-   }
-   
-//#ifdef DEBUG
-   cout << "\n\n" << endl;
-   for (m_ii::iterator iInter = intervals.begin(); iInter != intervals.end(); ++iInter)
-     cout << "Non-stationary sub-interval: " << iInter->first << "  " << iInter->second << endl;
-   
-   cout << "\n" << endl;  
-   for (m_ii::iterator iInter = _statInter.begin(); iInter != _statInter.end(); ++iInter)
-     cout << "Stationary sub-interval: " << iInter->first << "  " << iInter->second << endl;
-//#endif
-   
-   // .erase the interval, when the subseries is stationary
-   if (!_statInter.empty()) {
-      
-      for (m_ii::iterator iStat = _statInter.begin(); iStat != _statInter.end(); ++iStat) {
-	 
-	 m_ii::iterator iInter; iInter = intervals.find(iStat->first);
-	 
-	 if (iInter != intervals.end()) {
-	    
-	    intervals.erase(iInter->first);
-	 }
-      }
-   }
-      
+ 
    return intervals;
 }

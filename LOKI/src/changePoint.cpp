@@ -486,14 +486,15 @@ void t_changePoint::_estimateSigmaStarL()
        << "\n _critVal   " << _criticalVal << endl;
 #endif
   }
-  
 }
+
+
 
 // -
 void t_changePoint::_estimateShift()
 {
    
-  //_estimateMeans(); // v orig mam nezakomentovany. Overi si, ze preco najprv v main processe a potom aj tu
+  //_estimateMeans(); // ToDO: originally not commented. Check the main process and this estimasteMean calling!
   _shift = (_meanAfter - _meanBefore);
   
 #ifdef DEBUG
@@ -507,8 +508,7 @@ void t_changePoint::_estimateMeans()
   
   vector<double> data_to_k;
   vector<double> data_af_k;
-  
-  //cout << _idxMaxPOS << " <<== Hodnota idxMaxPOS | _dataVec.size ==>  " << _dataVec.size() << endl;
+ 
   
   for(unsigned int i = 0; i < _idxMaxPOS-1; i++) {
     
@@ -604,72 +604,6 @@ void t_changePoint::_estimateTStatistics()
 #endif
   }
 }
-
-
-
-/*  
-// Implementacia podla prof. 
-void t_changePoint::_estimateTStatistics()
-{
-  
-  int N = _data.size(); double NN = static_cast<double>(N);
-  int k = 0;
-  
-  // get mean
-  //vector<double> dataVec;
-  for ( m_dd::iterator i = _data.begin(); i != _data.end(); i++) {
-    
-    _dataVec.push_back(i->second); 
-  }
-  
-  t_stat stat(_dataVec); stat.calcMean(); double actualMean = stat.getMean();
-  
-  // Needed for TK sorting
-  map<double, double> TK;
-  
-  while(k <= N-2) {
-    
-    double kk = static_cast<double>(k); kk = kk + 1.0;
-    
-    //double constant = 0.0; constant = sqrt( ( kk * ( NN - kk ) ) / NN ); /// pomaha mi v pripade JB time series
-    double constant = 0.0; constant = sqrt( NN /  ( kk * ( NN - kk ) ) ); /// standardne tropo series
-    //double constant = 0.0; constant = sqrt( ( NN - kk ) * kk / NN ); /// standardne tropo series
-    
-    double cumsum = 0.0; // _VAL[0]; // from left to right
-    
-    for(int i = 0; i <= k; ++i) {
-      
-      cumsum = cumsum + _dataVec[i];
-    }
-    
-    double actualSK = cumsum - (kk * actualMean); 
-    
-    double actualTK = constant * abs(actualSK);
-    //double actualTK = constant * actualSK;
-    //double actualTK = constant * abs(actualSK) / _ACF[0];
-    
-    _TK.push_back(actualTK);
-    
-    TK[actualTK] = k;
-    
-    k++;
-  }
-  
-  if(TK.rbegin() != TK.rend()) {
-    
-    _maxTK     = TK.rbegin()->first;
-    _idxMaxPOS = TK.rbegin()->second + 1;
-    
-#ifdef DEBUG
-    cout << "Max tk " << _maxTK << " at " << _idxMaxPOS << endl;
-#endif
-    
-  }
-}
-
-
-*/
-
 
 // -
 void t_changePoint::_estimateDependency()

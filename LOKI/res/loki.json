@@ -3,11 +3,11 @@
     "plotOnOff": "off"
   },
   "input": {
-    "inputName": "example.2",
+    "inputName": "example.1",
     "inputFolder": "/Data",
     "inputFormat": "td",
     "inputDataCol": 3,
-    "inputResolution": 86400.0,
+    "inputResolution": 21600.0,
     "inputConvTdDd": true
   },
     "output": {
