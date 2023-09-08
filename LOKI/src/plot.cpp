@@ -27,7 +27,8 @@ void t_plot::acf()
    t_gnuplot plot;
    
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/acf.eps";
+   //string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/acf.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/acf.eps";
    
    // plot
    plot("set term post eps color solid 'Helvetica,25'");
@@ -47,7 +48,8 @@ void t_plot::acf()
    plot("set yzeroaxis lt -1 lw 2");
    plot("set ytics axis");
    plot("unset grid");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/acf.pt\' u 1:2 not ' ' w impulses lc rgb 'black' lw 7");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/acf.pt\' u 1:2 not ' ' w impulses lc rgb 'black' lw 7");
+//   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/acf.pt\' u 1:2 not ' ' w impulses lc rgb 'black' lw 7");
 }
 
 void t_plot::hTime()
@@ -73,7 +75,7 @@ void t_plot::hTime()
    plot("set size 3.0,1.0");
    plot("set style fill solid 0.5");
   //
-   plot("plot \'~/Dokumenty/Work/SW/LOKI/LOKI/gnuplot/homogenDD\' u 1:2 not ' ' w l lc rgb 'black'");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/homogenDD\' u 1:2 not ' ' w l lc rgb 'black'");
 }
 
 void t_plot::hDeseas()
@@ -97,7 +99,7 @@ void t_plot::hDeseas()
    plot(("set output '"+out+"'").c_str());
    plot("set size 3.0,1.0");
    plot("set style fill solid 0.5");
-   plot("plot \'~/Dokumenty/Work/SW/LOKI/LOKI/gnuplot/homogenDD\' u 1:3 not ' ' w l lc rgb 'black'");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/homogenDD\' u 1:3 not ' ' w l lc rgb 'black'");
 }
 
 void t_plot::hTK()
@@ -122,7 +124,7 @@ void t_plot::hTK()
    plot(("set output '"+out+"'").c_str());
    plot("set size 3.0,1.0");
    plot("set style fill solid 0.5");
-   plot("plot \'~/Dokumenty/Work/SW/LOKI/LOKI/gnuplot/homogenDD\' u 1:4 not ' ' w l lc rgb 'black' ,\'' u 1:5 not ' ' w l lc rgb 'red' lw 3");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/homogenDD\' u 1:4 not ' ' w l lc rgb 'black' ,\'' u 1:5 not ' ' w l lc rgb 'red' lw 3");
 }
 
 
@@ -155,10 +157,10 @@ void t_plot::trend()
    
    // output
    //          
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/trend.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/trend.eps";
    
   // path to data file
-  // string pathData = "~/Work/SW/LOKI/LOKI/gnu"
+  // string pathData = "/home/mel/Dokumenty/M/LOKI/LOKI/gnu"
   
   // plot
    plot("set term post eps color noenhanced solid 'Helvetica,12'");
@@ -171,11 +173,11 @@ void t_plot::trend()
    plot("set rmargin 3.5");
    plot("set size 1.0,0.5");
    plot("set origin 0,0.5");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/trendDD\' u 1:2 t 'Original TS' w p lc rgb 'black' ,\'' u 1:3 t 'Linear trend' w l lc rgb '#09ad00' lw 3");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/trendDD\' u 1:2 t 'Original TS' w p lc rgb 'black' ,\'' u 1:3 t 'Linear trend' w l lc rgb '#09ad00' lw 3");
    plot("set size 1.0,0.5");
    plot("set origin 0,0");
    plot("unset tmargin");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/trendDD\' u 1:4 t 'De-trended TS' w p  lc rgb 'black'");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/trendDD\' u 1:4 t 'De-trended TS' w p  lc rgb 'black'");
    
    plot("unset multiplot");
  
@@ -206,11 +208,11 @@ void t_plot::median()
   plot("set rmargin 3.5");
   plot("set size 1.0,0.5");
   plot("set origin 0,0.5");
-  plot("plot \'~/Dokumenty/Work/SW/LOKI/LOKI/gnuplot/medianDD\' u 1:2 t 'Original TS' w l lc rgb 'black' ,\'' u 1:3 t 'Median model' w l lc rgb '#09ad00' lw 3");
+  plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/medianDD\' u 1:2 t 'Original TS' w l lc rgb 'black' ,\'' u 1:3 t 'Median model' w l lc rgb '#09ad00' lw 3");
   plot("set size 1.0,0.5");
   plot("set origin 0,0");
   plot("unset tmargin");
-  plot("plot \'~/Dokumenty/Work/SW/LOKI/LOKI/gnuplot/medianDD\' u 1:4 t 'De-seasonalised TS' w l  lc rgb 'black'");
+  plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/medianDD\' u 1:4 t 'De-seasonalised TS' w l  lc rgb 'black'");
   
   plot("unset multiplot");
 }
@@ -221,7 +223,7 @@ void t_plot::seas()
    t_gnuplot plot;
    
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/seas.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/seas.eps";
    
    // plot
    plot("set term post eps color noenhanced solid 'Helvetica,12'");
@@ -234,17 +236,17 @@ void t_plot::seas()
    plot("set rmargin 3.5");
    plot("set size 1.0,0.5");
    plot("set origin 0,0.5");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/seasDD\' u 1:2 t 'Original TS' w l lc rgb 'black' ,\'' u 1:3 t 'Reg model' w l lc rgb '#09ad00' lw 3");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/seasDD\' u 1:2 t 'Original TS' w l lc rgb 'black' ,\'' u 1:3 t 'Reg model' w l lc rgb '#09ad00' lw 3");
    plot("set size 1.0,0.5");
    plot("set origin 0,0");
    plot("unset tmargin");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/seasDD\' u 1:4 t 'De-seasonalised TS' w l  lc rgb 'black'");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/seasDD\' u 1:4 t 'De-seasonalised TS' w l  lc rgb 'black'");
    
    plot("unset multiplot");
    
 //   plot(" \' \' u 1:3 t 'Linear trend' w l");
      
-//   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/trendDD\' u 1:2 t 'Original ts' w l , u 1:3 t 'Linear trend' w l");
+//   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/trendDD\' u 1:2 t 'Original ts' w l , u 1:3 t 'Linear trend' w l");
 }
 
 void t_plot::line()
@@ -253,12 +255,12 @@ void t_plot::line()
    t_gnuplot plot;
    
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/line.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/line.eps";
    
    // plot
    plot("set term postscript eps");
    plot(("set output '"+out+"'").c_str());
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/line\' u 1:2 not w l");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/line\' u 1:2 not w l");
 }
 
 void t_plot::tline()
@@ -267,7 +269,7 @@ void t_plot::tline()
    t_gnuplot plot;
    
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/line-synt.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/line-synt.eps";
    
    // plot
    plot("set term postscript eps");
@@ -277,7 +279,7 @@ void t_plot::tline()
    plot("set format x \'%Y\'");
    plot("set xtics rotate by 0");
    plot("set xlabel \'TIME\' offset 1.0,0 rotate by 0 font \'Arial-Bold, bold, 40\'");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/line\' u 1:3 not w l");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/line\' u 1:3 not w l");
 }
 
 
@@ -293,7 +295,7 @@ void t_plot::histogram(const double & min,
    // declaration
    t_gnuplot plot;
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/histogram.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/histogram.eps";
    // plot
    plot("set term postscript eps");
    plot(("set output '"+out+"'").c_str());
@@ -304,7 +306,7 @@ void t_plot::histogram(const double & min,
    plot("hist(x,width)=width*floor(x/width)+width/2.0");
    plot("set boxwidth width*0.9");
    plot("set style fill solid 0.5 # fill style");
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/line\' u (hist($2,width)):(1.0) smooth freq w boxes lc rgb \'red\' not");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/line\' u (hist($2,width)):(1.0) smooth freq w boxes lc rgb \'red\' not");
 }
 
 /// @Detail
@@ -316,7 +318,7 @@ void t_plot::boxplot()
    t_gnuplot plot;
    
    // output
-   string out = "~/Work/SW/LOKI/LOKI/gnuplot/eps/boxplot.eps";
+   string out = "/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/eps/boxplot.eps";
    // plot
    plot("set term postscript eps");
    
@@ -325,5 +327,5 @@ void t_plot::boxplot()
    plot("set style data boxplot");
    plot("unset xtics");
    plot(("set output '"+out+"'").c_str());
-   plot("plot \'~/Work/SW/LOKI/LOKI/gnuplot/line\' u (0):2 not");
+   plot("plot \'/home/mel/Dokumenty/M/LOKI/LOKI/gnuplot/line\' u (0):2 not");
 }

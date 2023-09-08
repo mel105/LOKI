@@ -116,6 +116,15 @@ void t_load::_checkDataNameString()
 //   cout << _dataFileNamesVector.size() << endl;
 }
 
+// the main poit of the method is to check, if string contains symbol ". If so, then remove the symbol.
+/*
+string t_load::_control(const string& str, char mSym)
+{
+
+   return str.erase(remove(str.begin(), str.end(), '"'), str.end());
+}
+*/
+
 // -
 void t_load::_timeFormat()  
 {
@@ -125,19 +134,19 @@ void t_load::_timeFormat()
   ifstream dir((_dataFolderPath+"/"+_dataName).c_str());
   
   string ymd, hms, line;
-  double vals;
+  double vals, sigma;
   
   if(dir){
     
     while ( getline(dir, line) ){
       
       istringstream istr(line);
-      istr >> ymd >> hms >> vals;
+      istr >> ymd >> hms >> vals >> sigma;
       
       t_timeStamp epoch(ymd+" "+hms);
       
 #ifdef DEBUG
-      cout << ymd+" "+hms << "  " << epoch.mjd() << "  " << vals << endl;
+      cout << ymd+" <-ymd vs hms-> "+hms << " nasleduje mjd " << epoch.mjd() << " vals  " << vals << " a sigma " << sigma<< endl;
 #endif
       
       if (_convTdDd){

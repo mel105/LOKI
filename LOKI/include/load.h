@@ -26,6 +26,7 @@
 #include <iomanip>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 #include "setting.h"
 #include "timeStamp.h"
@@ -70,6 +71,8 @@ class t_load
    void _doubleFormat();
    void _timeFormat();
    void _checkDataNameString();
+
+   //string _control(const string&, char);
    
 };
 

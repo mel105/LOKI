@@ -3,23 +3,24 @@
     "plotOnOff": "on"
   },
   "input": {
-    "inputName": "example.2",
+    "inputName": "albh",
     "inputFolder": "/Data",
     "inputFormat": "td",
-    "inputDataCol": 3,
-    "inputResolution": 86400.0,
+    "inputDataCol": 4,
+    "inputResolution": 21600.0,
     "inputConvTdDd": true
   },
     "output": {
-    "outputName": "LOKI.txt",
+    "outputName": "LOKI.prt",
+    "outputList": "LOKI.chp",
     "outputHist": "LOKI.hst"
   },
   "stat": {
-    "statOnOff": "off",
+    "statOnOff": "on",
     "iqrCnfd": 2.5
   },
   "regression": {
-    "regressOnOff": "off",
+    "regressOnOff": "on",
     "regModel": 1,
     "regOrder": 1,
     "elimTrend": true,

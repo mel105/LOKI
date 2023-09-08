@@ -171,12 +171,13 @@ void t_appStat::_procStat()
    stat.calcVare();   double vare   = stat.getVare();   ofile << " # Vare:      " << vare    << "\n";
    stat.calcMinMax(); double min    = stat.getMin();    ofile << " # Min val:   " << min     << "\n";
                       double max    = stat.getMax();    ofile << " # Max val:   " << max     << "\n";
-
+   /*
    /// Mode Estimation
    stat.calcMode();   vector<double> mode = stat.getMode();
    for (auto x : mode) {
       ofile << " # Mode:    " << x << " (freq) " << stat.getModeFreq()  << "\n";
    }
+   */
    LOG1(":...t_appStat::......Descriptive statistic::Done!");
 
    /// Quantile values estimation

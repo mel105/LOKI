@@ -44,8 +44,11 @@ t_appDetection::t_appDetection(t_setting* setting,  t_coredata* coredata)
    _inpSett = setting->getLoadSetting(); _fmt = _inpSett[2]; //_res = _inpSett[4];
    //
    string outputName = setting->getOutputName(); _out = outputName;
+   string outputList = setting->getOutputList(); _lst = outputList;
    string outputHist = setting->getOutputHist(); _hst = outputHist;   
+
    string plotOnOff = setting->getPlotOnOff(); _plot = plotOnOff;
+   
    string regressOnOff = setting->getRegressOnOff(); _regressOnOff = regressOnOff;
    string medianOnOff = setting->getMedianOnOff(); _medianOnOff = medianOnOff;
    string referenceOnOff = setting->getReferenceOnOff(); _referenceOnOff = referenceOnOff;
@@ -203,9 +206,14 @@ int t_appDetection::_plotTimeSeries()
    return 0;
 }
 
+
 // .function manages the change point detection process
 int t_appDetection::_processChangePointDetection()
 {
+
+   // . change point protocol;
+   ofstream cfile(_lst.c_str(), ios::out | ios::app);
+   // cfile << "\n# Station  Index  Median  Date  Shift\n";
    
    // .output setting
    ofstream ofile(_out.c_str(), ios::out | ios::app);
@@ -272,10 +280,14 @@ int t_appDetection::_processChangePointDetection()
    if ( _result == "non-stationary" ) {
       
       // .store change points into the specific containers
+      //   .lsit of shifts
+      _listOfShifts.push_back(changePoint->getShift());
+	
       //   .list of potential change points epochs/possitions given as indexes
       _listOfChpsIdx.push_back(_suspectedChangeIdx -1);
       _listOfChpsString.push_back( (_timeData[_suspectedChangeIdx -1]).timeStamp() );
       t_timeStamp convMjd((_timeData[_suspectedChangeIdx -1]).timeStamp());
+
       //   .list of potential change points epochs/positions given as MJD (Modified Julian Date)
       _listOfChpsMJD.push_back( convMjd.mjd() );
       
@@ -391,10 +403,21 @@ int t_appDetection::_processChangePointDetection()
       
       _result == "stationary";
    }
+
+   // .list of change points
+   // .output, list of change points. Setting
    
+   // .general protocol
    ofile << "\n# List of detected change point(s) [idx/mjd/time stamp]:\n";
    cout  << "\n# List of detected change point(s) [idx/mjd/time stamp]:\n";
    for (int i = 0; i<_listOfChpsString.size(); i++) {
+
+      // .chp protocol
+      cout <<  _setting->getActualStation() << "  " << _listOfChpsIdx[i] << "  " << _listOfChpsMJD[i] << "  " << _listOfChpsString[i] << "  " << _listOfShifts[i] << endl;
+      cfile <<  _setting->getActualStation() << "  " << _listOfChpsIdx[i] << "  " << _listOfChpsMJD[i] << "  " << _listOfChpsString[i] << "  " << _listOfShifts[i] << endl;
+
+
+      // .general protocol
       ofile <<  _listOfChpsIdx[i] << "  " << _listOfChpsMJD[i] << "  " << _listOfChpsString[i] << endl;
       cout  << setw(5) << _listOfChpsIdx[i] << "  " 
 	    << setw(5) << _listOfChpsMJD[i] << "  " 
@@ -410,7 +433,7 @@ int t_appDetection::_processChangePointDetection()
 } 
 
 // .check deseasonalised data. 
-// ToDo. Momentalne len skontroluje, ze ci nie je prazda. Over este predpokladany velkost v zavislosti na time resolution
+// ToDo. Momentalne len skontroluje, ze ci nie je prazdna. Over este predpokladanu velkost v zavislosti na time resolution
 int t_appDetection::_checkDeseasData() 
 {
    

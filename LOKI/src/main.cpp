@@ -80,6 +80,8 @@ int main(int argc, char ** argv)
    
    string outputName = setting->getOutputName();
    string outputHist = setting->getOutputHist();
+   string outputList = setting->getOutputList();
+   
    string statOnOff = setting->getStatOnOff();
    string regressOnOff = setting->getRegressOnOff();
    string detectionOnOff = setting->getDetectionOnOff();
@@ -89,6 +91,7 @@ int main(int argc, char ** argv)
    
    remove(outputName.c_str()); ofstream ofile; ofile.open(outputName.c_str(), ios::out | ios::app);
    remove(outputHist.c_str()); ofstream hfile; hfile.open(outputHist.c_str(), ios::out | ios::app);
+   remove(outputList.c_str()); ofstream cfile; cfile.open(outputList.c_str(), ios::out | ios::app);
    
    /// .history
    hfile << "[2019-02-10] [mel] -> [main] Library structure created\n";
@@ -99,7 +102,13 @@ int main(int argc, char ** argv)
    hfile << "[2019-05-01] [mel] -> [load] Data file's decoder improving\n";
    hfile << "[2020-12-13] [mel] -> [main] Multi-files processing\n";
    hfile << "[2020-12-15] [mel] -> [main] Multi-change point detection\n";   
-   
+
+   /// .output protocol
+   ofile << "# Software: LOKI\n";
+   ofile << "# Version: " << version.Version() << "\n";
+   ofile << "# ----------------\n";
+   ofile << "# Protocol created: " << asctime(localtm) << endl;
+         
    /// .data loading
    t_load load(setting);
    
@@ -108,10 +117,20 @@ int main(int argc, char ** argv)
    
    for (auto i = dataNames.begin(); i!= dataNames.end(); ++i) {
 	
-            
       // .set actual file name
       load.setDataFileName(*i);
-      
+
+      //
+      setting->setActualStation(*i);
+
+      cout << "\n" << endl;
+      cout << "# File name: " << *i << endl;
+      cout << "\n" << endl;
+     
+      ofile << "\n" << endl;
+      ofile << "# File name: " << *i << endl;
+      ofile << "\n" << endl;
+           
       // .read data
       load.readData();
       
@@ -173,20 +192,8 @@ int main(int argc, char ** argv)
       //manager();
       
       /// .loaded data filled into the coredata class
-      ofile << "# Software: LOKI\n";
-      ofile << "# Version: " << version.Version() << "\n";
-      ofile << "# ----------------\n";
-      ofile << "# Protocol created: " << asctime(localtm) << endl;
-      
-      cout << "\n" << endl;
-      cout << "# File name: " << *i << endl;
-      cout << "\n" << endl;
-     
-      ofile << "\n" << endl;
-      ofile << "# File name: " << *i << endl;
-      ofile << "\n" << endl;
-      
-      /// .copy pointers into the coredata object. ToDo: here could be problem with data decision. Check it!
+
+       /// .copy pointers into the coredata object. ToDo: here could be problem with data decision. Check it!
       if (inputFormat == "dd") {
 	 
 	 /// .pointer
@@ -243,8 +250,7 @@ int main(int argc, char ** argv)
 	 
 	 ERR(":.main::...Requested input data format is not supported!");
       }
-      
-      
+        
       /// .clear/close/delete
       LOG1(":.main::...Clear/Close/Delete");
       testval.clear();
@@ -252,8 +258,8 @@ int main(int argc, char ** argv)
       
       ofile.close();
       hfile.close();
-   }
-   
+      cfile.close();
+   } // end of loop over data files
    
    if ( setting  ) delete setting  ;
    

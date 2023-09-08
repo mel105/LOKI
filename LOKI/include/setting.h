@@ -29,9 +29,13 @@ class t_setting
    virtual ~t_setting(){};
    
    vector <string> getLoadSetting();
+
+   void setActualStation(string);
+   string getActualStation();
    
    string getOutputHist();   
    string getOutputName();
+   string getOutputList();
    string getPlotOnOff();
    string getRegressOnOff();
    string getMedianOnOff();
@@ -65,12 +69,14 @@ class t_setting
    
    string _outputName;
    string _outputHist;
+   string _outputList;
    string _statOnOff;
    string _regressOnOff;
    string _medianOnOff;
    string _referenceOnOff;
    string _plotOnOff;
    string _detectionOnOff;
+   string _st;
    
    double _iqrCnfd;   
    double _probCritVal;

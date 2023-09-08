@@ -1,6 +1,6 @@
 # CMake generated Testfile for 
-# Source directory: /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0
-# Build directory: /home/michal/Work/gitHub/LOKI/Dependencies/json-3.5.0
+# Source directory: /home/mel/Dokumenty/M/LOKI/Dependencies/json-3.5.0
+# Build directory: /home/mel/Dokumenty/M/LOKI/Dependencies/json-3.5.0
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.

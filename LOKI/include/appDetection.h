@@ -127,21 +127,27 @@ class t_appDetection
    bool _verifiedChP;
    
    string _fmt;       // data format: dd, td
+
    string _out;
+   string _lst;
+   string _hst;
+   
    string _gnp;   
    string _plot; 
-   string _hst;
    string _result;
+
    string _regressOnOff;
    string _medianOnOff;
    string _referenceOnOff;
+
    string _adjustString;
    string _firstRecord;
    string _lastRecord;
-   
+
    vector<string> _inpSett;
    vector<string> _listOfChpsString;
    vector<double> _listOfChpsMJD;
-   vector<int> _listOfChpsIdx;
+   vector<double> _listOfShifts;
+   vector<int>    _listOfChpsIdx;
 };
 #endif

@@ -49,6 +49,7 @@ t_setting::t_setting()
   /// LOKI::output
   string outputName {loki.getValue<string>({"output", "outputName"})}; _outputName = outputName;
   string outputHist {loki.getValue<string>({"output", "outputHist"})}; _outputHist = outputHist;
+  string outputList {loki.getValue<string>({"output", "outputList"})}; _outputList = outputList;
   
   /// LOKI::stat
   string statOnOff {loki.getValue<string>({"stat", "statOnOff"})};  _statOnOff = statOnOff;
@@ -73,8 +74,7 @@ t_setting::t_setting()
   string detectionOnOff {loki.getValue<string>({"detection", "detectionOnOff"})}; _detectionOnOff = detectionOnOff;
   double probCritVal {loki.getValue<double>({"detection", "probCritVal"})}; _probCritVal = probCritVal;  
   double limitDepedence {loki.getValue<double>({"detection", "limitDepedence"})}; _limitDepedence = limitDepedence;
-  
-  
+
   /// Log
   LOG2(":...t_setting::......Folder: ", inputFolder);
   LOG2(":...t_setting::......File: ", inputName);
@@ -83,8 +83,16 @@ t_setting::t_setting()
   LOG2(":...t_setting::......Plot: ", plotOnOff);   
 }
 
+/// SET ACTUAL STATION
+void t_setting::setActualStation(string st){ _st = st; }
+
+
+// *** GET FUNCTIONS *** //
+
 // general
 string t_setting::getPlotOnOff() { return _plotOnOff; }
+string t_setting::getActualStation(){ return _st; }
+
 
 // input
 vector <string> t_setting::getLoadSetting() { return _loadSetting; }
@@ -95,6 +103,7 @@ double t_setting::getInputResolution() { return _inputResolution; }
 // output   
 string t_setting::getOutputName() { return _outputName; }
 string t_setting::getOutputHist() { return _outputHist; }
+string t_setting::getOutputList() { return _outputList; }
 
 // statistics
 string t_setting::getStatOnOff() { return _statOnOff; }
