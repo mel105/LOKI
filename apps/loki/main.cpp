@@ -33,10 +33,13 @@ int main(int argc, char* argv[])
     LOKI_INFO("Config:    " + configPath.string());
     LOKI_INFO("Workspace: " + cfg.workspace.string());
 
+    // Define the vector results
+    std::vector<loki::LoadResult> results;
+
     // Load data
     try {
         loki::DataManager dm(cfg);
-        const auto results = dm.load();
+        results = dm.load();
 
         for (const auto& r : results) {
             LOKI_INFO("File: " + r.filePath.filename().string()
@@ -59,15 +62,29 @@ int main(int argc, char* argv[])
     // Test plotting
     try {
         loki::Plot plot(cfg);
-        
         for (const auto& r : results) {
             for (const auto& ts : r.series) {
-                if (cfg.plots.timeSeries) plot.timeSeries(ts);
-                if (cfg.plots.histogram)  plot.histogram(ts);
-                if (cfg.plots.qqPlot)     plot.qqPlot(ts);
-                if (cfg.plots.boxplot)    plot.boxplot(ts);
+                const std::string name = ts.metadata().stationId + "_"
+                                       + ts.metadata().componentName;
+                if (cfg.plots.timeSeries) {
+                    LOKI_INFO("Plotting timeSeries: " + name);
+                    plot.timeSeries(ts);
+                }
+                if (cfg.plots.histogram) {
+                    LOKI_INFO("Plotting histogram: " + name);
+                    plot.histogram(ts);
+                }
+                if (cfg.plots.qqPlot) {
+                    LOKI_INFO("Plotting qqPlot: " + name);
+                    plot.qqPlot(ts);
+                }
+                if (cfg.plots.boxplot) {
+                    LOKI_INFO("Plotting boxplot: " + name);
+                    plot.boxplot(ts);
+                }
             }
         }
+        LOKI_INFO("Plotting complete.");
     } catch (const loki::LOKIException& ex) {
         LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
         return EXIT_FAILURE;

@@ -211,6 +211,25 @@ LoadResult Loader::load(const std::filesystem::path& filePath) const
         }
     }
 
+    // Assign metadata to each TimeSeries from detected column names.
+    for (std::size_t i = 0; i < numValueCols; ++i) {
+        SeriesMetadata meta;
+        meta.stationId = filePath.stem().string();
+
+        // Split "WIG_SPEED[m/s]" -> componentName="WIG_SPEED", unit="m/s"
+        const auto& raw     = result.columnNames[i];
+        const auto  bracket = raw.find('[');
+        if (bracket != std::string::npos && raw.back() == ']') {
+            meta.componentName = raw.substr(0, bracket);
+            meta.unit          = raw.substr(bracket + 1, raw.size() - bracket - 2);
+        } else {
+            meta.componentName = raw;
+            meta.unit          = "-";
+        }
+
+        result.series[i].setMetadata(meta);
+    }
+
     LOKI_INFO("Loader: read " + std::to_string(result.linesRead)
               + " lines, skipped " + std::to_string(result.linesSkipped)
               + ", loaded " + std::to_string(result.series[0].size()) + " records.");

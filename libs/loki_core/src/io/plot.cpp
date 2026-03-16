@@ -64,7 +64,9 @@ void Plot::timeSeries(const TimeSeries& ts, const std::string& title)
 
     const std::string yLabel = meta.componentName.empty()
         ? "value"
-        : (meta.componentName + (meta.unit.empty() ? "" : " [" + meta.unit + "]"));
+        : (meta.unit.empty() || meta.unit == "-")
+            ? meta.componentName
+            : (meta.componentName + " [" + meta.unit + "]");
 
     try {
         Gnuplot gp;
@@ -551,7 +553,16 @@ TimeFormat Plot::effectiveTimeFormat() const noexcept
 
 std::filesystem::path Plot::outputPath(const std::string& stem) const
 {
-    return m_config.imgDir / (stem + "." + m_config.plots.outputFormat);
+    // Sanitize characters invalid in Windows filenames.
+    std::string safe = stem;
+    for (char& c : safe) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' ||
+            c == '?' || c == '"' || c == '<' || c == '>' ||
+            c == '|' || c == '[' || c == ']') {
+            c = '_';
+        }
+    }
+    return m_config.imgDir / (safe + "." + m_config.plots.outputFormat);
 }
 
 std::filesystem::path Plot::writeTempData(
@@ -665,15 +676,15 @@ std::string Plot::terminalCmd(int widthPx, int heightPx) const
         // EPS uses cm, not px. Approximate: 1 cm ~ 28 px.
         const int w = widthPx  / 28;
         const int h = heightPx / 28;
-        ss << "set terminal postscript eps color solid 'Helvetica,12' size "
+        ss << "set terminal postscript eps color solid 'Sans,12' size "
            << w << "cm," << h << "cm";
     } else if (fmt == "svg") {
         ss << "set terminal svg size " << widthPx << "," << heightPx
-           << " font 'Helvetica,12'";
+           << " font 'Sans,12'";
     } else {
         // Default: png
         ss << "set terminal pngcairo size " << widthPx << "," << heightPx
-           << " enhanced font 'Helvetica,12'";
+           << " noenhanced font 'Sans,12'";
     }
 
     return ss.str();
