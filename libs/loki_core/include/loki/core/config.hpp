@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "loki/core/logger.hpp"
+#include "loki/core/nanPolicy.hpp"
 
 namespace loki {
 
@@ -144,6 +145,23 @@ struct PlotConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  StatsConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for descriptive statistics computation.
+ *
+ * Controls whether statistics are computed at all, how missing values
+ * (NaN) are handled, and whether the computationally expensive
+ * Hurst exponent (R/S analysis) is included in the summary.
+ */
+struct StatsConfig {
+    bool      enabled   {true};
+    NanPolicy nanPolicy {NanPolicy::SKIP};
+    bool      hurst     {true};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -172,6 +190,7 @@ struct AppConfig {
     OutputConfig      output;
     PlotConfig        plots;
     HomogeneityConfig homogeneity;
+    StatsConfig       stats;
 
     // ── Derived paths (computed by ConfigLoader) ──────────────────────────────
 

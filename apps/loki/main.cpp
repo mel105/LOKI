@@ -2,6 +2,7 @@
 #include "loki/core/configLoader.hpp"
 #include "loki/io/dataManager.hpp"
 #include "loki/io/plot.hpp"
+#include "loki/stats/descriptive.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -56,6 +57,24 @@ int main(int argc, char* argv[])
         }
     } catch (const loki::LOKIException& ex) {
         LOKI_ERROR(std::string("Data loading failed: ") + ex.what());
+        return EXIT_FAILURE;
+    }
+
+    // Descriptive statistics
+    try {
+        for (const auto& r : results) {
+            for (const auto& ts : r.series) {
+                std::vector<double> vals;
+                vals.reserve(ts.size());
+                for (const auto& obs : ts) {
+                    vals.push_back(obs.value);
+                }
+                const auto st = loki::stats::summarize(vals);
+                LOKI_INFO(loki::stats::formatSummary(st, ts.metadata().componentName));
+            }
+        }
+    } catch (const loki::LOKIException& ex) {
+        LOKI_ERROR(std::string("Statistics failed: ") + ex.what());
         return EXIT_FAILURE;
     }
 

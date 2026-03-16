@@ -27,6 +27,12 @@
         }
     },
 
+    "stats": {
+    "enabled": true,
+    "nan_policy": "skip",
+    "hurst": true
+    },
+
     "homogeneity": {
         "method": "snht",
         "significance_level": 0.05

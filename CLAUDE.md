@@ -189,6 +189,7 @@ loki/
 |   |   |       |   +-- configLoader.hpp
 |   |   |       |   +-- directoryScanner.hpp
 |   |   |       |   +-- logger.hpp
+|   |   |       |   +-- nanPolicy.hpp 
 |   |   |       +-- timeseries/
 |   |   |       |   +-- timeSeries.hpp
 |   |   |       |   +-- timeStamp.hpp
@@ -407,3 +408,51 @@ after first build (see Build Instructions above).
 - The build directory is always `build/` and is gitignored.
 - `newmat` is replaced by `Eigen3` throughout the codebase.
 - This file should be updated whenever architecture decisions change.
+- Do NOT add any license/copyright block at the top of source files.
+- gnuplot font: use 'Sans,12' not 'Helvetica,12' (Helvetica not available on Windows/UCRT64).
+- gnuplot terminal: use 'noenhanced' to prevent underscore subscript rendering in titles.
+- SeriesMetadata must be populated by Loader after loading (componentName, unit, stationId).
+- Column names from file header may contain unit in brackets e.g. "WIG_SPEED[m/s]" --
+  split into componentName + unit in Loader, sanitize filenames in Plot::outputPath().
+- Plot output goes to OUTPUT/IMG/, temp files use .tmp_ prefix and are deleted after render.
+
+## Implemented Modules
+
+### loki::stats (loki_core)
+- Free functions in namespace `loki::stats`
+- Header: `libs/loki_core/include/loki/stats/descriptive.hpp`
+- Source:  `libs/loki_core/src/stats/descriptive.cpp`
+- NaN handling via `loki::NanPolicy` (defined in `loki/core/nanPolicy.hpp`)
+- Key types: `SummaryStats`, `NanPolicy`
+- Key functions: `summarize()`, `formatSummary()`, `acf()`, `hurstExponent()`
+- `summarize()` signature:
+  SummaryStats summarize(const std::vector<double>& x,
+                         loki::NanPolicy policy = loki::NanPolicy::SKIP,
+                         bool computeHurst = true);
+- Controlled via `StatsConfig` in AppConfig (JSON key: "stats")
+
+## Design Decisions
+
+### NanPolicy location
+`loki::NanPolicy` is defined in `loki/core/nanPolicy.hpp` (not in
+`descriptive.hpp`) to avoid a circular dependency between `loki_core`
+and `loki::stats`. Any module needing NanPolicy includes only this
+lightweight header.
+
+### stats API style
+Descriptive statistics are implemented as free functions in
+`namespace loki::stats`, not as a class. This follows modern C++20
+style and makes individual functions independently testable.
+
+### TimeSeries -> std::vector<double> extraction
+TimeSeries has no values() method. Extract raw values before calling
+stats functions:
+    std::vector<double> vals;
+    vals.reserve(ts.size());
+    for (const auto& obs : ts) { vals.push_back(obs.value); }
+
+### summarize() and NaN
+summarize() always counts NaN into nMissing regardless of policy.
+NanPolicy::THROW in summarize() throws before computation if any NaN
+is present. SKIP removes them silently. PROPAGATE is not meaningful
+for summarize() -- use individual functions for that case.

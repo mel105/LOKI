@@ -100,7 +100,8 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.input       = _parseInput      (j.value("input",       json::object()), inputDir);
     cfg.output      = _parseOutput     (j.value("output",      json::object()));
     cfg.homogeneity = _parseHomogeneity(j.value("homogeneity", json::object()));
-    cfg.plots       = _parsePlots(j.value("plots", json::object()));
+    cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
+    cfg.stats       = _parseStats      (j);
 
     return cfg;
 }
@@ -259,6 +260,39 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("acf"))         cfg.acf        = e["acf"].get<bool>();
         if (e.contains("qq_plot"))     cfg.qqPlot     = e["qq_plot"].get<bool>();
         if (e.contains("boxplot"))     cfg.boxplot    = e["boxplot"].get<bool>();
+    }
+
+    return cfg;
+}
+
+StatsConfig ConfigLoader::_parseStats(const nlohmann::json& j)
+{
+    StatsConfig cfg;
+
+    if (!j.contains("stats")) {
+        return cfg; // all defaults
+    }
+
+    const auto& s = j.at("stats");
+
+    if (s.contains("enabled")) {
+        cfg.enabled = s.at("enabled").get<bool>();
+    }
+
+    if (s.contains("hurst")) {
+        cfg.hurst = s.at("hurst").get<bool>();
+    }
+
+    if (s.contains("nan_policy")) {
+        const std::string p = s.at("nan_policy").get<std::string>();
+        if      (p == "skip")      { cfg.nanPolicy = loki::NanPolicy::SKIP;      }
+        else if (p == "throw")     { cfg.nanPolicy = loki::NanPolicy::THROW;     }
+        else if (p == "propagate") { cfg.nanPolicy = loki::NanPolicy::PROPAGATE; }
+        else {
+            throw ConfigException(
+                "configLoader: unknown nan_policy value '" + p +
+                "'. Expected: skip | throw | propagate.");
+        }
     }
 
     return cfg;

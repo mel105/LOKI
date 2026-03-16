@@ -45,13 +45,14 @@ public:
 
 private:
 
-    static InputConfig       _parseInput      (const nlohmann::json& j,
-                                               const std::filesystem::path& inputDir);
-    static OutputConfig      _parseOutput     (const nlohmann::json& j);
-    static HomogeneityConfig _parseHomogeneity(const nlohmann::json& j);
-    static PlotConfig        _parsePlots(const nlohmann::json& j);
-    static TimeFormat        _parseTimeFormat (const std::string& s);
+    static InputConfig       _parseInput        (const nlohmann::json& j,
+                                                 const std::filesystem::path& inputDir);
+    static OutputConfig      _parseOutput       (const nlohmann::json& j);
+    static HomogeneityConfig _parseHomogeneity  (const nlohmann::json& j);
+    static PlotConfig        _parsePlots        (const nlohmann::json& j);
+    static TimeFormat        _parseTimeFormat   (const std::string& s);
     static MergeStrategy     _parseMergeStrategy(const std::string& s);
+    static StatsConfig       _parseStats        (const nlohmann::json& j);
 
     /// Resolves a path against baseDir if not already absolute.
     static std::filesystem::path _resolvePath(const std::string& raw,

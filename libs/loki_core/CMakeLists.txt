@@ -23,6 +23,7 @@ target_sources(loki_core
         src/io/dataManager.cpp
         src/io/gnuplot.cpp
         src/io/plot.cpp
+        src/stats/descriptive.cpp
 )
 
 target_include_directories(loki_core
