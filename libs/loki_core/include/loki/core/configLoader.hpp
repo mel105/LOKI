@@ -1,0 +1,61 @@
+#pragma once
+#include <nlohmann/json.hpp>
+
+#include "loki/core/config.hpp"
+
+#include <filesystem>
+
+namespace loki {
+
+/**
+ * @brief Loads and validates application configuration from a JSON file.
+ *
+ * All parsing is done via nlohmann::json. Missing optional keys fall back to
+ * default values with a LOKI_WARNING. Missing required keys throw ConfigException.
+ *
+ * ### Required keys
+ * - `workspace` — absolute path to the workspace root directory.
+ *
+ * ### Optional keys (all others)
+ * Every other key has a documented default value. A warning is logged when
+ * a key is absent and its default is applied.
+ *
+ * ### Path resolution
+ * Paths inside `input` (file, files, scan_directory) are interpreted as
+ * relative to `<workspace>/INPUT/` unless they are already absolute.
+ *
+ * Usage example:
+ * @code
+ *   AppConfig cfg = ConfigLoader::load("config/loki_homogeneity.json");
+ *   Logger::initDefault(cfg.logDir, "loki_homogeneity", cfg.output.logLevel);
+ * @endcode
+ */
+class ConfigLoader {
+public:
+
+    /**
+     * @brief Parses a JSON config file and returns a fully populated AppConfig.
+     * @param jsonPath Path to the JSON configuration file.
+     * @return Populated AppConfig with all paths resolved to absolute form.
+     * @throws FileNotFoundException if jsonPath does not exist.
+     * @throws ParseException if the file is not valid JSON.
+     * @throws ConfigException if a required key is missing.
+     */
+    static AppConfig load(const std::filesystem::path& jsonPath);
+
+private:
+
+    static InputConfig       _parseInput      (const nlohmann::json& j,
+                                               const std::filesystem::path& inputDir);
+    static OutputConfig      _parseOutput     (const nlohmann::json& j);
+    static HomogeneityConfig _parseHomogeneity(const nlohmann::json& j);
+    static PlotConfig        _parsePlots(const nlohmann::json& j);
+    static TimeFormat        _parseTimeFormat (const std::string& s);
+    static MergeStrategy     _parseMergeStrategy(const std::string& s);
+
+    /// Resolves a path against baseDir if not already absolute.
+    static std::filesystem::path _resolvePath(const std::string& raw,
+                                              const std::filesystem::path& baseDir);
+};
+
+} // namespace loki

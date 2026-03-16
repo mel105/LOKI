@@ -1,0 +1,104 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_MAKE_PROGRAM": "mingw32-make"
+      }
+    },
+    {
+      "name": "base-ninja",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug — MinGW Makefiles (with tests)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Debug",
+        "LOKI_BUILD_TESTS":       "ON",
+        "LOKI_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release — MinGW Makefiles (optimised, no tests)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Release",
+        "LOKI_BUILD_TESTS":       "OFF",
+        "LOKI_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "debug-ninja",
+      "displayName": "Debug — Ninja (with tests)",
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Debug",
+        "LOKI_BUILD_TESTS":       "ON",
+        "LOKI_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "release-ninja",
+      "displayName": "Release — Ninja (optimised, no tests)",
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Release",
+        "LOKI_BUILD_TESTS":       "OFF",
+        "LOKI_ENABLE_SANITIZERS": "OFF"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "jobs": 0
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "jobs": 0
+    },
+    {
+      "name": "debug-ninja",
+      "configurePreset": "debug-ninja",
+      "jobs": 0
+    },
+    {
+      "name": "release-ninja",
+      "configurePreset": "release-ninja",
+      "jobs": 0
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    {
+      "name": "debug-ninja",
+      "configurePreset": "debug-ninja",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    }
+  ]
+}

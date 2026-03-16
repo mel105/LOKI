@@ -1,0 +1,34 @@
+# ── Build artefacts ───────────────────────────────────────────────────────────
+build/
+out/
+
+# Old codes and programs
+__backup__
+
+# ── CMake generated ───────────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+_deps/
+
+# ── Data and plot outputs (not committed per CLAUDE.md) ───────────────────────
+data/
+*.csv
+*.dat
+*.eps
+*.png
+*.pdf
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.orig
+*~
+
+# ── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

@@ -1,0 +1,34 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_seconds",
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png",
+        "time_format": "",
+        "enabled": {
+            "time_series": true,
+            "comparison":  false,
+            "histogram":   true,
+            "acf":         false,
+            "qq_plot":     false,
+            "boxplot":     false
+        }
+    },
+
+    "homogeneity": {
+        "method": "snht",
+        "significance_level": 0.05
+    }
+}

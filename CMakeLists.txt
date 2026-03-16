@@ -1,20 +1,37 @@
-cmake_minimum_required      (VERSION 3.10.0)
+cmake_minimum_required(VERSION 3.25)
 
-project                     ("LOKI" LANGUAGES CXX)
+project(
+    loki
+    VERSION 0.1.0
+    DESCRIPTION "LOKI — Statistical Analysis Toolkit for Time Series Data"
+    LANGUAGES CXX
+)
 
-set                         (CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_HOME_DIRECTORY}/Build)
-set                         (CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_HOME_DIRECTORY}/Build)
-set                         (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_HOME_DIRECTORY}/Build)
+# ── Language standard ──────────────────────────────────────────────────────────
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set                         (JSON_BuildTests OFF CACHE INTERNAL "")
+# ── CMake module path ──────────────────────────────────────────────────────────
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-set                         (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+# ── Project-wide helpers ───────────────────────────────────────────────────────
+include(CompilerOptions)
+include(Dependencies)
+include(Version)
 
-add_subdirectory            ("${CMAKE_HOME_DIRECTORY}/Dependencies/json-3.5.0")
-add_subdirectory            ("${CMAKE_PROJECT_NAME}")
+# ── Options ───────────────────────────────────────────────────────────────────
+option(LOKI_BUILD_TESTS "Build unit and integration tests" ON)
 
-set_property                (GLOBAL PROPERTY USE_FOLDERS ON)
+# ── Libraries ─────────────────────────────────────────────────────────────────
+add_subdirectory(libs/loki_core)
+add_subdirectory(libs/loki_homogeneity)
 
-if (MSVC)
-    set_property            (DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT "${CMAKE_PROJECT_NAME}")
+# ── Applications ──────────────────────────────────────────────────────────────
+add_subdirectory(apps/loki)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+if(LOKI_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
