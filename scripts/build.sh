@@ -2,16 +2,18 @@
 # scripts/build.sh -- configure and build LOKI
 #
 # Usage:
-#   ./scripts/build.sh [debug|release]   (default: debug)
+#   ./scripts/build.sh [debug|release] [--tests] [--copy-dlls]
 #
 # Options:
+#   --tests       Enable building of unit tests (Catch2). Off by default.
 #   --copy-dlls   Copy required UCRT64 runtime DLLs next to the executable.
 #                 Required after first build or when switching toolchains.
 #
 # Examples:
 #   ./scripts/build.sh
+#   ./scripts/build.sh debug --tests
+#   ./scripts/build.sh debug --tests --copy-dlls
 #   ./scripts/build.sh release
-#   ./scripts/build.sh debug --copy-dlls
 
 set -euo pipefail
 
@@ -36,13 +38,15 @@ RUNTIME_DLLS=(
 
 PRESET="debug"
 COPY_DLLS=0
+BUILD_TESTS=0
 
 for arg in "$@"; do
     case "${arg}" in
         debug|release) PRESET="${arg}" ;;
         --copy-dlls)   COPY_DLLS=1 ;;
+        --tests)       BUILD_TESTS=1 ;;
         *)
-            echo "Usage: build.sh [debug|release] [--copy-dlls]" >&2
+            echo "Usage: build.sh [debug|release] [--tests] [--copy-dlls]" >&2
             exit 1
             ;;
     esac
@@ -73,13 +77,17 @@ fi
 case "${PRESET}" in
     debug)
         CMAKE_BUILD_TYPE="Debug"
-        EXTRA_FLAGS="-DLOKI_BUILD_TESTS=OFF"
         ;;
     release)
         CMAKE_BUILD_TYPE="Release"
-        EXTRA_FLAGS="-DLOKI_BUILD_TESTS=OFF"
         ;;
 esac
+
+if [ "${BUILD_TESTS}" -eq 1 ]; then
+    TESTS_FLAG="-DLOKI_BUILD_TESTS=ON"
+else
+    TESTS_FLAG="-DLOKI_BUILD_TESTS=OFF"
+fi
 
 # -----------------------------------------------------------------------------
 # Configure
@@ -93,7 +101,7 @@ cmake -S . -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
     -DCMAKE_CXX_COMPILER="${CXX_COMPILER}" \
     -DCMAKE_MAKE_PROGRAM="${MAKE}" \
-    ${EXTRA_FLAGS}
+    "${TESTS_FLAG}"
 
 # -----------------------------------------------------------------------------
 # Build
@@ -109,15 +117,22 @@ echo "[LOKI] Build complete --> ${BUILD_DIR}/"
 # -----------------------------------------------------------------------------
 
 if [ "${COPY_DLLS}" -eq 1 ]; then
-    echo "[LOKI] Copying UCRT64 runtime DLLs to ${EXE_DIR}/ ..."
-    for dll in "${RUNTIME_DLLS[@]}"; do
-        src="${UCRT64_BIN}/${dll}"
-        if [ -f "${src}" ]; then
-            cp "${src}" "${EXE_DIR}/"
-            echo "       copied: ${dll}"
-        else
-            echo "[LOKI] WARNING: DLL not found: ${src}" >&2
+    TESTS_DIR="${BUILD_DIR}/tests"
+
+    for dest in "${EXE_DIR}" "${TESTS_DIR}"; do
+        if [ ! -d "${dest}" ]; then
+            continue
         fi
+        echo "[LOKI] Copying UCRT64 runtime DLLs to ${dest}/ ..."
+        for dll in "${RUNTIME_DLLS[@]}"; do
+            src="${UCRT64_BIN}/${dll}"
+            if [ -f "${src}" ]; then
+                cp "${src}" "${dest}/"
+                echo "       copied: ${dll}"
+            else
+                echo "[LOKI] WARNING: DLL not found: ${src}" >&2
+            fi
+        done
     done
     echo "[LOKI] DLLs ready."
 fi

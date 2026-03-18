@@ -2,18 +2,20 @@
 # scripts/clean.sh -- remove build artefacts and optionally rebuild
 #
 # Usage:
-#   ./scripts/clean.sh [debug|release|all|rebuild]   (default: all)
+#   ./scripts/clean.sh [debug|release|all|rebuild] [--tests]
 #
 # Commands:
 #   debug     Remove build/debug/ only.
 #   release   Remove build/release/ only.
 #   all       Remove both build/debug/ and build/release/  (default).
 #   rebuild   Clean all, then run build.sh debug --copy-dlls.
+#             Pass --tests to also build the test suite.
 #
 # Examples:
 #   ./scripts/clean.sh
 #   ./scripts/clean.sh debug
 #   ./scripts/clean.sh rebuild
+#   ./scripts/clean.sh rebuild --tests
 
 set -euo pipefail
 
@@ -21,7 +23,19 @@ set -euo pipefail
 # Argument parsing
 # -----------------------------------------------------------------------------
 
-TARGET="${1:-all}"
+TARGET="all"
+EXTRA_FLAGS=""
+
+for arg in "$@"; do
+    case "${arg}" in
+        debug|release|all|rebuild) TARGET="${arg}" ;;
+        --tests) EXTRA_FLAGS="${EXTRA_FLAGS} --tests" ;;
+        *)
+            echo "Usage: clean.sh [debug|release|all|rebuild] [--tests]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # -----------------------------------------------------------------------------
 # Sanity check
@@ -66,10 +80,11 @@ case "${TARGET}" in
         remove_build debug
         remove_build release
         echo "[LOKI] Starting fresh build (debug + DLLs)..."
-        bash "$(dirname "$0")/build.sh" debug --copy-dlls
+        # shellcheck disable=SC2086
+        bash "$(dirname "$0")/build.sh" debug --copy-dlls ${EXTRA_FLAGS}
         ;;
     *)
-        echo "Usage: clean.sh [debug|release|all|rebuild]" >&2
+        echo "Usage: clean.sh [debug|release|all|rebuild] [--tests]" >&2
         exit 1
         ;;
 esac
