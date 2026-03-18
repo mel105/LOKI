@@ -176,10 +176,10 @@ loki/
 +-- apps/
 |   +-- loki/
 |   |   +-- CMakeLists.txt
-|   |   +-- main.cpp                   <- ladenie / smoke test
+|   |   +-- main.cpp
 |   +-- loki_homogeneity/
 |       +-- CMakeLists.txt
-|       +-- main.cpp                   <- homogenizacna pipeline apka
+|       +-- main.cpp
 +-- libs/
 |   +-- loki_core/
 |   |   +-- CMakeLists.txt
@@ -196,11 +196,12 @@ loki/
 |   |   |       +-- timeseries/
 |   |   |       |   +-- timeSeries.hpp
 |   |   |       |   +-- timeStamp.hpp
-|   |   |       |   +-- gapFiller.hpp      <- NOVY (vlakno G)
+|   |   |       |   +-- gapFiller.hpp
 |   |   |       +-- stats/
 |   |   |       |   +-- descriptive.hpp
+|   |   |       |   +-- filter.hpp
 |   |   |       +-- io/
-|   |   |           +-- loader.hpp         <- v io, NIE v timeseries
+|   |   |           +-- loader.hpp         <- in io/, NOT timeseries/
 |   |   |           +-- dataManager.hpp
 |   |   |           +-- gnuplot.hpp
 |   |   |           +-- plot.hpp
@@ -212,9 +213,10 @@ loki/
 |   |       +-- timeseries/
 |   |       |   +-- timeSeries.cpp
 |   |       |   +-- timeStamp.cpp
-|   |       |   +-- gapFiller.cpp          <- NOVY (vlakno G)
+|   |       |   +-- gapFiller.cpp
 |   |       +-- stats/
 |   |       |   +-- descriptive.cpp
+|   |       |   +-- filter.cpp
 |   |       +-- io/
 |   |           +-- loader.cpp
 |   |           +-- dataManager.cpp
@@ -229,21 +231,21 @@ loki/
 |   |   |           +-- changePointResult.hpp
 |   |   |           +-- changePointDetector.hpp
 |   |   |           +-- multiChangePointDetector.hpp
-|   |   |           +-- deseasonalizer.hpp
 |   |   |           +-- medianYearSeries.hpp
+|   |   |           +-- deseasonalizer.hpp
 |   |   |           +-- harmonicSeries.hpp
 |   |   |           +-- seriesAdjuster.hpp
 |   |   |           +-- homogenizer.hpp
 |   |   +-- src/
 |   |       +-- changePointDetector.cpp
 |   |       +-- multiChangePointDetector.cpp
-|   |       +-- deseasonalizer.cpp
 |   |       +-- medianYearSeries.cpp
+|   |       +-- deseasonalizer.cpp
 |   |       +-- harmonicSeries.cpp
 |   |       +-- seriesAdjuster.cpp
 |   |       +-- homogenizer.cpp
 |   |
-|   +-- loki_outlier/                      <- BUDUCI modul
+|   +-- loki_outlier/                      <- future module
 |       +-- CMakeLists.txt
 |       +-- include/loki/outlier/
 |       +-- src/
@@ -256,15 +258,15 @@ loki/
 |   |   +-- timeseries/
 |   |   |   +-- test_timeStamp.cpp
 |   |   |   +-- test_timeSeries.cpp
-|   |   |   +-- test_gapFiller.cpp         <- NOVY (vlakno G)
+|   |   |   +-- test_gapFiller.cpp
 |   |   +-- stats/
 |   |   |   +-- test_descriptive.cpp
 |   |   |   +-- test_summarize.cpp
 |   |   +-- homogeneity/
 |   |       +-- test_changePointDetector.cpp
 |   |       +-- test_multiChangePointDetector.cpp
-|   |       +-- test_deseasonalizer.cpp
 |   |       +-- test_medianYearSeries.cpp
+|   |       +-- test_deseasonalizer.cpp
 |   |       +-- test_seriesAdjuster.cpp
 |   |       +-- test_homogenizer.cpp
 |   +-- integration/
@@ -387,8 +389,10 @@ loki_add_test_exe(
 | `unit/timeseries/test_timeSeries.cpp` | append, access, slice, metadata | 21 |
 | `unit/stats/test_descriptive.cpp` | mean, median, variance, IQR, ACF, Hurst | 27 |
 | `unit/stats/test_summarize.cpp` | summarize(), NanPolicy, formatSummary() | 13 |
+| `unit/timeseries/test_gapFiller.cpp` | GapFiller: detectGaps, fill (all strategies), edges, maxFillLength | 25 |
+| `unit/homogeneity/test_medianYearSeries.cpp` | MedianYearSeries: profile, slots, NaN, valueAt, resolution | 14 |
 
-Total: **87 tests, 87 passing**.
+Total: **126 tests, 126 passing**.
 
 ---
 
@@ -422,7 +426,8 @@ Example config (`config/loki_homogeneity.json`):
         "preprocessing": {
             "gap_filling": {
                 "enabled": true,
-                "strategy": "median_year"
+                "strategy": "median_year",
+                "min_years": 5
             },
             "outlier_removal": {
                 "enabled": false,
@@ -485,7 +490,7 @@ namespace loki::homogeneity {
 // Single change point detection result
 struct ChangePointResult {
     bool   detected{false};
-    int    index{-1};           // position in sub-series (0-based)
+    int    index{-1};
     double shift{0.0};
     double meanBefore{0.0};
     double meanAfter{0.0};
@@ -493,7 +498,7 @@ struct ChangePointResult {
     double criticalValue{0.0};
     double pValue{0.0};
     double acfLag1{0.0};
-    double sigmaStar{1.0};      // noise dependence correction factor
+    double sigmaStar{1.0};
     int    confIntervalLow{-1};
     int    confIntervalHigh{-1};
 };
@@ -513,10 +518,6 @@ struct ChangePoint {
 
 ```cpp
 // --- ChangePointDetector ---
-// Single change point, one segment [begin, end).
-// T-statistics: O(n) via prefix sums (not O(n^2) as in old code).
-// Critical value: asymptotic distribution Yao & Davis (1986).
-// Noise correction: Antoch et al. sigmaStar approach.
 class ChangePointDetector {
 public:
     struct Config {
@@ -532,7 +533,6 @@ public:
 };
 
 // --- MultiChangePointDetector ---
-// Binary splitting, recursive. Each segment has its own n -> own critical value.
 class MultiChangePointDetector {
 public:
     struct Config {
@@ -544,6 +544,24 @@ public:
     [[nodiscard]]
     std::vector<ChangePoint> detect(const std::vector<double>& z,
                                     const std::vector<double>& times) const;
+};
+
+// --- MedianYearSeries ---
+// Computes median annual profile for gap filling and deseasonalization.
+// Profile: flat vector of 366 * slotsPerDay medians.
+// Resolution auto-detected from series; sub-hourly -> ConfigException.
+// Slots with fewer than minYears values -> NaN (warning logged, no throw).
+class MedianYearSeries {
+public:
+    struct Config {
+        int    minYears{5};
+        double maxResolutionDays{1.0 / 24.0};  // 1 hour
+    };
+    explicit MedianYearSeries(const TimeSeries& series, Config cfg = Config{});
+    [[nodiscard]] double      valueAt(const TimeStamp& ts) const noexcept;
+    [[nodiscard]] std::size_t profileSize()  const noexcept;
+    [[nodiscard]] double      stepDays()     const noexcept;
+    [[nodiscard]] int         slotsPerDay()  const noexcept;
 };
 
 // --- Deseasonalizer ---
@@ -561,9 +579,6 @@ public:
 };
 
 // --- SeriesAdjuster ---
-// Adjusts original series left-to-right based on detected change points.
-// Reference segment = last (rightmost). Each previous segment shifted
-// by cumulative sum of jumps.
 class SeriesAdjuster {
 public:
     [[nodiscard]]
@@ -571,7 +586,7 @@ public:
                       const std::vector<ChangePoint>& changePoints) const;
 };
 
-// --- Homogenizer (orchestrator in libs) ---
+// --- Homogenizer ---
 class Homogenizer {
 public:
     struct Config {
@@ -624,6 +639,24 @@ Always use `DISCOVERY_MODE PRE_TEST` in `tests/CMakeLists.txt`.
 ### TimeStamp not in namespace loki
 Known inconsistency -- to be fixed during full refactoring.
 
+### Catch2 test name s bodkociarkami (test #95)
+Test case z H1 obsahuje bodkociarkamy v nazve -- Catch2 PRE_TEST discovery
+ho registruje ako jeden dlhy nazov. Nie je to bug v kode, len kosmeticky
+problem s pomenovanim. Opravit pri refaktore testov H1.
+
+### Logger macro names
+Correct macros: LOKI_INFO, LOKI_WARNING, LOKI_ERROR (not LOKI_WARN, not LOG_INFO).
+
+### Config struct with enum member -- GCC 13 aggregate init
+In-class initializers on structs with enum members fail with `= {}` as default
+argument on GCC 13/Windows. Fix: use explicit constructor with member-initializer
+list, and `Config cfg = Config{}` as the default argument.
+
+### ::TimeStamp in loki namespace code
+TimeStamp is not in namespace loki. When used alongside loki:: types,
+always qualify as ::TimeStamp (global scope). This applies to function
+signatures, lambdas, and local variables.
+
 ---
 
 ## Implemented Modules
@@ -639,12 +672,16 @@ Known inconsistency -- to be fixed during full refactoring.
 ### loki::timeseries -- complete
 - `timeStamp.hpp / .cpp` -- MJD internal, GPS/UTC/Unix conversions
 - `timeSeries.hpp / .cpp` -- Observation, SeriesMetadata, append, slice, indexOf
+- `gapFiller.hpp / .cpp` -- LINEAR, FORWARD_FILL, MEAN, NONE strategies;
+                             MEDIAN_YEAR blocked (ConfigException) until integrated
+                             with MedianYearSeries; detects NaN and time-jump gaps;
+                             bfill/ffill on leading/trailing edges; maxFillLength limit
 
 ### loki::stats -- complete
 - `descriptive.hpp / .cpp` -- mean, median, variance, IQR, ACF, Hurst, summarize()
 
 ### loki::io -- complete
-- `loader.hpp / .cpp` -- file loading         (in io/, NOT timeseries/)
+- `loader.hpp / .cpp` -- file loading (in io/, NOT timeseries/)
 - `dataManager.hpp / .cpp`
 - `gnuplot.hpp / .cpp`
 - `plot.hpp / .cpp`
@@ -652,9 +689,28 @@ Known inconsistency -- to be fixed during full refactoring.
 ### apps/loki -- complete
 Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 
+### loki_homogeneity -- partially implemented
+- `changePointResult.hpp` -- ChangePointResult + ChangePoint structs
+- `changePointDetector.hpp / .cpp` -- single segment, O(n) prefix sums, sigmaStar
+- `multiChangePointDetector.hpp / .cpp` -- recursive binary splitting
+- `medianYearSeries.hpp / .cpp` -- median annual profile, auto-detected resolution
+                                    (daily=366 slots, 6h=1464 slots, etc.);
+                                    sub-hourly -> ConfigException;
+                                    under-populated slots -> NaN + warning (no throw);
+                                    short series -> warning + continues with available data
+- `filter.hpp / .cpp` -- movingAverage (centered, O(n) prefix sums),
+                         exponentialMovingAverage, weightedMovingAverage;
+                         all reject NaN input (DataException); checkNoNaN helper
+- `deseasonalizer.hpp / .cpp` -- Strategy: MOVING_AVERAGE (default), MEDIAN_YEAR, NONE;
+                                  MEDIAN_YEAR requires profileLookup lambda + step >= 1h;
+                                  Result: {residuals, seasonal, series with _deseas suffix}
+
 ### Not yet implemented
-- `loki_core/timeseries/gapFiller.hpp` -- planned vlakno G
-- `loki_homogeneity` -- architecture agreed, implementation starts vlakno H1
+- `loki_homogeneity/deseasonalizer` -- H5
+- `loki_homogeneity/harmonicSeries` -- H4
+- `loki_homogeneity/seriesAdjuster` -- H6
+- `loki_homogeneity/homogenizer` -- H7
+- `apps/loki_homogeneity` -- H8
 - `loki_outlier` -- future
 - All other planned modules
 
@@ -662,19 +718,19 @@ Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 
 ## Planned Thread Sequence for loki_homogeneity
 
-| Thread | Scope | Deliverables |
-|---|---|---|
-| H1 | `ChangePointResult`, `ChangePointDetector` | `.hpp`, `.cpp`, `test_changePointDetector.cpp` |
-| H2 | `MultiChangePointDetector` (binary splitting) | `.hpp`, `.cpp`, `test_multiChangePointDetector.cpp` |
-| H3 | `MedianYearSeries` | `.hpp`, `.cpp`, `test_medianYearSeries.cpp` |
-| H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` |
-| H5 | `Deseasonalizer` (strategy pattern) | `.hpp`, `.cpp`, `test_deseasonalizer.cpp` |
-| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` |
-| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` |
-| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline apka |
-| G  | `GapFiller` (loki_core/timeseries) | `.hpp`, `.cpp`, `test_gapFiller.cpp` |
+| Thread | Scope | Deliverables | Status |
+|---|---|---|---|
+| H1 | `ChangePointResult`, `ChangePointDetector` | `.hpp`, `.cpp`, `test_changePointDetector.cpp` | DONE |
+| H2 | `MultiChangePointDetector` (binary splitting) | `.hpp`, `.cpp`, `test_multiChangePointDetector.cpp` | DONE |
+| G  | `GapFiller` (loki_core/timeseries) | `.hpp`, `.cpp`, `test_gapFiller.cpp` | DONE |
+| H3 | `MedianYearSeries` | `.hpp`, `.cpp`, `test_medianYearSeries.cpp` | DONE |
+| H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` | POSTPONED - urobime v loki_spectral (FFT) |
+| H5 | `MA filter + Deseasonalizer` | `filter.hpp/.cpp`, `deseasonalizer.hpp/.cpp`, `test_filter.cpp, test_deseasonalizer.cpp` | DONE |
+| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` | next |
+| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | |
+| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline app | |
 
-Odporucane poradie: H1 -> H2 -> G -> H3 -> H4 -> H5 -> H6 -> H7 -> H8.
+Recommended order: H5 -> H6 -> H7 -> H8.
 
 ### How to start each thread
 Paste this at the beginning of each new conversation:
@@ -715,23 +771,52 @@ Both conditions must be satisfied before recursing:
 Reference segment = **last (rightmost)**. Adjust all previous segments
 left-to-right by cumulative shift sum. This matches the original approach.
 
-### MedianYearSeries -- requires calendar timestamp
-Only valid when `TimeSeries` has `TimeStamp` with recoverable calendar date
-(UTC string, GPS total seconds, MJD, GPS week+SOW). Pure index input -> use MA or NONE.
+### GapFiller -- gap detection
+Two sources of gaps detected simultaneously:
+- NaN value in Observation (time present, value missing).
+- Time jump > expectedStep * gapThresholdFactor (entire rows absent).
+Expected step = median of consecutive MJD differences (robust to outlier jumps).
+Absent-row gaps use sentinel endIndex < startIndex to distinguish from NaN gaps.
+Leading/trailing NaN always filled (bfill/ffill) regardless of maxFillLength.
+
+### GapFiller -- MEDIAN_YEAR integration
+GapFiller::Strategy::MEDIAN_YEAR is defined but blocked with ConfigException.
+When MedianYearSeries is integrated (post-H3), add:
+  fillMedianYear(series, gaps, const MedianYearSeries&) const
+to GapFiller without changing the public interface.
+
+### MedianYearSeries -- profile structure
+Flat vector of 366 * slotsPerDay medians. Slot index:
+  slot = (doy - 1) * slotsPerDay + slotOfDay
+doy in [1, 366], slotOfDay in [0, slotsPerDay).
+slotsPerDay = round(1 / stepDays), clamped to [1, 24].
+Leap year DOY 366 slot allocated but only populated in leap years.
+Sub-hourly resolution (step < 1h) rejected -- median year loses statistical meaning.
+Short series (span < minYears) -> LOKI_WARNING, continues with available data.
+Under-populated slots (count < minYears) -> NaN, LOKI_WARNING logged.
+minYears default = 5, configurable (future: from JSON).
+
+### MedianYearSeries location
+Lives in `loki_homogeneity`, not `loki_core`, because it is specific to the
+homogeneity analysis pipeline. GapFiller (loki_core) receives it by reference.
 
 ### HarmonicSeries -- LSQ, replaces old newmat-based fit.cpp
 Model: `y = a0 + sum_{j=1}^{order} [a_j * sin(2*pi*j*t/P) + b_j * cos(2*pi*j*t/P)]`
 Period P = 365.25 days (climatological). Uses Eigen3 instead of newmat.
-Convergence criterion and max iterations configurable.
-
-### GapFiller location
-`GapFiller` lives in `loki_core/timeseries` (not `loki_homogeneity`) because
-gap filling is a general `TimeSeries` operation reusable by `loki_qc`,
-`loki_outlier`, and any future module.
 
 ### loki::stats ACF -- already implemented
 `loki::stats::acf(x, maxLag)` exists in `descriptive.hpp`. Do NOT reimplement
 in `loki_homogeneity`. Import `loki_core` and call directly.
+
+### HarmonicSeries -- POSTPONED
+Bez FFT/spektralnej analyzy nie je mozne odhadnut periody spolahlivo.
+Bude implementovana po loki_spectral: FFT -> dominant periods -> harmonic fit.
+
+### Deseasonalizer strategies (revised)
+MEDIAN_YEAR: signal - medianYear[slot], pouziva MedianYearSeries cez referenciu
+MOVING_AVERAGE: centered simple MA, windowSize konfigurovatelny (default 365)
+NONE: no-op
+MA filter implementovany v loki_core/stats (nie loki_homogeneity).
 
 ---
 

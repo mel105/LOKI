@@ -88,3 +88,45 @@ loki_add_test_exe(
     SOURCES unit/stats/test_summarize.cpp
     LIBS    loki_core
 )
+
+# --- changepoint detector -----------------------------------------------------
+loki_add_test_exe(
+    NAME    test_changePointDetector
+    SOURCES unit/homogeneity/test_changePointDetector.cpp
+    LIBS    loki_homogeneity loki_core
+)
+
+# --- multi-changepoint detector -----------------------------------------------
+loki_add_test_exe(
+    NAME    test_multiChangePointDetector
+    SOURCES unit/homogeneity/test_multiChangePointDetector.cpp
+    LIBS    loki_homogeneity loki_core
+)
+
+# --- gap filler----------------------------------------------------------------
+loki_add_test_exe(
+    NAME    test_gapFiller
+    SOURCES unit/homogeneity/test_gapFiller.cpp
+    LIBS    loki_homogeneity loki_core
+)
+
+# --- median year series constructor -------------------------------------------
+loki_add_test_exe(
+    NAME    test_medianYearSeries
+    SOURCES unit/homogeneity/test_medianYearSeries.cpp
+    LIBS    loki_core loki_homogeneity
+)
+
+# --- signal filter ------------------------------------------------------------
+loki_add_test_exe(
+    NAME    test_filter
+    SOURCES unit/stats/test_filter.cpp
+    LIBS    loki_core
+)
+ 
+# --- time series deseasonalising ----------------------------------------------
+loki_add_test_exe(
+    NAME    test_deseasonalizer
+    SOURCES unit/homogeneity/test_deseasonalizer.cpp
+    LIBS    loki_core loki_homogeneity
+)

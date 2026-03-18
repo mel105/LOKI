@@ -19,11 +19,13 @@ target_sources(loki_core
         src/core/directoryScanner.cpp
         src/timeseries/timeStamp.cpp
         src/timeseries/timeSeries.cpp
+        src/timeseries/gapFiller.cpp
         src/io/loader.cpp
         src/io/dataManager.cpp
         src/io/gnuplot.cpp
         src/io/plot.cpp
         src/stats/descriptive.cpp
+        src/stats/filter.cpp
 )
 
 target_include_directories(loki_core
