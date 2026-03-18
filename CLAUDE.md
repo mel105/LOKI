@@ -49,7 +49,7 @@ Current focus: change point detection and homogeneity testing (`loki_homogeneity
 ### Comments
 - **All comments must be written in English.**
 - **All comments must use ASCII characters only** -- no Unicode box-drawing characters
-  such as `─`, `│`, `└`, etc. Use plain `-` or `=` for decorative separators.
+  such as `--`, `|`, `+`, etc. Use plain `-` or `=` for decorative separators.
   Unicode in source files causes GCC on Windows to misparse tokens.
 - Every class must have a Doxygen-style comment block explaining its purpose.
 - Every public method must have a brief Doxygen comment.
@@ -166,7 +166,7 @@ Before presenting any code artifact, verify:
 
 ```
 loki/
-+-- CLAUDE.md                        <- this file
++-- CLAUDE.md
 +-- CMakeLists.txt
 +-- CMakePresets.json
 +-- cmake/
@@ -175,8 +175,11 @@ loki/
 |   +-- Version.cmake
 +-- apps/
 |   +-- loki/
+|   |   +-- CMakeLists.txt
+|   |   +-- main.cpp                   <- ladenie / smoke test
+|   +-- loki_homogeneity/
 |       +-- CMakeLists.txt
-|       +-- main.cpp
+|       +-- main.cpp                   <- homogenizacna pipeline apka
 +-- libs/
 |   +-- loki_core/
 |   |   +-- CMakeLists.txt
@@ -193,10 +196,11 @@ loki/
 |   |   |       +-- timeseries/
 |   |   |       |   +-- timeSeries.hpp
 |   |   |       |   +-- timeStamp.hpp
+|   |   |       |   +-- gapFiller.hpp      <- NOVY (vlakno G)
 |   |   |       +-- stats/
 |   |   |       |   +-- descriptive.hpp
 |   |   |       +-- io/
-|   |   |           +-- loader.hpp
+|   |   |           +-- loader.hpp         <- v io, NIE v timeseries
 |   |   |           +-- dataManager.hpp
 |   |   |           +-- gnuplot.hpp
 |   |   |           +-- plot.hpp
@@ -208,6 +212,7 @@ loki/
 |   |       +-- timeseries/
 |   |       |   +-- timeSeries.cpp
 |   |       |   +-- timeStamp.cpp
+|   |       |   +-- gapFiller.cpp          <- NOVY (vlakno G)
 |   |       +-- stats/
 |   |       |   +-- descriptive.cpp
 |   |       +-- io/
@@ -217,43 +222,60 @@ loki/
 |   |           +-- plot.cpp
 |   |
 |   +-- loki_homogeneity/
+|   |   +-- CMakeLists.txt
+|   |   +-- include/
+|   |   |   +-- loki/
+|   |   |       +-- homogeneity/
+|   |   |           +-- changePointResult.hpp
+|   |   |           +-- changePointDetector.hpp
+|   |   |           +-- multiChangePointDetector.hpp
+|   |   |           +-- deseasonalizer.hpp
+|   |   |           +-- medianYearSeries.hpp
+|   |   |           +-- harmonicSeries.hpp
+|   |   |           +-- seriesAdjuster.hpp
+|   |   |           +-- homogenizer.hpp
+|   |   +-- src/
+|   |       +-- changePointDetector.cpp
+|   |       +-- multiChangePointDetector.cpp
+|   |       +-- deseasonalizer.cpp
+|   |       +-- medianYearSeries.cpp
+|   |       +-- harmonicSeries.cpp
+|   |       +-- seriesAdjuster.cpp
+|   |       +-- homogenizer.cpp
+|   |
+|   +-- loki_outlier/                      <- BUDUCI modul
 |       +-- CMakeLists.txt
-|       +-- include/
-|       |   +-- loki/
-|       |       +-- homogeneity/
-|       |           +-- changePointDetector.hpp
-|       |           +-- snhtDetector.hpp
-|       |           +-- seriesAdjuster.hpp
-|       |           +-- homogenizer.hpp
+|       +-- include/loki/outlier/
 |       +-- src/
-|           +-- changePointDetector.cpp
-|           +-- snhtDetector.cpp
-|           +-- seriesAdjuster.cpp
-|           +-- homogenizer.cpp
 |
 +-- tests/
-|   +-- CMakeLists.txt               <- single file, owns all test targets
+|   +-- CMakeLists.txt
 |   +-- unit/
 |   |   +-- core/
 |   |   |   +-- test_exceptions.cpp
 |   |   +-- timeseries/
 |   |   |   +-- test_timeStamp.cpp
 |   |   |   +-- test_timeSeries.cpp
+|   |   |   +-- test_gapFiller.cpp         <- NOVY (vlakno G)
 |   |   +-- stats/
-|   |       +-- test_descriptive.cpp
-|   |       +-- test_summarize.cpp
+|   |   |   +-- test_descriptive.cpp
+|   |   |   +-- test_summarize.cpp
+|   |   +-- homogeneity/
+|   |       +-- test_changePointDetector.cpp
+|   |       +-- test_multiChangePointDetector.cpp
+|   |       +-- test_deseasonalizer.cpp
+|   |       +-- test_medianYearSeries.cpp
+|   |       +-- test_seriesAdjuster.cpp
+|   |       +-- test_homogenizer.cpp
 |   +-- integration/
-|       +-- CMakeLists.txt           <- commented out, no tests yet
 |
 +-- config/
 |   +-- loki_homogeneity.json
-|
 +-- scripts/
 |   +-- build.sh
 |   +-- clean.sh
 |   +-- run.sh
 |   +-- test.sh
-|
 +-- docs/
 ```
 
@@ -277,7 +299,7 @@ All dependencies managed via CMake `FetchContent` -- no vendored source code in 
 
 | Module | Description |
 |---|---|
-| `loki_homogeneity` | Change point detection, SNHT, Pettitt, Buishand -- **current focus** |
+| `loki_homogeneity` | Change point detection, homogenizacia -- **aktualny fokus** |
 | `loki_outlier` | IQR, Z-score, Mahalanobis, hat matrix, clustering-based |
 | `loki_decomposition` | Trend, seasonality, residuals (STL, classical) |
 | `loki_svd` | SVD/PCA decomposition of time series |
@@ -296,9 +318,6 @@ All dependencies managed via CMake `FetchContent` -- no vendored source code in 
 
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
-Prefer using the scripts in `scripts/` -- see Scripts section below.
-Manual cmake invocation for reference only:
-
 ```bash
 mkdir -p build/debug
 cd build/debug
@@ -314,160 +333,74 @@ cmake ../.. \
 ```
 
 ### First run -- copy runtime DLLs
-After first build, copy UCRT64 runtime DLLs next to executables:
-
 ```bash
 cp /c/msys64/ucrt64/bin/libgcc_s_seh-1.dll   build/debug/apps/loki/
 cp /c/msys64/ucrt64/bin/libstdc++-6.dll       build/debug/apps/loki/
 cp /c/msys64/ucrt64/bin/libwinpthread-1.dll   build/debug/apps/loki/
-# Also required next to test executables:
 cp /c/msys64/ucrt64/bin/libgcc_s_seh-1.dll   build/debug/tests/
 cp /c/msys64/ucrt64/bin/libstdc++-6.dll       build/debug/tests/
 cp /c/msys64/ucrt64/bin/libwinpthread-1.dll   build/debug/tests/
 ```
 
-`build.sh --copy-dlls` handles this automatically for both locations.
-
-### CMakePresets (future use with Ninja)
-Presets in `CMakePresets.json` support both `MinGW Makefiles` and `Ninja` generators.
-Ninja is not currently installed. To install, place `ninja.exe` in
-`C:/msys64/ucrt64/bin/` and use:
-
-```bash
-cmake --preset debug
-cmake --build --preset debug
-```
+`build.sh --copy-dlls` handles this automatically.
 
 ---
 
 ## Scripts
 
-All scripts run from the **repository root**. See `scripts/` directory.
-
-### build.sh -- configure and compile
 ```
 ./scripts/build.sh [debug|release] [--tests] [--copy-dlls]
-```
-Runs cmake configure + mingw32-make. Always full cmake configure (slow but reliable).
-Use when: changing CMakeLists, adding a library, first build, switching presets.
-
-| Command | When to use |
-|---|---|
-| `./scripts/build.sh` | Standard debug build without tests |
-| `./scripts/build.sh --tests --copy-dlls` | First build with tests |
-| `./scripts/build.sh release` | Release build |
-| `./scripts/build.sh debug --tests` | Rebuild with tests, DLLs already present |
-
-### run.sh -- incremental build and run
-```
 ./scripts/run.sh [config]
-```
-Incremental build (changed files only) + runs `loki.exe`. cmake not re-invoked -- fast.
-Copies missing DLLs automatically.
-
-### clean.sh -- remove build directories
-```
 ./scripts/clean.sh [debug|release|all|rebuild] [--tests]
-```
-
-| Command | When to use |
-|---|---|
-| `./scripts/clean.sh` | Remove both builds (before commit, on weird errors) |
-| `./scripts/clean.sh debug` | Remove debug only |
-| `./scripts/clean.sh rebuild` | Clean rebuild without tests |
-| `./scripts/clean.sh rebuild --tests` | Clean rebuild with tests |
-
-### test.sh -- run test suite
-```
 ./scripts/test.sh [--rebuild] [--filter <pat>] [--verbose] [--list]
 ```
-Incremental build + DLL check + ctest. If `build/debug/tests/` does not exist,
-automatically calls `build.sh --tests --copy-dlls`.
-
-| Command | When to use |
-|---|---|
-| `./scripts/test.sh` | Run all tests (incremental build) |
-| `./scripts/test.sh --rebuild` | Clean rebuild + all tests |
-| `./scripts/test.sh --filter exceptions` | Tests matching "exceptions" in name |
-| `./scripts/test.sh --filter stats --verbose` | Full assertion output for stats tests |
-| `./scripts/test.sh --list` | List all tests without running |
 
 ---
 
 ## Test Infrastructure
 
 ### Framework
-Catch2 v3.5.2 via FetchContent. Test executables built in `build/debug/tests/`.
+Catch2 v3.5.2 via FetchContent. Test executables in `build/debug/tests/`.
 
 ### CMakeLists structure
-`tests/CMakeLists.txt` is the **single** file that owns all test targets.
-It defines the `loki_add_test_exe` macro and registers every test exe via
-`catch_discover_tests(...  DISCOVERY_MODE PRE_TEST)`.
-`PRE_TEST` is required on Windows -- without it cmake tries to run the exe
-during configure phase before DLLs are present, causing exit code 0xc0000139.
-
-Do NOT add sub-CMakeLists in `tests/unit/` subdirectories -- they are not needed
-and caused "find_package Catch2 not found" errors in the past.
-`tests/integration/CMakeLists.txt` exists but is fully commented out.
+`tests/CMakeLists.txt` is the single file that owns all test targets.
+Uses `loki_add_test_exe` macro. Always use `DISCOVERY_MODE PRE_TEST`.
 
 ### Adding a new test file
 1. Create `tests/unit/<module>/test_<name>.cpp`.
-2. Add a `loki_add_test_exe()` entry in `tests/CMakeLists.txt`:
+2. Add entry in `tests/CMakeLists.txt`:
 ```cmake
 loki_add_test_exe(
     NAME    test_<name>
     SOURCES unit/<module>/test_<name>.cpp
-    LIBS    loki_core          # or loki_homogeneity etc.
+    LIBS    loki_core
 )
 ```
 3. Rebuild with `./scripts/test.sh --rebuild`.
 
-### Current test files and coverage
+### Current test coverage
 
 | File | Covers | Tests |
 |---|---|---|
-| `unit/core/test_exceptions.cpp` | Full exception hierarchy, message round-trip | 14 |
-| `unit/timeseries/test_timeStamp.cpp` | Calendar, MJD, Unix, GPS conversions, comparisons | 12 |
-| `unit/timeseries/test_timeSeries.cpp` | append, access, sorted flag, indexOf, slice, metadata | 21 |
-| `unit/stats/test_descriptive.cpp` | mean, median, variance, IQR, skewness, pearsonR, acf, Hurst | 27 |
-| `unit/stats/test_summarize.cpp` | summarize(), NanPolicy, Hurst flag, formatSummary() | 13 |
+| `unit/core/test_exceptions.cpp` | Full exception hierarchy | 14 |
+| `unit/timeseries/test_timeStamp.cpp` | Calendar, MJD, Unix, GPS conversions | 12 |
+| `unit/timeseries/test_timeSeries.cpp` | append, access, slice, metadata | 21 |
+| `unit/stats/test_descriptive.cpp` | mean, median, variance, IQR, ACF, Hurst | 27 |
+| `unit/stats/test_summarize.cpp` | summarize(), NanPolicy, formatSummary() | 13 |
 
 Total: **87 tests, 87 passing**.
-
-### Known test design decisions
-
-**IQR quantile variant** -- LOKI uses `h = p * (n-1)` (interpolate between
-`s[floor(h)]` and `s[ceil(h)]`). For `{1,2,3,4,5}` this gives IQR = 2.0.
-NumPy default also claims type-7 but uses a slightly different index formula
-and returns IQR = 3.0 for the same input. LOKI's formula is self-consistent;
-do not change the expected value in the test to match NumPy.
-
-**GPS epoch test** -- `fromGpsTotalSeconds(0.0)` returns UTC 1980-01-05 23:59:50,
-NOT 1980-01-06 00:00:00. This is correct: at the GPS epoch, GPS -- UTC = 10 s
-(from the 1980-01-01 leap second table entry). The implementation subtracts
-10 seconds, landing on the previous day. The test reflects this behaviour.
-
-**IntelliSense false positive** -- VS Code / IntelliSense may show red squiggles
-on `REQUIRE(t1 < t2)` for `TimeStamp` comparisons, complaining that
-`operator<` is not found. This is a known IntelliSense quirk with C++20
-`operator<=> = default` on types in the global namespace. GCC compiles and
-links correctly; the tests pass. Will resolve itself when `TimeStamp` is
-moved to `namespace loki` during the planned refactoring.
 
 ---
 
 ## Workspace Layout
 
-The workspace root is an **absolute path** set in `config/loki_homogeneity.json`
-under the `"workspace"` key. All other paths are relative to it:
-
 ```
 <workspace>/
-+-- INPUT/          <- input time series files
++-- INPUT/
 +-- OUTPUT/
-    +-- LOG/        <- log files written by Logger
-    +-- CSV/        <- exported results (future)
-    +-- IMG/        <- gnuplot images (future)
+    +-- LOG/
+    +-- CSV/
+    +-- IMG/
 ```
 
 Example config (`config/loki_homogeneity.json`):
@@ -486,303 +419,331 @@ Example config (`config/loki_homogeneity.json`):
         "log_level": "info"
     },
     "homogeneity": {
-        "method": "snht",
-        "significance_level": 0.05
+        "preprocessing": {
+            "gap_filling": {
+                "enabled": true,
+                "strategy": "median_year"
+            },
+            "outlier_removal": {
+                "enabled": false,
+                "strategy": "iqr",
+                "threshold": 3.0
+            }
+        },
+        "deseasonalization": {
+            "enabled": true,
+            "strategy": "median_year",
+            "harmonic_order": 1,
+            "ma_window_size": 365
+        },
+        "detection": {
+            "enabled": true,
+            "significance_level": 0.05,
+            "acf_dependence_limit": 0.2,
+            "min_segment_points": 60,
+            "min_segment_seconds": 0
+        },
+        "adjustment": {
+            "enabled": true
+        }
     }
 }
 ```
 
-The `"file"` path is resolved relative to `<workspace>/INPUT/` automatically.
-Do **not** include `INPUT/` in the workspace path itself -- the loader appends it.
+---
+
+## loki_homogeneity -- Architecture
+
+### Pipeline (in order, each step enabled/disabled via JSON)
+
+```
+1. GapFiller                (loki_core/timeseries)
+2. OutlierRemover           (loki_outlier -- future)
+3. Deseasonalizer           (loki_homogeneity)
+4. MultiChangePointDetector (loki_homogeneity)
+5. SeriesAdjuster           (loki_homogeneity)
+```
+
+### Deseasonalization strategies
+
+| Strategy | When to use |
+|---|---|
+| `MEDIAN_YEAR` | Climatological / GNSS / economic data, requires UTC/GPST/MJD timestamp |
+| `HARMONIC` | Same domain as MEDIAN_YEAR, LSQ harmonic model (a0 + a1*sin + b1*cos + ...) |
+| `MOVING_AVERAGE` | Sensor / radio signals with ms-s resolution, no calendar meaning |
+| `NONE` | Data already deseasonalized, or no seasonality present |
+
+`MEDIAN_YEAR` and `HARMONIC` require a time axis with calendar meaning (UTC, GPST, MJD).
+If the input has only an index (no timestamp), only `MOVING_AVERAGE` or `NONE` are valid.
+`Deseasonalizer` throws `ConfigException` for incompatible strategy/input combinations.
+
+### Key types
+
+```cpp
+namespace loki::homogeneity {
+
+// Single change point detection result
+struct ChangePointResult {
+    bool   detected{false};
+    int    index{-1};           // position in sub-series (0-based)
+    double shift{0.0};
+    double meanBefore{0.0};
+    double meanAfter{0.0};
+    double maxTk{0.0};
+    double criticalValue{0.0};
+    double pValue{0.0};
+    double acfLag1{0.0};
+    double sigmaStar{1.0};      // noise dependence correction factor
+    int    confIntervalLow{-1};
+    int    confIntervalHigh{-1};
+};
+
+// One detected change point in global coordinates
+struct ChangePoint {
+    std::size_t globalIndex;
+    double      mjd;
+    double      shift;
+    double      pValue;
+};
+
+} // namespace loki::homogeneity
+```
+
+### Class signatures (agreed design)
+
+```cpp
+// --- ChangePointDetector ---
+// Single change point, one segment [begin, end).
+// T-statistics: O(n) via prefix sums (not O(n^2) as in old code).
+// Critical value: asymptotic distribution Yao & Davis (1986).
+// Noise correction: Antoch et al. sigmaStar approach.
+class ChangePointDetector {
+public:
+    struct Config {
+        double significanceLevel{0.05};
+        double acfDependenceLimit{0.2};
+        bool   correctForDependence{true};
+    };
+    explicit ChangePointDetector(Config cfg = {});
+    [[nodiscard]]
+    ChangePointResult detect(const std::vector<double>& z,
+                             std::size_t begin,
+                             std::size_t end) const;
+};
+
+// --- MultiChangePointDetector ---
+// Binary splitting, recursive. Each segment has its own n -> own critical value.
+class MultiChangePointDetector {
+public:
+    struct Config {
+        std::size_t minSegmentPoints{60};
+        double      minSegmentSeconds{0.0};
+        ChangePointDetector::Config detectorConfig{};
+    };
+    explicit MultiChangePointDetector(Config cfg = {});
+    [[nodiscard]]
+    std::vector<ChangePoint> detect(const std::vector<double>& z,
+                                    const std::vector<double>& times) const;
+};
+
+// --- Deseasonalizer ---
+class Deseasonalizer {
+public:
+    enum class Strategy { MEDIAN_YEAR, HARMONIC, MOVING_AVERAGE, NONE };
+    struct Config {
+        Strategy strategy{Strategy::MEDIAN_YEAR};
+        int      harmonicOrder{1};
+        int      maWindowSize{365};
+    };
+    explicit Deseasonalizer(Config cfg = {});
+    [[nodiscard]]
+    std::vector<double> deseasonalize(const TimeSeries& series) const;
+};
+
+// --- SeriesAdjuster ---
+// Adjusts original series left-to-right based on detected change points.
+// Reference segment = last (rightmost). Each previous segment shifted
+// by cumulative sum of jumps.
+class SeriesAdjuster {
+public:
+    [[nodiscard]]
+    TimeSeries adjust(const TimeSeries& original,
+                      const std::vector<ChangePoint>& changePoints) const;
+};
+
+// --- Homogenizer (orchestrator in libs) ---
+class Homogenizer {
+public:
+    struct Config {
+        Deseasonalizer::Config           deseasonalizer{};
+        MultiChangePointDetector::Config detector{};
+        bool applyAdjustment{true};
+    };
+    struct Result {
+        std::vector<ChangePoint> changePoints;
+        TimeSeries               adjustedSeries;
+        std::vector<double>      deseasonalizedValues;
+    };
+    explicit Homogenizer(Config cfg = {});
+    [[nodiscard]]
+    Result process(const TimeSeries& input) const;
+};
+```
+
+### apps/loki_homogeneity/main.cpp
+Thin orchestration layer:
+1. Parse CLI args, load JSON config.
+2. `Logger::initDefault()`.
+3. `DataManager::load()`.
+4. For each series: `Homogenizer::process()`.
+5. Log results, write CSV, optionally plot via `Plot`.
+6. Catch `loki::LOKIException` and `std::exception`.
 
 ---
 
 ## Known Issues and Workarounds
 
 ### Unicode in source files (Windows GCC)
-GCC on Windows can misparse tokens when source files contain UTF-8 box-drawing
-characters (e.g. `─`, `│`) in comments. Symptoms: `expected unqualified-id before '&'`,
-even on syntactically correct catch blocks.
-**Rule: all comments must use ASCII characters only.**
+GCC on Windows misparsed tokens when source files contain UTF-8 box-drawing
+characters in comments. **Rule: all comments ASCII only.**
 
 ### exceptions.hpp must be included early
-`LOKIException` and its subclasses must be visible before any catch block.
-`logger.hpp` includes `exceptions.hpp`, so including `logger.hpp` first is sufficient.
-If a translation unit does not include `logger.hpp`, add:
-```cpp
-#include "loki/core/exceptions.hpp"
-```
+`logger.hpp` includes `exceptions.hpp`. Including `logger.hpp` is sufficient.
 
 ### namespace loki in .cpp files
-All LOKI types live in `namespace loki`. Library `.cpp` files add:
-```cpp
-using namespace loki;
-```
-after the last `#include` so exception names and other types can be used unqualified.
+All library `.cpp` files add `using namespace loki;` after the last `#include`.
 
 ### DLL mismatch on Windows (exit code 0xc0000139)
-The MINGW64 shell PATH includes `/mingw64/bin/` but the compiler and runtime are
-in `/c/msys64/ucrt64/bin/`. Three DLLs must be present next to **every** executable
-that is run directly -- including test executables in `build/debug/tests/`.
-`build.sh --copy-dlls` copies them to both `apps/loki/` and `tests/`.
+Three DLLs must be present next to every executable:
+`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`.
+`build.sh --copy-dlls` handles both `apps/` and `tests/`.
 
-### catch_discover_tests and DLLs (DISCOVERY_MODE PRE_TEST)
-`catch_discover_tests()` without `DISCOVERY_MODE PRE_TEST` tries to run the test
-executable during cmake generate phase to enumerate TEST_CASEs. On Windows this
-fails with exit code 0xc0000139 because DLLs have not been copied yet.
+### catch_discover_tests and DLLs
 Always use `DISCOVERY_MODE PRE_TEST` in `tests/CMakeLists.txt`.
 
-### find_package(Catch2) in tests/
-Do NOT call `find_package(Catch2 3 REQUIRED)` in `tests/CMakeLists.txt`.
-Catch2 is declared via FetchContent in `cmake/Dependencies.cmake` and its
-targets are available automatically. An explicit `find_package` call will
-fail because `Catch2Config.cmake` is not on `CMAKE_PREFIX_PATH`.
-
 ### TimeStamp not in namespace loki
-`TimeStamp` is currently in the global namespace -- known inconsistency left
-over from the original codebase. Planned fix: move to `namespace loki` during
-full `libs/` layout refactoring. Until then, IntelliSense may show false
-positives for `operator<` on TimeStamp (GCC compiles correctly).
-
----
-
-## Notes and Reminders
-
-- Data files (`.csv`, `.dat`, etc.) and plot outputs (`.eps`, `.png`) are **not** committed.
-- Third-party dependencies are managed via CMake `FetchContent` -- no vendored source code.
-- The build directory is always `build/` and is gitignored.
-- `newmat` is replaced by `Eigen3` throughout the codebase.
-- This file should be updated whenever architecture decisions change.
-- Do NOT add any license/copyright block at the top of source files.
-- gnuplot font: use `'Sans,12'` not `'Helvetica,12'` (Helvetica not available on Windows/UCRT64).
-- gnuplot terminal: use `'noenhanced'` to prevent underscore subscript rendering in titles.
-- SeriesMetadata must be populated by Loader after loading (componentName, unit, stationId).
-- Column names from file header may contain unit in brackets e.g. `"WIG_SPEED[m/s]"` --
-  split into componentName + unit in Loader, sanitize filenames in `Plot::outputPath()`.
-- Plot output goes to `OUTPUT/IMG/`, temp files use `.tmp_` prefix and are deleted after render.
+Known inconsistency -- to be fixed during full refactoring.
 
 ---
 
 ## Implemented Modules
 
-### loki::stats (loki_core)
-- Free functions in namespace `loki::stats`
-- Header: `libs/loki_core/include/loki/stats/descriptive.hpp`
-- Source:  `libs/loki_core/src/stats/descriptive.cpp`
-- NaN handling via `loki::NanPolicy` (defined in `loki/core/nanPolicy.hpp`)
-- Key types: `SummaryStats`, `NanPolicy`
-- Key functions: `summarize()`, `formatSummary()`, `acf()`, `hurstExponent()`
-- `summarize()` signature:
-  `SummaryStats summarize(const std::vector<double>& x,
-                          loki::NanPolicy policy = loki::NanPolicy::SKIP,
-                          bool computeHurst = true);`
-- Controlled via `StatsConfig` in AppConfig (JSON key: `"stats"`)
+### loki::core -- complete
+- `exceptions.hpp` -- full hierarchy
+- `version.hpp` -- `0.1.0`
+- `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
+- `logger.hpp / .cpp` -- Meyers singleton, file + stdout/stderr, macros
+- `config.hpp` -- all config structs
+- `configLoader.hpp / .cpp` -- JSON loader, path resolution
+
+### loki::timeseries -- complete
+- `timeStamp.hpp / .cpp` -- MJD internal, GPS/UTC/Unix conversions
+- `timeSeries.hpp / .cpp` -- Observation, SeriesMetadata, append, slice, indexOf
+
+### loki::stats -- complete
+- `descriptive.hpp / .cpp` -- mean, median, variance, IQR, ACF, Hurst, summarize()
+
+### loki::io -- complete
+- `loader.hpp / .cpp` -- file loading         (in io/, NOT timeseries/)
+- `dataManager.hpp / .cpp`
+- `gnuplot.hpp / .cpp`
+- `plot.hpp / .cpp`
+
+### apps/loki -- complete
+Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
+
+### Not yet implemented
+- `loki_core/timeseries/gapFiller.hpp` -- planned vlakno G
+- `loki_homogeneity` -- architecture agreed, implementation starts vlakno H1
+- `loki_outlier` -- future
+- All other planned modules
+
+---
+
+## Planned Thread Sequence for loki_homogeneity
+
+| Thread | Scope | Deliverables |
+|---|---|---|
+| H1 | `ChangePointResult`, `ChangePointDetector` | `.hpp`, `.cpp`, `test_changePointDetector.cpp` |
+| H2 | `MultiChangePointDetector` (binary splitting) | `.hpp`, `.cpp`, `test_multiChangePointDetector.cpp` |
+| H3 | `MedianYearSeries` | `.hpp`, `.cpp`, `test_medianYearSeries.cpp` |
+| H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` |
+| H5 | `Deseasonalizer` (strategy pattern) | `.hpp`, `.cpp`, `test_deseasonalizer.cpp` |
+| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` |
+| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` |
+| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline apka |
+| G  | `GapFiller` (loki_core/timeseries) | `.hpp`, `.cpp`, `test_gapFiller.cpp` |
+
+Odporucane poradie: H1 -> H2 -> G -> H3 -> H4 -> H5 -> H6 -> H7 -> H8.
+
+### How to start each thread
+Paste this at the beginning of each new conversation:
+
+```
+Working on LOKI -- see CLAUDE.md [paste full CLAUDE.md content here]
+
+Thread <ID>: <one-line description>
+
+[Attach relevant old code if refactoring]
+```
 
 ---
 
 ## Design Decisions
 
-### NanPolicy location
-`loki::NanPolicy` is defined in `loki/core/nanPolicy.hpp` (not in
-`descriptive.hpp`) to avoid a circular dependency between `loki_core`
-and `loki::stats`. Any module needing NanPolicy includes only this
-lightweight header.
+### T-statistics computation -- O(n) via prefix sums
+Old code used O(n^2) nested loops. New implementation uses prefix sums:
+- `prefixSum[k] = sum of z[0..k-1]`
+- `meanBefore(k) = prefixSum[k] / k`
+- `meanAfter(k) = (prefixSum[n] - prefixSum[k]) / (n - k)`
+This is critical for series with n > 10000 (NWM data had n > 36000).
 
-### stats API style
-Descriptive statistics are implemented as free functions in
-`namespace loki::stats`, not as a class. This follows modern C++20
-style and makes individual functions independently testable.
+### sigmaStar -- Antoch et al. noise correction
+After detecting the candidate change point at index `m`:
+1. Center each segment around its own mean -> `VALSIGMA`.
+2. Compute ACF of `VALSIGMA` using `loki::stats::acf()`.
+3. Estimate `f0` using Bartlett window of width `L = ceil(n^(1/3))`.
+4. `sigmaStar = sqrt(|f0|)`.
+5. If `acfLag1 > acfDependenceLimit`: multiply critical value by `sigmaStar`.
 
-### IQR quantile formula
-LOKI uses `h = p * (n-1)` (type-7 variant, interpolate between
-`s[floor(h)]` and `s[ceil(h)]`). This is self-consistent throughout the
-codebase. NumPy also calls its default "type-7" but uses a slightly different
-index formula -- do not align LOKI's expected values to NumPy's output.
+### Binary splitting -- min segment constraint
+Both conditions must be satisfied before recursing:
+- `(end - begin) >= minSegmentPoints`
+- If timestamps available: time span >= `minSegmentSeconds`
 
-### TimeSeries -> std::vector<double> extraction
-TimeSeries has no `values()` method. Extract raw values before calling
-stats functions:
-```cpp
-std::vector<double> vals;
-vals.reserve(ts.size());
-for (const auto& obs : ts) { vals.push_back(obs.value); }
-```
+### Homogenization direction
+Reference segment = **last (rightmost)**. Adjust all previous segments
+left-to-right by cumulative shift sum. This matches the original approach.
 
-### summarize() and NaN
-`summarize()` always counts NaN into `nMissing` regardless of policy.
-`NanPolicy::THROW` in `summarize()` throws before computation if any NaN
-is present. `SKIP` removes them silently. `PROPAGATE` is not meaningful
-for `summarize()` -- use individual functions for that case.
+### MedianYearSeries -- requires calendar timestamp
+Only valid when `TimeSeries` has `TimeStamp` with recoverable calendar date
+(UTC string, GPS total seconds, MJD, GPS week+SOW). Pure index input -> use MA or NONE.
 
----
+### HarmonicSeries -- LSQ, replaces old newmat-based fit.cpp
+Model: `y = a0 + sum_{j=1}^{order} [a_j * sin(2*pi*j*t/P) + b_j * cos(2*pi*j*t/P)]`
+Period P = 365.25 days (climatological). Uses Eigen3 instead of newmat.
+Convergence criterion and max iterations configurable.
 
-## Implemented Code: loki_core (complete)
+### GapFiller location
+`GapFiller` lives in `loki_core/timeseries` (not `loki_homogeneity`) because
+gap filling is a general `TimeSeries` operation reusable by `loki_qc`,
+`loki_outlier`, and any future module.
 
-This section documents everything that is **already implemented and working**
-in `loki_core`. Do not rewrite, duplicate, or replace any of this unless
-explicitly asked. When adding new functionality, check here first.
-
----
-
-### loki::core
-
-**`exceptions.hpp`** -- full exception hierarchy, all classes implemented:
-- `LOKIException` (base, inherits `std::exception`, holds `std::string m_message`)
-- `DataException` -> `SeriesTooShortException`, `MissingValueException`
-- `IoException` -> `FileNotFoundException`, `ParseException`
-- `ConfigException`
-- `AlgorithmException` -> `ConvergenceException`, `SingularMatrixException`
-
-**`version.hpp`** -- `VERSION_MAJOR`, `VERSION_MINOR`, `VERSION_PATCH`,
-`VERSION_STRING` as `constexpr` in `namespace loki`. Current: `0.1.0`.
-
-**`nanPolicy.hpp`** -- `enum class NanPolicy { THROW, SKIP, PROPAGATE }`
-in `namespace loki`. Intentionally in its own header to avoid circular
-dependencies between `loki_core` and `loki::stats`.
-
-**`logger.hpp` / `logger.cpp`** -- fully implemented:
-- `enum class LogLevel : int { DEBUG=0, INFO=1, WARNING=2, ERROR=3 }`
-- `class ILogger` -- abstract interface with pure virtual `log()`, virtual
-  destructor; enables mock injection in tests.
-- `class Logger : public ILogger` -- Meyers singleton, writes to file +
-  stdout/stderr simultaneously, thread-safe via `std::mutex`.
-- `static ILogger& instance()` -- returns custom instance if set, else
-  default singleton.
-- `static void setInstance(std::unique_ptr<ILogger>)` -- for test injection.
-- `static void initDefault(logDir, prefix, minLevel)` -- convenience init.
-- `void init(logDir, prefix, minLevel)` -- opens timestamped log file,
-  creates directory if needed.
-- Macros (outside namespace): `LOKI_DEBUG`, `LOKI_INFO`, `LOKI_WARNING`,
-  `LOKI_ERROR` -- use `__func__` for caller name automatically.
-- Log format: `[YYYY-MM-DD hh:mm:ss.mmm] [LEVEL  ] [caller_name          ] message`
-- WARNING/ERROR go to `stderr`; DEBUG/INFO go to `stdout`.
-
-**`config.hpp`** -- all config structs fully defined:
-- `enum class TimeFormat { INDEX, GPS_TOTAL_SECONDS, GPS_WEEK_SOW, UTC, MJD, UNIX }`
-- `enum class InputMode { SINGLE_FILE, FILE_LIST, SCAN_DIRECTORY }`
-- `enum class MergeStrategy { SEPARATE, MERGE }`
-- `struct InputConfig` -- mode, file, files, scanDir, timeFormat, delimiter,
-  commentChar, columns (1-based), mergeStrategy.
-- `struct OutputConfig` -- logLevel.
-- `struct HomogeneityConfig` -- method (string), significanceLevel (double).
-- `struct PlotConfig` -- outputFormat, timeFormat, flags: timeSeries,
-  comparison, histogram, acf, qqPlot, boxplot.
-- `struct StatsConfig` -- enabled, nanPolicy, hurst.
-- `struct AppConfig` -- workspace, input, output, plots, homogeneity, stats,
-  derived paths: logDir, csvDir, imgDir (all `std::filesystem::path`).
-
-**`configLoader.hpp` / `configLoader.cpp`** -- fully implemented:
-- `class ConfigLoader` -- static methods only (no instance state).
-- `static AppConfig load(jsonPath)` -- validates existence, parses JSON,
-  resolves all paths against workspace, populates all sub-configs.
-- Required JSON key: `"workspace"`. All other keys optional with defaults
-  and `LOKI_WARNING` when missing.
-
-**`directoryScanner.hpp` / `directoryScanner.cpp`** -- implemented:
-- `class DirectoryScanner` -- scans a directory for files with recognised
-  extensions (`.txt`, `.csv`, `.dat`).
-- `static std::vector<std::filesystem::path> scan(dir)` -- returns sorted list.
+### loki::stats ACF -- already implemented
+`loki::stats::acf(x, maxLag)` exists in `descriptive.hpp`. Do NOT reimplement
+in `loki_homogeneity`. Import `loki_core` and call directly.
 
 ---
 
-### loki::timeseries
+## Notes and Reminders
 
-**`timeStamp.hpp` / `timeStamp.cpp`** -- fully implemented:
-- Internal representation: `double m_mjd` (Modified Julian Date, UTC).
-- Constructors: default (MJD 0.0), calendar `(Y,M,D,h,m,s)`, UTC string.
-- Factory methods: `fromMjd()`, `fromUnix()`, `fromGpsTotalSeconds()`,
-  `fromGpsWeekSow()`.
-- Getters: `year()`, `month()`, `day()`, `hour()`, `minute()`, `second()`,
-  `mjd()`, `unixTime()`, `gpsTotalSeconds()`, `gpsWeek()`,
-  `gpsSecondsOfWeek()`, `utcString()`.
-- C++20 spaceship operator `<=>` = default (enables all 6 comparisons).
-- Static `constexpr`: `MJD_UNIX_EPOCH=40587.0`, `MJD_GPS_EPOCH=44244.0`,
-  `SECONDS_PER_DAY`, `SECONDS_PER_GPS_WEEK`, `MJD_MIN`, `MJD_MAX`.
-- Built-in leap second table (last entry: 2017-01-01, +18 s, 28 entries total).
-- GPS conversion note: `fromGpsTotalSeconds(0)` returns UTC 1980-01-05 23:59:50,
-  not 1980-01-06, because the 10 s leap offset valid at that MJD is subtracted.
-- Note: `TimeStamp` is in global namespace (not `namespace loki`) -- known
-  inconsistency, to be fixed in full `libs/` refactoring.
-
-**`timeSeries.hpp` / `timeSeries.cpp`** -- fully implemented:
-- `struct SeriesMetadata { stationId, componentName, unit, description }`.
-- `struct Observation { TimeStamp time; double value{0.0}; uint8_t flag{0} }`.
-- Free function `bool isValid(const Observation&) noexcept` -- NaN check.
-- `class TimeSeries` -- ordered sequence of Observations in `std::vector`.
-- Construction: `TimeSeries()` default, `explicit TimeSeries(SeriesMetadata)`.
-- Population: `append(time, value, flag=0)`, `reserve(n)`.
-- Element access: `operator[](index)` (no bounds check),
-  `at(index)` (throws `DataException`), `size()`, `empty()`.
-- Time-based: `indexOf(t, toleranceMjd=1e-8)` -> `std::optional<size_t>`,
-  `atTime(t, toleranceMjd)` -> `const Observation&`. Both require sorted
-  series, throw `AlgorithmException` otherwise.
-- Slicing: `slice(TimeStamp from, TimeStamp to)` (sorted required),
-  `slice(size_t from, size_t to)` (half-open, no sort required).
-- Iteration: `begin()` / `end()` return `cbegin()` / `cend()` -- read-only.
-- Sorting: `sortByTime()` (stable sort), `isSorted()`.
-- Metadata: `metadata()`, `setMetadata()`.
-- No `values()` method -- extract manually (see Design Decisions above).
-
----
-
-### loki::stats
-
-**`descriptive.hpp` / `descriptive.cpp`** -- fully implemented as free
-functions in `namespace loki::stats`:
-
-Central tendency: `mean()`, `median()`, `mode()`, `trimmedMean(fraction)`.
-
-Dispersion: `variance(population=false)`, `stddev(population=false)`,
-`mad()`, `iqr()`, `range()`, `cv()`.
-
-Shape: `skewness()`, `kurtosis()` (excess, Fisher definition, normal=0).
-
-Quantiles: `quantile(p)` (type-7 variant, `h = p*(n-1)`),
-`fiveNumberSummary()` -> `std::array<double,5>`.
-
-Bivariate: `covariance()`, `pearsonR()`, `spearmanR()`.
-
-Time series specific: `autocorrelation(lag)`, `acf(maxLag)`,
-`hurstExponent()` (R/S analysis, requires n >= 20).
-
-Summary facade: `summarize(x, policy=SKIP, computeHurst=true)`
--> `SummaryStats`. `formatSummary(SummaryStats, label="")` -> `std::string`.
-
-`struct SummaryStats` fields: `n`, `nMissing`, `min`, `max`, `range`,
-`mean`, `median`, `q1`, `q3`, `iqr`, `variance`, `stddev`, `mad`, `cv`,
-`skewness`, `kurtosis`, `hurstExp` (NaN if n<20 or disabled).
-
----
-
-### loki::io
-
-**`loader.hpp` / `loader.cpp`** -- fully implemented.
-**`dataManager.hpp` / `dataManager.cpp`** -- fully implemented.
-**`gnuplot.hpp` / `gnuplot.cpp`** -- fully implemented.
-**`plot.hpp` / `plot.cpp`** -- fully implemented.
-
-(Full details unchanged -- see previous CLAUDE.md version if needed.)
-
----
-
-### apps/loki
-
-**`main.cpp`** -- fully implemented pipeline:
-1. Parse CLI args (`--help`, `--version`, `<config.json>`).
-2. `ConfigLoader::load()`.
-3. `Logger::initDefault()`.
-4. `DataManager::load()`.
-5. `loki::stats::summarize()` per series if `cfg.stats.enabled`.
-6. `Plot` per series gated by `cfg.plots.*` flags.
-7. All errors caught as `loki::LOKIException` or `std::exception`.
-
----
-
-### Not yet implemented
-
-- `loki_homogeneity` -- library skeleton exists, no algorithm code yet.
-- `GnuplotWriter` / CSV export -- planned for `loki::io`.
-- All other planned modules: `loki_outlier`, `loki_decomposition`,
-  `loki_svd`, `loki_filter`, `loki_kalman`, `loki_arima`,
-  `loki_spectral`, `loki_stationarity`, `loki_clustering`,
-  `loki_qc`, `loki_regression`.
+- Data files and plot outputs are **not** committed to the repository.
+- Third-party dependencies via CMake `FetchContent` only -- no vendored source.
+- Build directory `build/` is gitignored.
+- `newmat` replaced by `Eigen3` throughout.
+- Do NOT add license/copyright blocks at the top of source files.
+- gnuplot font: `'Sans,12'` (not `'Helvetica,12'`).
+- gnuplot terminal: `'noenhanced'`.
+- `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
+- `SeriesMetadata` must be populated by Loader after loading.
+- Plot output -> `OUTPUT/IMG/`, temp files use `.tmp_` prefix.
