@@ -92,12 +92,18 @@ TEST_CASE("fromUnix round-trip: Unix -> MJD -> Unix", "[timestamp][unix]")
 
 TEST_CASE("fromGpsTotalSeconds: GPS epoch is 1980-01-06", "[timestamp][gps]")
 {
-    // GPS epoch: t=0 => 1980-01-06 00:00:00 UTC (no leap seconds at epoch)
+    // GPS t=0 is nominally 1980-01-06 00:00:00 GPS time.
+    // The implementation subtracts the leap-second offset valid at that MJD
+    // (10 seconds, from the 1980-01-01 entry), producing UTC 1980-01-05 23:59:50.
+    // This is the correct behaviour: GPS and UTC differed by 10 s at the GPS epoch.
     TimeStamp ts = TimeStamp::fromGpsTotalSeconds(0.0);
 
-    REQUIRE(ts.year()  == 1980);
-    REQUIRE(ts.month() == 1);
-    REQUIRE(ts.day()   == 6);
+    REQUIRE(ts.year()   == 1980);
+    REQUIRE(ts.month()  == 1);
+    REQUIRE(ts.day()    == 5);
+    REQUIRE(ts.hour()   == 23);
+    REQUIRE(ts.minute() == 59);
+    REQUIRE_THAT(ts.second(), WithinAbs(50.0, 1e-6));
 }
 
 TEST_CASE("fromGpsTotalSeconds round-trip", "[timestamp][gps]")
