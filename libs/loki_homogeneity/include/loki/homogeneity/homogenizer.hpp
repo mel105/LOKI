@@ -39,11 +39,16 @@ struct HomogenizerConfig {
     bool                             applyGapFilling{true};
     GapFiller::Config                gapFiller{};
 
-    OutlierConfig                    preOutlier{};    ///< Before deseasonalization (future).
+    OutlierConfig                    preOutlier{};   ///< Before deseasonalization (future).
 
     Deseasonalizer::Config           deseasonalizer{};
 
-    OutlierConfig                    postOutlier{};   ///< After deseasonalization (future).
+    /// Minimum valid values per slot for MedianYearSeries.
+    /// Used when gapFiller.strategy == MEDIAN_YEAR or
+    /// deseasonalizer.strategy == MEDIAN_YEAR.
+    int                              medianYearMinYears{5};
+
+    OutlierConfig                    postOutlier{};  ///< After deseasonalization (future).
 
     MultiChangePointDetector::Config detector{};
 

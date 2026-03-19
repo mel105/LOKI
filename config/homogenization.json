@@ -44,15 +44,18 @@
         "apply_gap_filling": true,
         "gap_filling": {
             "strategy": "linear",
-            "max_fill_length": 0
+            "max_fill_length": 0,
+            "gap_threshold_factor": 1.5,
+            "min_series_years": 10
         },
         "pre_outlier": {
             "enabled": false,
             "threshold": 3.0
         },
         "deseasonalization": {
-            "strategy": "movinf_average",
-            "ma_window_size": 365
+            "strategy": "moving_average",
+            "ma_window_size": 365,
+            "median_year_min_years": 5
         },
         "post_outlier": {
             "enabled": false,
@@ -62,8 +65,7 @@
             "min_segment_points": 60,
             "min_segment_seconds": 0.0,
             "significance_level": 0.05,
-            "acf_dependence_limit": 0.2,
-            "correct_for_dependence": true
+            "acf_dependence_limit": 0.2
         },
         "apply_adjustment": true
     }

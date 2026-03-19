@@ -93,8 +93,11 @@ struct OutputConfig {
  * @brief Configuration for the gap filling step of the homogeneity pipeline.
  */
 struct GapFillingConfig {
-    std::string strategy{"linear"};  ///< linear | forward_fill | mean | none
-    int         maxFillLength{0};    ///< 0 = unlimited
+    std::string strategy{"linear"};       ///< linear | forward_fill | mean | none
+    int         maxFillLength{0};         ///< 0 = unlimited
+    double      gapThresholdFactor{1.5};  ///< Multiplier on expected step for jump detection.
+    int         minSeriesYears{10};       ///< Min years required for MEDIAN_YEAR strategy.
+
 };
 
 // -----------------------------------------------------------------------------
@@ -117,8 +120,9 @@ struct OutlierFilterConfig {
  * @brief Configuration for the deseasonalization step.
  */
 struct DeseasonalizationConfig {
-    std::string strategy{"median_year"};  ///< median_year | moving_average | none
+    std::string strategy{"moving_average"};  ///< median_year | moving_average | none
     int         maWindowSize{365};
+    int         medianYearMinYears{5};    ///< Min valid values per slot for MedianYearSeries.
 };
 
 // -----------------------------------------------------------------------------
@@ -133,7 +137,6 @@ struct DetectionConfig {
     double minSegmentSeconds{0.0};
     double significanceLevel{0.05};
     double acfDependenceLimit{0.2};
-    bool   correctForDependence{true};
 };
 
 // -----------------------------------------------------------------------------

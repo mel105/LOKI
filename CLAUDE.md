@@ -953,3 +953,67 @@ Full implementation deferred to `loki_outlier`.
     }
 }
 ```
+
+---
+
+## Config Parameters Review (Thread H7/H8)
+
+The following parameters exist in JSON / AppConfig but require attention
+in the next review thread. Each item notes the issue and suggested action.
+
+### 1. `plots.enabled.time_series/histogram/acf/qq_plot/boxplot`
+- **Status:** Parsed into `PlotConfig` but never used in `apps/loki_homogeneity/main.cpp`.
+- **Issue:** `PlotHomogeneity` uses its own flags (`original_series`, `seasonal_overlay`, etc.).
+  The generic plot flags are dead code in the homogenization app.
+- **Action:** Either wire generic plots into homogenization main (call `loki::Plot` for
+  original series histogram/ACF etc.), or remove them from `homogenization.json`.
+
+### 2. `homogeneity.detection.correct_for_dependence`
+- **Status:** Parsed into `DetectionConfig::correctForDependence` but NOT forwarded
+  to `ChangePointDetectorConfig` in `buildHomogenizerConfig()` (member was removed in H1).
+- **Issue:** JSON parameter silently ignored.
+- **Action:** Either remove from JSON + `DetectionConfig`, or re-add
+  `correctForDependence` to `ChangePointDetectorConfig` if the flag is wanted back.
+
+### 3. `homogeneity.gap_filling.max_fill_length: 0`
+- **Status:** Parsed and used. Value 0 = unlimited fill length.
+- **Issue:** Semantics of 0 not obvious from JSON. Not logged at startup.
+- **Action:** Log effective max_fill_length at startup (0 = unlimited). Add comment
+  to JSON template in CLAUDE.md.
+
+### 4. `deseasonalization.strategy` -- auto-selection
+- **Status:** User must manually set `moving_average` for high-frequency data.
+- **Issue:** No guard in `Homogenizer::process()` -- if user sets `median_year`
+  for second-resolution data, `MedianYearSeries` will throw `ConfigException`
+  (sub-hourly resolution). Error is caught and logged but not helpful.
+- **Action:** Add a resolution check before calling `Deseasonalizer` -- if series
+  step < 1h and strategy == MEDIAN_YEAR, log a clear warning and auto-switch to
+  MOVING_AVERAGE (or throw `ConfigException` with a helpful message).
+
+### 5. `deseasonalization.ma_window_size: 365`
+- **Status:** Used as number of samples, not days.
+- **Issue:** For daily data 365 = 1 year (correct). For GPS second data
+  (86400 samples/day) 365 samples = ~6 minutes, which is meaningless.
+- **Action:** Add `ma_window_unit: samples|days` to JSON, or document clearly
+  that the value is always in samples and user must compute the right number.
+  Log effective window in time units at startup.
+
+### 6. `input.columns: []`
+- **Status:** Empty = load all columns. Functional.
+- **Issue:** Which columns were actually loaded is not visible in log.
+- **Action:** Log column names/indices after loading (already partly done via
+  `Series[i] name=...` but index not shown).
+
+### 7. `plots.output_format`
+- **Status:** Used in `PlotHomogeneity::_terminal()`. Functional for png/eps/svg.
+- **Issue:** Not validated -- unknown format string silently defaults to png
+  without warning.
+- **Action:** Add validation in `_parsePlots()` or `PlotHomogeneity::_terminal()`.
+
+### 8. `plots.time_format`
+- **Status:** Parsed into `PlotConfig::timeFormat` but `PlotHomogeneity` uses
+  MJD on x-axis unconditionally.
+- **Issue:** Parameter has no effect in homogenization plots.
+- **Action:** Implement x-axis time formatting in `PlotHomogeneity` (UTC string,
+  GPS seconds, MJD) based on `PlotConfig::timeFormat` / `InputConfig::timeFormat`.
+  This is a usability improvement -- MJD on x-axis is not human-readable.

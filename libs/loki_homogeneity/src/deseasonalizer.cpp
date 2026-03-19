@@ -81,6 +81,7 @@ Deseasonalizer::Result Deseasonalizer::applyMovingAverage(
     // Build residuals: where trend is NaN (edges), residual is also NaN.
     std::vector<double> residuals(n);
     std::vector<double> seasonal(n);
+    /*
     for (std::size_t i = 0; i < n; ++i) {
         if (std::isnan(trend[i])) {
             residuals[i] = std::numeric_limits<double>::quiet_NaN();
@@ -89,6 +90,35 @@ Deseasonalizer::Result Deseasonalizer::applyMovingAverage(
             seasonal[i]  = trend[i];
             residuals[i] = values[i] - trend[i];
         }
+    }
+    */
+    // First pass: compute residuals where trend is valid.
+    for (std::size_t i = 0; i < n; ++i) {
+        if (std::isnan(trend[i])) {
+            residuals[i] = std::numeric_limits<double>::quiet_NaN();
+            seasonal[i]  = std::numeric_limits<double>::quiet_NaN();
+        } else {
+            seasonal[i]  = trend[i];
+            residuals[i] = values[i] - trend[i];
+        }
+    }
+
+    // Find first and last valid trend index.
+    std::size_t firstValid = 0;
+    while (firstValid < n && std::isnan(trend[firstValid])) { ++firstValid; }
+    std::size_t lastValid = n - 1;
+    while (lastValid > firstValid && std::isnan(trend[lastValid])) { --lastValid; }
+
+    // Fill leading NaN edges with the first valid trend value (bfill).
+    for (std::size_t i = 0; i < firstValid; ++i) {
+        seasonal[i]  = trend[firstValid];
+        residuals[i] = values[i] - trend[firstValid];
+    }
+
+    // Fill trailing NaN edges with the last valid trend value (ffill).
+    for (std::size_t i = lastValid + 1; i < n; ++i) {
+        seasonal[i]  = trend[lastValid];
+        residuals[i] = values[i] - trend[lastValid];
     }
 
     // Build output TimeSeries.

@@ -90,14 +90,18 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
         if      (s == "linear")       hcfg.gapFiller.strategy = loki::GapFiller::Strategy::LINEAR;
         else if (s == "forward_fill") hcfg.gapFiller.strategy = loki::GapFiller::Strategy::FORWARD_FILL;
         else if (s == "mean")         hcfg.gapFiller.strategy = loki::GapFiller::Strategy::MEAN;
+        else if (s == "median_year")  hcfg.gapFiller.strategy = loki::GapFiller::Strategy::MEDIAN_YEAR;
         else                          hcfg.gapFiller.strategy = loki::GapFiller::Strategy::NONE;
-        hcfg.gapFiller.maxFillLength = static_cast<std::size_t>(
+        hcfg.gapFiller.maxFillLength      = static_cast<std::size_t>(
             std::max(0, h.gapFilling.maxFillLength));
+        hcfg.gapFiller.gapThresholdFactor = h.gapFilling.gapThresholdFactor;
+        hcfg.gapFiller.minSeriesYears     = static_cast<std::size_t>(
+            std::max(0, h.gapFilling.minSeriesYears));
     }
 
     // Outlier placeholders
-    hcfg.preOutlier.enabled   = false;
-    hcfg.postOutlier.enabled  = false;
+    hcfg.preOutlier.enabled  = false;
+    hcfg.postOutlier.enabled = false;
 
     // Deseasonalization
     {
@@ -111,13 +115,15 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
         hcfg.deseasonalizer.maWindowSize = h.deseasonalization.maWindowSize;
     }
 
+    // MedianYearSeries -- shared parameter for both GapFiller and Deseasonalizer
+    hcfg.medianYearMinYears = h.deseasonalization.medianYearMinYears;
+
     // Detection
-    hcfg.detector.minSegmentPoints              = static_cast<std::size_t>(
+    hcfg.detector.minSegmentPoints            = static_cast<std::size_t>(
         std::max(0, h.detection.minSegmentPoints));
-    hcfg.detector.minSegmentSeconds             = h.detection.minSegmentSeconds;
-    hcfg.detector.detectorConfig.significanceLevel    = h.detection.significanceLevel;
-    hcfg.detector.detectorConfig.acfDependenceLimit   = h.detection.acfDependenceLimit;
-    // hcfg.detector.detectorConfig.correctForDependence = h.detection.correctForDependence;
+    hcfg.detector.minSegmentSeconds           = h.detection.minSegmentSeconds;
+    hcfg.detector.detectorConfig.significanceLevel  = h.detection.significanceLevel;
+    hcfg.detector.detectorConfig.acfDependenceLimit = h.detection.acfDependenceLimit;
 
     // Adjustment
     hcfg.applyAdjustment = h.applyAdjustment;

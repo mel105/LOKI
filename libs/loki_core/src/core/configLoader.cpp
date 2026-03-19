@@ -173,8 +173,11 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
     // -- Gap filling ----------------------------------------------------------
     if (j.contains("gap_filling")) {
         const auto& gf = j.at("gap_filling");
-        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",        "linear", false);
+        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",  "linear",       false);
         cfg.gapFilling.maxFillLength = getOrDefault<int>        (gf, "max_fill_length", 0,        false);
+        cfg.gapFilling.gapThresholdFactor = getOrDefault<double>(gf, "gap_threshold_factor", 1.5, false);
+        cfg.gapFilling.minSeriesYears     = getOrDefault<int>   (gf, "min_series_years", 10,      false);
+
     }
 
     // -- Pre outlier (future) -------------------------------------------------
@@ -194,6 +197,7 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
         const auto& ds = j.at("deseasonalization");
         cfg.deseasonalization.strategy     = getOrDefault<std::string>(ds, "strategy",      "median_year", false);
         cfg.deseasonalization.maWindowSize = getOrDefault<int>        (ds, "ma_window_size", 365,          false);
+        cfg.deseasonalization.medianYearMinYears  = getOrDefault<int> (ds, "median_year_min_years",   5,   false);
     }
 
     // -- Post outlier (future) ------------------------------------------------
@@ -215,7 +219,6 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
         cfg.detection.minSegmentSeconds     = getOrDefault<double>(det, "min_segment_seconds",     0.0,   false);
         cfg.detection.significanceLevel     = getOrDefault<double>(det, "significance_level",      0.05,  false);
         cfg.detection.acfDependenceLimit    = getOrDefault<double>(det, "acf_dependence_limit",    0.2,   false);
-        cfg.detection.correctForDependence  = getOrDefault<bool>  (det, "correct_for_dependence",  true,  false);
     }
 
     return cfg;
@@ -225,7 +228,17 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
 {
     PlotConfig cfg;
 
-    if (j.contains("output_format")) cfg.outputFormat = j["output_format"].get<std::string>();
+    // if (j.contains("output_format")) cfg.outputFormat = j["output_format"].get<std::string>();
+    if (j.contains("output_format")) 
+    {
+        const std::string fmt = j["output_format"].get<std::string>();
+        if (fmt != "png" && fmt != "eps" && fmt != "svg") {
+            throw ConfigException(
+                "Config 'plots.output_format' must be 'png', 'eps', or 'svg'. Got: '" + fmt + "'.");
+        }
+        cfg.outputFormat = fmt;
+    }
+
     if (j.contains("time_format"))   cfg.timeFormat   = j["time_format"].get<std::string>();
 
     if (j.contains("enabled")) {

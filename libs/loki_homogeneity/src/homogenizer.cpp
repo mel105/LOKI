@@ -1,4 +1,5 @@
 #include <loki/homogeneity/homogenizer.hpp>
+#include <loki/homogeneity/medianYearSeries.hpp>
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 
@@ -30,7 +31,17 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
         LOKI_INFO("Homogenizer: running GapFiller (strategy="
                   + std::to_string(static_cast<int>(m_cfg.gapFiller.strategy)) + ")");
         GapFiller filler{m_cfg.gapFiller};
-        working = filler.fill(working);
+
+        if (m_cfg.gapFiller.strategy == GapFiller::Strategy::MEDIAN_YEAR) {
+            MedianYearSeries::Config mysCfg;
+            mysCfg.minYears = m_cfg.medianYearMinYears;
+            MedianYearSeries mys{working, mysCfg};
+            working = filler.fill(working, [&mys](const ::TimeStamp& ts) {
+                return mys.valueAt(ts);
+            });
+        } else {
+            working = filler.fill(working);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -45,7 +56,17 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
     // Step 3 -- Deseasonalization
     // ------------------------------------------------------------------
     Deseasonalizer deseasonalizer{m_cfg.deseasonalizer};
-    Deseasonalizer::Result deseasResult = deseasonalizer.deseasonalize(working);
+    Deseasonalizer::Result deseasResult = [&]() {
+        if (m_cfg.deseasonalizer.strategy == Deseasonalizer::Strategy::MEDIAN_YEAR) {
+            MedianYearSeries::Config mysCfg;
+            mysCfg.minYears = m_cfg.medianYearMinYears;
+            MedianYearSeries mys{working, mysCfg};
+            return deseasonalizer.deseasonalize(working, [&mys](const ::TimeStamp& ts) {
+                return mys.valueAt(ts);
+            });
+        }
+        return deseasonalizer.deseasonalize(working);
+    }();
 
     const std::vector<double>& residuals = deseasResult.residuals;
 
