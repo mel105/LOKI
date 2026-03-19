@@ -130,3 +130,10 @@ loki_add_test_exe(
     SOURCES unit/homogeneity/test_deseasonalizer.cpp
     LIBS    loki_core loki_homogeneity
 )
+
+# --- time series adjustment ----------------------------------------------
+loki_add_test_exe(
+    NAME    test_seriesAdjuster
+    SOURCES unit/homogeneity/test_seriesAdjuster.cpp
+    LIBS    loki_core loki_homogeneity
+)

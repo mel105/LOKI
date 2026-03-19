@@ -391,6 +391,7 @@ loki_add_test_exe(
 | `unit/stats/test_summarize.cpp` | summarize(), NanPolicy, formatSummary() | 13 |
 | `unit/timeseries/test_gapFiller.cpp` | GapFiller: detectGaps, fill (all strategies), edges, maxFillLength | 25 |
 | `unit/homogeneity/test_medianYearSeries.cpp` | MedianYearSeries: profile, slots, NaN, valueAt, resolution | 14 |
+| `unit/homogeneity/test_seriesAdjuster.cpp` | SeriesAdjuster: empty CPs, single/multi shift, unordered input, edge indices, metadata suffix, timestamp/flag preservation, negative shift | 9 |
 
 Total: **126 tests, 126 passing**.
 
@@ -704,9 +705,9 @@ Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 - `deseasonalizer.hpp / .cpp` -- Strategy: MOVING_AVERAGE (default), MEDIAN_YEAR, NONE;
                                   MEDIAN_YEAR requires profileLookup lambda + step >= 1h;
                                   Result: {residuals, seasonal, series with _deseas suffix}
+- `seriesAdjuster.hpp / .cpp` -- cumulative shift correction, reference = rightmost segment;
 
 ### Not yet implemented
-- `loki_homogeneity/deseasonalizer` -- H5
 - `loki_homogeneity/harmonicSeries` -- H4
 - `loki_homogeneity/seriesAdjuster` -- H6
 - `loki_homogeneity/homogenizer` -- H7
@@ -726,8 +727,8 @@ Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 | H3 | `MedianYearSeries` | `.hpp`, `.cpp`, `test_medianYearSeries.cpp` | DONE |
 | H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` | POSTPONED - urobime v loki_spectral (FFT) |
 | H5 | `MA filter + Deseasonalizer` | `filter.hpp/.cpp`, `deseasonalizer.hpp/.cpp`, `test_filter.cpp, test_deseasonalizer.cpp` | DONE |
-| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` | next |
-| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | |
+| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` | DONE |
+| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | next |
 | H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline app | |
 
 Recommended order: H5 -> H6 -> H7 -> H8.
@@ -832,3 +833,123 @@ MA filter implementovany v loki_core/stats (nie loki_homogeneity).
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `SeriesMetadata` must be populated by Loader after loading.
 - Plot output -> `OUTPUT/IMG/`, temp files use `.tmp_` prefix.
+
+## Changes from Thread H7/H8
+
+### New files
+
+| File | Location |
+|---|---|
+| `homogenizer.hpp` | `libs/loki_homogeneity/include/loki/homogeneity/` |
+| `homogenizer.cpp` | `libs/loki_homogeneity/src/` |
+| `plotHomogeneity.hpp` | `libs/loki_homogeneity/include/loki/homogeneity/` |
+| `plotHomogeneity.cpp` | `libs/loki_homogeneity/src/` |
+| `apps/loki_homogeneity/main.cpp` | updated (homogenization pipeline) |
+| `apps/loki_homogeneity/CMakeLists.txt` | target renamed to `homogenization` |
+| `config/homogenization.json` | new config for homogenization app |
+
+### Updated files
+
+| File | Changes |
+|---|---|
+| `libs/loki_core/include/loki/core/config.hpp` | Added `GapFillingConfig`, `OutlierFilterConfig`, `DeseasonalizationConfig`, `DetectionConfig`; expanded `HomogeneityConfig`; added homogeneity plot flags to `PlotConfig` |
+| `libs/loki_core/src/core/configLoader.cpp` | Parsing of all new `homogeneity.*` JSON keys; new plot flags |
+| `libs/loki_homogeneity/CMakeLists.txt` | Added `plotHomogeneity.cpp` to sources |
+
+### CMake target names
+- Library: `loki_homogeneity` (unchanged)
+- Executable: `homogenization` (was `loki_homogeneity` -- renamed to avoid CMake target conflict)
+
+### Key design decisions
+
+#### Config structs outside class (GCC 13 workaround)
+All Config/Result structs for loki_homogeneity classes are defined OUTSIDE
+their owning class as named types (e.g. `HomogenizerConfig`, `HomogenizerResult`),
+with `using Config = HomogenizerConfig` aliases inside the class.
+Reason: GCC 13 on Windows cannot use nested structs with in-class initializers
+as default arguments (`Config cfg = Config{}`).
+
+#### Observation member names
+`Observation::time` (not `timestamp`), `TimeStamp::mjd()` (not `toMJD()`).
+
+#### PlotHomogeneity -- Gnuplot pipe (not std::system)
+Uses `loki::Gnuplot` pipe directly, same as `loki::Plot`.
+Does NOT write `.plt` script files.
+Temporary `.dat` files use `.tmp_` prefix, deleted after each plot.
+
+#### Windows path separator in gnuplot
+Gnuplot on Windows requires forward slashes in paths.
+`plotHomogeneity.cpp` uses a local `fwdSlash()` helper:
+```cpp
+static std::string fwdSlash(const std::filesystem::path& p)
+{
+    std::string s = p.string();
+    for (auto& c : s) { if (c == '\\') c = '/'; }
+    return s;
+}
+```
+TODO: Make cross-platform using `#ifdef _WIN32` when doing Linux port.
+
+#### Seasonal component in plotAll
+`seasonal = original_value - residual` computed in `main.cpp`.
+Not stored in `HomogenizerResult` -- derived on the fly.
+
+#### OutlierConfig -- placeholder
+`preOutlier` and `postOutlier` in `HomogenizerConfig` are always `enabled=false`.
+ConfigLoader warns and forces `false` if JSON sets `enabled=true`.
+Full implementation deferred to `loki_outlier`.
+
+### Planned thread sequence update
+
+| Thread | Scope | Status |
+|---|---|---|
+| H7 | `Homogenizer` + `loki_homogeneity CMakeLists.txt` | DONE |
+| H8 | `apps/loki_homogeneity/main.cpp` + plots | DONE |
+| H9 | Ladenie vysledkov, tuning pipeline parametrov | next |
+
+### apps/loki_homogeneity pipeline (main.cpp)
+1. Parse CLI args
+2. ConfigLoader::load()
+3. Logger::initDefault()
+4. DataManager::load()
+5. stats::summarize() (optional)
+6. For each series: Homogenizer::process()
+7. writeCsv() -> OUTPUT/CSV/<name>_homogeneity.csv
+8. PlotHomogeneity::plotAll() -> OUTPUT/IMG/
+
+### homogenization.json -- full schema
+```json
+{
+    "workspace": "...",
+    "input": { ... },
+    "output": { "log_level": "info" },
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "original_series": true,
+            "seasonal_overlay": true,
+            "deseasonalized": true,
+            "change_points": true,
+            "adjusted_series": true,
+            "homog_comparison": true,
+            "shift_magnitudes": true
+        }
+    },
+    "stats": { "enabled": true, "nan_policy": "skip", "hurst": false },
+    "homogeneity": {
+        "apply_gap_filling": true,
+        "gap_filling": { "strategy": "linear|forward_fill|mean|none", "max_fill_length": 0 },
+        "pre_outlier": { "enabled": false, "threshold": 3.0 },
+        "deseasonalization": { "strategy": "median_year|moving_average|none", "ma_window_size": 365 },
+        "post_outlier": { "enabled": false, "threshold": 3.0 },
+        "detection": {
+            "min_segment_points": 60,
+            "min_segment_seconds": 0.0,
+            "significance_level": 0.05,
+            "acf_dependence_limit": 0.2,
+            "correct_for_dependence": true
+        },
+        "apply_adjustment": true
+    }
+}
+```

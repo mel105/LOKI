@@ -29,6 +29,7 @@ add_subdirectory(libs/loki_homogeneity)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
+add_subdirectory(apps/loki_homogeneity)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

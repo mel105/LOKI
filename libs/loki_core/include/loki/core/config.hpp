@@ -58,42 +58,19 @@ enum class MergeStrategy {
 
 /**
  * @brief Configuration for data loading.
- *
- * Paths are stored as absolute paths. ConfigLoader resolves relative paths
- * against AppConfig::workspace before populating this struct.
  */
 struct InputConfig {
 
     InputMode   mode{InputMode::SINGLE_FILE};
 
-    /// Path to a single input file (used when mode == SINGLE_FILE).
     std::filesystem::path file;
-
-    /// List of input files (used when mode == FILE_LIST).
     std::vector<std::filesystem::path> files;
-
-    /// Directory to scan for input files (used when mode == SCAN_DIRECTORY).
     std::filesystem::path scanDir;
 
     TimeFormat    timeFormat{TimeFormat::GPS_TOTAL_SECONDS};
-
-    /// Column separator character.
-    char delimiter{';'};
-
-    /// Lines starting with this character are treated as comments.
-    char commentChar{'%'};
-
-    /**
-     * @brief 1-based indices of the value columns to load.
-     *
-     * Column 1 is always the time column and must not appear here.
-     * An empty vector means "load all value columns".
-     *
-     * Example: for a file with columns [TIME, SPEED_A, SPEED_B, TEMP],
-     * setting columns = {2, 4} loads SPEED_A and TEMP.
-     */
+    char          delimiter{';'};
+    char          commentChar{'%'};
     std::vector<int> columns;
-
     MergeStrategy mergeStrategy{MergeStrategy::SEPARATE};
 };
 
@@ -103,11 +80,60 @@ struct InputConfig {
 
 /**
  * @brief Configuration for program output.
- *
- * Extended in future modules (gnuplot, CSV export).
  */
 struct OutputConfig {
     LogLevel logLevel{LogLevel::INFO};
+};
+
+// -----------------------------------------------------------------------------
+//  GapFillingConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for the gap filling step of the homogeneity pipeline.
+ */
+struct GapFillingConfig {
+    std::string strategy{"linear"};  ///< linear | forward_fill | mean | none
+    int         maxFillLength{0};    ///< 0 = unlimited
+};
+
+// -----------------------------------------------------------------------------
+//  OutlierFilterConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Placeholder for pre/post outlier removal (loki_outlier, future).
+ */
+struct OutlierFilterConfig {
+    bool   enabled{false};
+    double threshold{3.0};
+};
+
+// -----------------------------------------------------------------------------
+//  DeseasonalizationConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for the deseasonalization step.
+ */
+struct DeseasonalizationConfig {
+    std::string strategy{"median_year"};  ///< median_year | moving_average | none
+    int         maWindowSize{365};
+};
+
+// -----------------------------------------------------------------------------
+//  DetectionConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for change point detection.
+ */
+struct DetectionConfig {
+    int    minSegmentPoints{60};
+    double minSegmentSeconds{0.0};
+    double significanceLevel{0.05};
+    double acfDependenceLimit{0.2};
+    bool   correctForDependence{true};
 };
 
 // -----------------------------------------------------------------------------
@@ -115,11 +141,19 @@ struct OutputConfig {
 // -----------------------------------------------------------------------------
 
 /**
- * @brief Algorithm parameters for the homogeneity analysis module.
+ * @brief Full configuration for the homogeneity analysis pipeline.
+ *
+ * Maps 1:1 to the "homogeneity" section of the JSON config file.
+ * ConfigLoader builds HomogenizerConfig from this struct in main.
  */
 struct HomogeneityConfig {
-    std::string method{"snht"};         ///< Detection method: "snht", "pettitt", "buishand".
-    double significanceLevel{0.05};     ///< Statistical significance threshold (0.0–1.0).
+    bool                   applyGapFilling{true};
+    GapFillingConfig       gapFilling{};
+    OutlierFilterConfig    preOutlier{};
+    DeseasonalizationConfig deseasonalization{};
+    OutlierFilterConfig    postOutlier{};
+    DetectionConfig        detection{};
+    bool                   applyAdjustment{true};
 };
 
 // -----------------------------------------------------------------------------
@@ -129,19 +163,29 @@ struct HomogeneityConfig {
 /**
  * @brief Configuration for plot output.
  *
- * Controls which plots are generated and in what format.
- * timeFormat overrides InputConfig::timeFormat for the x-axis when non-empty.
+ * Generic plots (timeSeries, histogram, etc.) are used by apps/loki.
+ * Homogeneity-specific plots are used by apps/loki_homogeneity.
  */
 struct PlotConfig {
-    std::string outputFormat{"png"};  ///< Output format: "png" | "eps" | "svg".
+    std::string outputFormat{"png"};  ///< png | eps | svg
     std::string timeFormat{""};       ///< X-axis time format. Empty = inherit from input.
 
-    bool timeSeries {true};   ///< Enable time series line plot.
-    bool comparison {false};  ///< Enable two-panel comparison plot.
-    bool histogram  {true};   ///< Enable histogram with normal overlay.
-    bool acf        {false};  ///< Enable ACF correlogram.
-    bool qqPlot     {false};  ///< Enable normal Q-Q plot.
-    bool boxplot    {false};  ///< Enable box-and-whisker plot.
+    // -- Generic plots (apps/loki) --------------------------------------------
+    bool timeSeries {true};
+    bool comparison {false};
+    bool histogram  {true};
+    bool acf        {false};
+    bool qqPlot     {false};
+    bool boxplot    {false};
+
+    // -- Homogeneity plots (apps/loki_homogeneity) ----------------------------
+    bool originalSeries   {true};   ///< Original input series.
+    bool seasonalOverlay  {true};   ///< Original + seasonal component overlay.
+    bool deseasonalized   {true};   ///< Deseasonalized residuals.
+    bool changePoints     {true};   ///< Residuals with change point markers.
+    bool adjustedSeries   {true};   ///< Homogenized (adjusted) series.
+    bool homogComparison  {true};   ///< Original vs adjusted overlay.
+    bool shiftMagnitudes  {true};   ///< Bar chart of shift magnitudes.
 };
 
 // -----------------------------------------------------------------------------
@@ -150,10 +194,6 @@ struct PlotConfig {
 
 /**
  * @brief Configuration for descriptive statistics computation.
- *
- * Controls whether statistics are computed at all, how missing values
- * (NaN) are handled, and whether the computationally expensive
- * Hurst exponent (R/S analysis) is included in the summary.
  */
 struct StatsConfig {
     bool      enabled   {true};
@@ -174,16 +214,15 @@ struct StatsConfig {
  * Expected directory layout under workspace:
  * @code
  *   <workspace>/
- *   ├── INPUT/     ← input time series files
- *   └── OUTPUT/
- *       ├── LOG/   ← log files
- *       ├── CSV/   ← exported results
- *       └── IMG/   ← gnuplot images
+ *   +-- INPUT/
+ *   +-- OUTPUT/
+ *       +-- LOG/
+ *       +-- CSV/
+ *       +-- IMG/
  * @endcode
  */
 struct AppConfig {
 
-    /// Root workspace directory. All relative paths are resolved against this.
     std::filesystem::path workspace;
 
     InputConfig       input;
@@ -192,15 +231,9 @@ struct AppConfig {
     HomogeneityConfig homogeneity;
     StatsConfig       stats;
 
-    // ── Derived paths (computed by ConfigLoader) ──────────────────────────────
-
-    /// Absolute path to the log output directory (<workspace>/OUTPUT/LOG).
+    // -- Derived paths (computed by ConfigLoader) -----------------------------
     std::filesystem::path logDir;
-
-    /// Absolute path to the CSV output directory (<workspace>/OUTPUT/CSV).
     std::filesystem::path csvDir;
-
-    /// Absolute path to the image output directory (<workspace>/OUTPUT/IMG).
     std::filesystem::path imgDir;
 };
 

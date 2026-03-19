@@ -18,6 +18,9 @@ add_library(loki_homogeneity STATIC
     src/multiChangePointDetector.cpp
     src/medianYearSeries.cpp
     src/deseasonalizer.cpp
+    src/seriesAdjuster.cpp
+    src/homogenizer.cpp
+    src/plotHomogeneity.cpp
 )
 
 target_include_directories(loki_homogeneity
@@ -27,9 +30,17 @@ target_include_directories(loki_homogeneity
 )
 
 target_link_libraries(loki_homogeneity
-    PUBLIC  loki::core
+    PUBLIC  
+        loki::core
+        Eigen3::Eigen
     PRIVATE loki_compiler_options
 )
 
+target_compile_features(loki_homogeneity PUBLIC cxx_std_20)
+ 
+set_target_properties(loki_homogeneity PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+ 
 # Alias used by apps and tests: loki::homogeneity
 add_library(loki::homogeneity ALIAS loki_homogeneity)

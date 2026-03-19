@@ -51,7 +51,7 @@
             "threshold": 3.0
         },
         "deseasonalization": {
-            "strategy": "median_year",
+            "strategy": "movinf_average",
             "ma_window_size": 365
         },
         "post_outlier": {
