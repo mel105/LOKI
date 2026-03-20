@@ -10,20 +10,21 @@ namespace loki::homogeneity {
 /**
  * @brief Adjusts a time series by removing mean shifts at detected change points.
  *
- * Applies cumulative mean-shift corrections to all segments left of the
- * rightmost (reference) segment. The reference segment is always the last one
- * and is left unchanged.
+ * Applies cumulative mean-shift corrections to all segments right of the
+ * first (reference) segment. The reference segment is always the first one
+ * and is left unchanged. All subsequent segments are pulled toward the mean
+ * level of the first segment.
  *
- * Given change points at global indices [i1, i2, ..., ik] with shifts
- * [s1, s2, ..., sk], the correction applied to a point at index p is:
+ * Given change points sorted by index [cp_0, cp_1, ..., cp_{k-1}] with shifts
+ * [s_0, s_1, ..., s_{k-1}], the correction for segment j (j >= 1) is:
  *
- *   correction(p) = sum of sj for all j where ij > p
+ *   correction(j) = s_0 + s_1 + ... + s_{j-1}
  *
- * i.e. each point receives the cumulative shift of all change points to its right.
- * The adjusted value is: adjusted[p] = original[p] - correction(p).
+ * The adjusted value is: adjusted[i] = original[i] - correction(segment(i)).
+ * Points in segment 0 receive correction 0 (unchanged).
  *
  * The returned TimeSeries has the same timestamps and flags as the input.
- * The metadata name receives the suffix "_adj".
+ * The metadata componentName receives the suffix "_adj".
  *
  * @note SeriesAdjuster is stateless; it holds no configuration.
  *       Construct once and reuse across multiple series.
@@ -44,7 +45,7 @@ public:
      *
      * @param original     Input time series. Must not be empty.
      * @param changePoints Change points produced by MultiChangePointDetector.
-     * @return Adjusted TimeSeries with metadata name suffix "_adj".
+     * @return Adjusted TimeSeries with metadata componentName suffix "_adj".
      * @throws AlgorithmException if any globalIndex >= original.size().
      */
     [[nodiscard]]

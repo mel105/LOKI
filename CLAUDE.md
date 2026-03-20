@@ -728,10 +728,19 @@ Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 | H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` | POSTPONED - urobime v loki_spectral (FFT) |
 | H5 | `MA filter + Deseasonalizer` | `filter.hpp/.cpp`, `deseasonalizer.hpp/.cpp`, `test_filter.cpp, test_deseasonalizer.cpp` | DONE |
 | H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` | DONE |
-| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | next |
-| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline app | |
+| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | DONE |
+| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline app | DONE |
+| H9 | Review robustnosti, doplnenie config parametrov, MedianYearSeries wiring | DONE |
+| H10 | Ladenie algoritmov -- validacia vysledkov SNHT, sigmaStar, binary splitting | next |
+| H11 | data_domain / resolution-aware defaults | planned |
 
-Recommended order: H5 -> H6 -> H7 -> H8.
+### data_domain -- resolution-aware pipeline defaults (planned, H11)
+User declares data domain in JSON ("gnss_seconds", "hourly", "climatological" etc.).
+buildHomogenizerConfig() sets sensible strategy defaults based on domain first,
+then JSON explicit overrides are applied on top.
+Motivation: sub-second/second data -> MA filter short window;
+6h/daily climatological -> MEDIAN_YEAR gaps + deseas, long window.
+data_domain candidate location: InputConfig or SeriesMetadata enum.
 
 ### How to start each thread
 Paste this at the beginning of each new conversation:

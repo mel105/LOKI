@@ -9,9 +9,9 @@
 
 namespace loki {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  LoadResult
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 /**
  * @brief Result returned by Loader::load() for a single input file.
@@ -40,9 +40,9 @@ struct LoadResult {
     std::size_t linesSkipped{0};
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Loader
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 /**
  * @brief Parses a single delimited text file into one or more TimeSeries.
@@ -50,27 +50,26 @@ struct LoadResult {
  * ### File format
  * - Lines beginning with the configured comment character are skipped.
  * - Blank lines are skipped.
- * - The first non-comment column on each data line is the time value.
+ * - The first non-comment column(s) on each data line form the time token.
+ *   The number of time fields is determined by InputConfig::timeColumns.
  * - Remaining columns are numeric values.
+ *
+ * ### Time columns
+ * By default (timeColumns empty), field 0 is the time token.
+ * Set timeColumns = [0, 1] to join two fields before parsing, e.g. when
+ * date and time are in separate columns: "1990-01-01" "00:00:00".
  *
  * ### Column header detection
  * If a comment line matches the pattern "% Columns: NAME1, NAME2, ..."
  * (case-insensitive), column names are extracted from it.
- * Names in square brackets (units) are preserved: "WIG_SPEED[m/s]" stays as-is.
- * Config-supplied names take priority over detected names.
  *
  * ### Error handling
- * Malformed data lines (wrong column count, non-numeric values) are skipped
- * with a LOKI_WARNING. Parsing continues to the end of the file.
+ * Malformed data lines are skipped with a LOKI_WARNING.
  *
  * Usage example:
  * @code
  *   Loader loader(cfg.input);
- *   LoadResult result = loader.load("/workspace/INPUT/sensor.csv");
- *   for (std::size_t i = 0; i < result.series.size(); ++i) {
- *       LOKI_INFO("Series '" + result.columnNames[i]
- *                 + "' has " + std::to_string(result.series[i].size()) + " points.");
- *   }
+ *   LoadResult result = loader.load("/workspace/INPUT/data.txt");
  * @endcode
  */
 class Loader {
@@ -96,36 +95,34 @@ private:
 
     InputConfig m_config;
 
-    // ── Internal helpers ──────────────────────────────────────────────────────
-
     /**
      * @brief Attempts to extract column names from a comment line.
-     *
-     * Looks for the pattern (case-insensitive):
-     *   "% Columns: NAME1[unit], NAME2, NAME3"
-     *
-     * @param line  The raw comment line (including the comment character).
-     * @param names Output vector populated with extracted names.
-     * @return True if the pattern was matched and names were populated.
+     * @param line        Raw comment line (including comment character).
+     * @param commentChar The configured comment character.
+     * @param names       Output vector populated with extracted names.
+     * @return True if pattern was matched and names were populated.
      */
     static bool _parseColumnHeader(const std::string&        line,
                                    char                      commentChar,
                                    std::vector<std::string>& names);
 
     /**
-     * @brief Converts a raw time token to a TimeStamp using the configured TimeFormat.
-     * @param token     The time field string from the data line.
-     * @param nextToken Second token (only used for GPS_WEEK_SOW format).
+     * @brief Converts raw field tokens to a TimeStamp using the configured TimeFormat.
+     *
+     * For UTC with timeColumns = [0, 1], joins fields[0] and fields[1] with a space.
+     * For GPS_WEEK_SOW, uses fields[0] (week) and fields[1] (sow).
+     * For all other formats, uses fields[0] only.
+     *
+     * @param fields All split fields from the current data line.
      * @return Parsed TimeStamp.
      * @throws ParseException if the token cannot be converted.
      */
-    [[nodiscard]] TimeStamp _parseTime(const std::string& token,
-                                       const std::string& nextToken) const;
+    [[nodiscard]] TimeStamp _parseTime(const std::vector<std::string>& fields) const;
 
     /**
      * @brief Splits a line by the configured delimiter.
      * @param line Input line string.
-     * @return Vector of field strings (may be empty strings for consecutive delimiters).
+     * @return Vector of field strings.
      */
     [[nodiscard]] std::vector<std::string> _splitLine(const std::string& line) const;
 };

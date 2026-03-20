@@ -28,6 +28,7 @@ namespace loki::homogeneity {
  *   plotAdjusted        -- homogenized series (line)
  *   plotComparison      -- original vs adjusted overlay (two lines)
  *   plotShiftMagnitudes -- bar chart of shift magnitudes per change point
+ *   plotCorrectionCurve -- original series + cumulative correction step function
  *   plotAll             -- calls all enabled plots based on PlotConfig flags
  */
 class PlotHomogeneity {
@@ -92,6 +93,19 @@ public:
      */
     void plotShiftMagnitudes(const TimeSeries&               series,
                              const std::vector<ChangePoint>&  changePoints) const;
+
+    /**
+     * @brief Plots the original series with the cumulative correction step function overlaid.
+     *
+     * The correction curve shows how much each segment was shifted relative to
+     * the first (reference) segment. It is a step function that jumps at each
+     * change point by the corresponding shift magnitude.
+     *
+     * @param series       Original series (time axis and metadata).
+     * @param changePoints Detected change points with shift values.
+     */
+    void plotCorrectionCurve(const TimeSeries&               series,
+                             const std::vector<ChangePoint>& changePoints) const;
 
     /**
      * @brief Runs all enabled plots based on PlotConfig flags.

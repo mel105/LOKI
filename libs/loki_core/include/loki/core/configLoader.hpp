@@ -57,6 +57,11 @@ private:
     /// Resolves a path against baseDir if not already absolute.
     static std::filesystem::path _resolvePath(const std::string& raw,
                                               const std::filesystem::path& baseDir);
+
+    /// Parses a human-readable duration string to seconds.
+    /// Supported formats: "1y", "180d", "6h", "30m", "60s".
+    /// Returns 0.0 on parse failure.
+    static double _parseDuration(const std::string& s);
 };
 
 } // namespace loki
