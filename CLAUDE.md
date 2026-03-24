@@ -9,7 +9,7 @@ It should be placed in the root of the repository and kept up to date.
 
 LOKI is a professional C++ toolkit for statistical analysis of time series data.
 The long-term goal is a modular ecosystem of analysis libraries with a GUI/IDE frontend.
-Current focus: change point detection and homogeneity testing (`loki_homogeneity`).
+Current focus: outlier detection and removal (`loki_outlier`).
 
 ---
 
@@ -149,6 +149,12 @@ try {
 - Do NOT add any license/copyright header block at the top of `.cpp` or `.hpp` files.
 - License information is managed separately (LICENSE file in repository root).
 
+### No code duplication
+- Before implementing any functionality, check if it already exists in `loki_core` or
+  another module. Reuse and extend existing classes rather than duplicating logic.
+- If a module needs slightly different behaviour from an existing class (e.g. GapFiller),
+  extend the existing class with a new strategy or method -- do not copy it.
+
 ### Robustness checklist before delivering code
 Before presenting any code artifact, verify:
 - [ ] No raw owning pointers -- use `std::unique_ptr` / `std::shared_ptr` / value types.
@@ -159,6 +165,33 @@ Before presenting any code artifact, verify:
 - [ ] Doxygen comments on all public interfaces.
 - [ ] Comments in English, ASCII characters only (no Unicode box-drawing).
 - [ ] `using namespace loki;` present in `.cpp` files after the last `#include`.
+
+---
+
+## Library Architecture
+
+### Dependency graph
+```
+loki_core
+    ^
+    |
+loki_outlier          (depends on loki_core only)
+    ^
+    |
+loki_homogeneity      (depends on loki_core + loki_outlier)
+    ^
+    |
+loki_spectral         (depends on loki_core)
+... (other future modules depend on loki_core; cross-dependencies only when justified)
+```
+
+### Rules
+- Every module is a **separate CMake library** with its own `include/` and `src/` tree.
+- Include paths follow `#include <loki/<module>/<class>.hpp>`.
+- No circular dependencies between modules.
+- `loki_core` must not depend on any other loki module.
+- `loki_homogeneity` may depend on `loki_outlier` once it is implemented.
+  Until then, `preOutlier` and `postOutlier` remain `enabled=false` placeholders.
 
 ---
 
@@ -178,6 +211,9 @@ loki/
 |   |   +-- CMakeLists.txt
 |   |   +-- main.cpp
 |   +-- loki_homogeneity/
+|   |   +-- CMakeLists.txt
+|   |   +-- main.cpp
+|   +-- loki_outlier/
 |       +-- CMakeLists.txt
 |       +-- main.cpp
 +-- libs/
@@ -201,7 +237,7 @@ loki/
 |   |   |       |   +-- descriptive.hpp
 |   |   |       |   +-- filter.hpp
 |   |   |       +-- io/
-|   |   |           +-- loader.hpp         <- in io/, NOT timeseries/
+|   |   |           +-- loader.hpp
 |   |   |           +-- dataManager.hpp
 |   |   |           +-- gnuplot.hpp
 |   |   |           +-- plot.hpp
@@ -223,33 +259,46 @@ loki/
 |   |           +-- gnuplot.cpp
 |   |           +-- plot.cpp
 |   |
-|   +-- loki_homogeneity/
+|   +-- loki_outlier/
 |   |   +-- CMakeLists.txt
 |   |   +-- include/
 |   |   |   +-- loki/
-|   |   |       +-- homogeneity/
-|   |   |           +-- changePointResult.hpp
-|   |   |           +-- changePointDetector.hpp
-|   |   |           +-- multiChangePointDetector.hpp
-|   |   |           +-- medianYearSeries.hpp
-|   |   |           +-- deseasonalizer.hpp
-|   |   |           +-- harmonicSeries.hpp
-|   |   |           +-- seriesAdjuster.hpp
-|   |   |           +-- homogenizer.hpp
+|   |   |       +-- outlier/
+|   |   |           +-- outlierResult.hpp
+|   |   |           +-- iqrDetector.hpp
+|   |   |           +-- madDetector.hpp
+|   |   |           +-- zScoreDetector.hpp
+|   |   |           +-- hatMatrixDetector.hpp   <- O4, later
+|   |   |           +-- outlierCleaner.hpp
 |   |   +-- src/
-|   |       +-- changePointDetector.cpp
-|   |       +-- multiChangePointDetector.cpp
-|   |       +-- medianYearSeries.cpp
-|   |       +-- deseasonalizer.cpp
-|   |       +-- harmonicSeries.cpp
-|   |       +-- seriesAdjuster.cpp
-|   |       +-- homogenizer.cpp
+|   |       +-- iqrDetector.cpp
+|   |       +-- madDetector.cpp
+|   |       +-- zScoreDetector.cpp
+|   |       +-- hatMatrixDetector.cpp           <- O4, later
+|   |       +-- outlierCleaner.cpp
 |   |
-|   +-- loki_outlier/                      <- future module
+|   +-- loki_homogeneity/
 |       +-- CMakeLists.txt
-|       +-- include/loki/outlier/
+|       +-- include/
+|       |   +-- loki/
+|       |       +-- homogeneity/
+|       |           +-- changePointResult.hpp
+|       |           +-- changePointDetector.hpp
+|       |           +-- multiChangePointDetector.hpp
+|       |           +-- medianYearSeries.hpp
+|       |           +-- deseasonalizer.hpp
+|       |           +-- seriesAdjuster.hpp
+|       |           +-- homogenizer.hpp
+|       |           +-- plotHomogeneity.hpp
 |       +-- src/
-|
+|           +-- changePointDetector.cpp
+|           +-- multiChangePointDetector.cpp
+|           +-- medianYearSeries.cpp
+|           +-- deseasonalizer.cpp
+|           +-- seriesAdjuster.cpp
+|           +-- homogenizer.cpp
+|           +-- plotHomogeneity.cpp
+
 +-- tests/
 |   +-- CMakeLists.txt
 |   +-- unit/
@@ -263,16 +312,22 @@ loki/
 |   |   |   +-- test_descriptive.cpp
 |   |   |   +-- test_summarize.cpp
 |   |   +-- homogeneity/
-|   |       +-- test_changePointDetector.cpp
-|   |       +-- test_multiChangePointDetector.cpp
-|   |       +-- test_medianYearSeries.cpp
-|   |       +-- test_deseasonalizer.cpp
-|   |       +-- test_seriesAdjuster.cpp
-|   |       +-- test_homogenizer.cpp
+|   |   |   +-- test_changePointDetector.cpp
+|   |   |   +-- test_multiChangePointDetector.cpp
+|   |   |   +-- test_medianYearSeries.cpp
+|   |   |   +-- test_deseasonalizer.cpp
+|   |   |   +-- test_seriesAdjuster.cpp
+|   |   |   +-- test_homogenizer.cpp
+|   |   +-- outlier/
+|   |       +-- test_iqrDetector.cpp
+|   |       +-- test_madDetector.cpp
+|   |       +-- test_zScoreDetector.cpp
+|   |       +-- test_outlierCleaner.cpp
 |   +-- integration/
 |
 +-- config/
-|   +-- loki_homogeneity.json
+|   +-- homogenization.json
+|   +-- outlier.json
 +-- scripts/
 |   +-- build.sh
 |   +-- clean.sh
@@ -299,20 +354,20 @@ All dependencies managed via CMake `FetchContent` -- no vendored source code in 
 
 ## Planned Modules
 
-| Module | Description |
-|---|---|
-| `loki_homogeneity` | Change point detection, homogenizacia -- **aktualny fokus** |
-| `loki_outlier` | IQR, Z-score, Mahalanobis, hat matrix, clustering-based |
-| `loki_decomposition` | Trend, seasonality, residuals (STL, classical) |
-| `loki_svd` | SVD/PCA decomposition of time series |
-| `loki_filter` | Moving average, Butterworth, Savitzky-Golay |
-| `loki_kalman` | Kalman filter, smoother, Extended Kalman Filter |
-| `loki_arima` | AR, ARMA, ARIMA, SARIMA modelling |
-| `loki_spectral` | FFT, power spectrum, Lomb-Scargle (for unevenly sampled data) |
-| `loki_stationarity` | ADF, KPSS, unit root tests |
-| `loki_clustering` | k-means, DBSCAN, Hungarian algorithm |
-| `loki_qc` | Quality control, gap filling, flagging |
-| `loki_regression` | Linear, polynomial, robust regression |
+| Module | Description | Status |
+|---|---|---|
+| `loki_homogeneity` | Change point detection, SNHT, binary splitting, adjustment | active |
+| `loki_outlier` | IQR, MAD, Z-score, hat matrix, outlier replacement | **current focus** |
+| `loki_decomposition` | Trend, seasonality, residuals (STL, classical) | planned |
+| `loki_svd` | SVD/PCA decomposition of time series | planned |
+| `loki_filter` | Moving average, Butterworth, Savitzky-Golay | planned |
+| `loki_kalman` | Kalman filter, smoother, Extended Kalman Filter | planned |
+| `loki_arima` | AR, ARMA, ARIMA, SARIMA modelling | planned |
+| `loki_spectral` | FFT, power spectrum, Lomb-Scargle (unevenly sampled data) | planned |
+| `loki_stationarity` | ADF, KPSS, unit root tests | planned |
+| `loki_clustering` | k-means, DBSCAN, Hungarian algorithm | planned |
+| `loki_qc` | Quality control, gap filling, flagging | planned |
+| `loki_regression` | Linear, polynomial, robust regression | planned |
 
 ---
 
@@ -408,213 +463,6 @@ Total: **126 tests, 126 passing**.
     +-- IMG/
 ```
 
-Example config (`config/loki_homogeneity.json`):
-```json
-{
-    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
-    "input": {
-        "file": "SENSOR_DATA.txt",
-        "time_format": "gpst_seconds",
-        "delimiter": ";",
-        "comment_char": "%",
-        "columns": [],
-        "merge_strategy": "separate"
-    },
-    "output": {
-        "log_level": "info"
-    },
-    "homogeneity": {
-        "preprocessing": {
-            "gap_filling": {
-                "enabled": true,
-                "strategy": "median_year",
-                "min_years": 5
-            },
-            "outlier_removal": {
-                "enabled": false,
-                "strategy": "iqr",
-                "threshold": 3.0
-            }
-        },
-        "deseasonalization": {
-            "enabled": true,
-            "strategy": "median_year",
-            "harmonic_order": 1,
-            "ma_window_size": 365
-        },
-        "detection": {
-            "enabled": true,
-            "significance_level": 0.05,
-            "acf_dependence_limit": 0.2,
-            "min_segment_points": 60,
-            "min_segment_seconds": 0
-        },
-        "adjustment": {
-            "enabled": true
-        }
-    }
-}
-```
-
----
-
-## loki_homogeneity -- Architecture
-
-### Pipeline (in order, each step enabled/disabled via JSON)
-
-```
-1. GapFiller                (loki_core/timeseries)
-2. OutlierRemover           (loki_outlier -- future)
-3. Deseasonalizer           (loki_homogeneity)
-4. MultiChangePointDetector (loki_homogeneity)
-5. SeriesAdjuster           (loki_homogeneity)
-```
-
-### Deseasonalization strategies
-
-| Strategy | When to use |
-|---|---|
-| `MEDIAN_YEAR` | Climatological / GNSS / economic data, requires UTC/GPST/MJD timestamp |
-| `HARMONIC` | Same domain as MEDIAN_YEAR, LSQ harmonic model (a0 + a1*sin + b1*cos + ...) |
-| `MOVING_AVERAGE` | Sensor / radio signals with ms-s resolution, no calendar meaning |
-| `NONE` | Data already deseasonalized, or no seasonality present |
-
-`MEDIAN_YEAR` and `HARMONIC` require a time axis with calendar meaning (UTC, GPST, MJD).
-If the input has only an index (no timestamp), only `MOVING_AVERAGE` or `NONE` are valid.
-`Deseasonalizer` throws `ConfigException` for incompatible strategy/input combinations.
-
-### Key types
-
-```cpp
-namespace loki::homogeneity {
-
-// Single change point detection result
-struct ChangePointResult {
-    bool   detected{false};
-    int    index{-1};
-    double shift{0.0};
-    double meanBefore{0.0};
-    double meanAfter{0.0};
-    double maxTk{0.0};
-    double criticalValue{0.0};
-    double pValue{0.0};
-    double acfLag1{0.0};
-    double sigmaStar{1.0};
-    int    confIntervalLow{-1};
-    int    confIntervalHigh{-1};
-};
-
-// One detected change point in global coordinates
-struct ChangePoint {
-    std::size_t globalIndex;
-    double      mjd;
-    double      shift;
-    double      pValue;
-};
-
-} // namespace loki::homogeneity
-```
-
-### Class signatures (agreed design)
-
-```cpp
-// --- ChangePointDetector ---
-class ChangePointDetector {
-public:
-    struct Config {
-        double significanceLevel{0.05};
-        double acfDependenceLimit{0.2};
-        bool   correctForDependence{true};
-    };
-    explicit ChangePointDetector(Config cfg = {});
-    [[nodiscard]]
-    ChangePointResult detect(const std::vector<double>& z,
-                             std::size_t begin,
-                             std::size_t end) const;
-};
-
-// --- MultiChangePointDetector ---
-class MultiChangePointDetector {
-public:
-    struct Config {
-        std::size_t minSegmentPoints{60};
-        double      minSegmentSeconds{0.0};
-        ChangePointDetector::Config detectorConfig{};
-    };
-    explicit MultiChangePointDetector(Config cfg = {});
-    [[nodiscard]]
-    std::vector<ChangePoint> detect(const std::vector<double>& z,
-                                    const std::vector<double>& times) const;
-};
-
-// --- MedianYearSeries ---
-// Computes median annual profile for gap filling and deseasonalization.
-// Profile: flat vector of 366 * slotsPerDay medians.
-// Resolution auto-detected from series; sub-hourly -> ConfigException.
-// Slots with fewer than minYears values -> NaN (warning logged, no throw).
-class MedianYearSeries {
-public:
-    struct Config {
-        int    minYears{5};
-        double maxResolutionDays{1.0 / 24.0};  // 1 hour
-    };
-    explicit MedianYearSeries(const TimeSeries& series, Config cfg = Config{});
-    [[nodiscard]] double      valueAt(const TimeStamp& ts) const noexcept;
-    [[nodiscard]] std::size_t profileSize()  const noexcept;
-    [[nodiscard]] double      stepDays()     const noexcept;
-    [[nodiscard]] int         slotsPerDay()  const noexcept;
-};
-
-// --- Deseasonalizer ---
-class Deseasonalizer {
-public:
-    enum class Strategy { MEDIAN_YEAR, HARMONIC, MOVING_AVERAGE, NONE };
-    struct Config {
-        Strategy strategy{Strategy::MEDIAN_YEAR};
-        int      harmonicOrder{1};
-        int      maWindowSize{365};
-    };
-    explicit Deseasonalizer(Config cfg = {});
-    [[nodiscard]]
-    std::vector<double> deseasonalize(const TimeSeries& series) const;
-};
-
-// --- SeriesAdjuster ---
-class SeriesAdjuster {
-public:
-    [[nodiscard]]
-    TimeSeries adjust(const TimeSeries& original,
-                      const std::vector<ChangePoint>& changePoints) const;
-};
-
-// --- Homogenizer ---
-class Homogenizer {
-public:
-    struct Config {
-        Deseasonalizer::Config           deseasonalizer{};
-        MultiChangePointDetector::Config detector{};
-        bool applyAdjustment{true};
-    };
-    struct Result {
-        std::vector<ChangePoint> changePoints;
-        TimeSeries               adjustedSeries;
-        std::vector<double>      deseasonalizedValues;
-    };
-    explicit Homogenizer(Config cfg = {});
-    [[nodiscard]]
-    Result process(const TimeSeries& input) const;
-};
-```
-
-### apps/loki_homogeneity/main.cpp
-Thin orchestration layer:
-1. Parse CLI args, load JSON config.
-2. `Logger::initDefault()`.
-3. `DataManager::load()`.
-4. For each series: `Homogenizer::process()`.
-5. Log results, write CSV, optionally plot via `Plot`.
-6. Catch `loki::LOKIException` and `std::exception`.
-
 ---
 
 ## Known Issues and Workarounds
@@ -640,11 +488,6 @@ Always use `DISCOVERY_MODE PRE_TEST` in `tests/CMakeLists.txt`.
 ### TimeStamp not in namespace loki
 Known inconsistency -- to be fixed during full refactoring.
 
-### Catch2 test name s bodkociarkami (test #95)
-Test case z H1 obsahuje bodkociarkamy v nazve -- Catch2 PRE_TEST discovery
-ho registruje ako jeden dlhy nazov. Nie je to bug v kode, len kosmeticky
-problem s pomenovanim. Opravit pri refaktore testov H1.
-
 ### Logger macro names
 Correct macros: LOKI_INFO, LOKI_WARNING, LOKI_ERROR (not LOKI_WARN, not LOG_INFO).
 
@@ -658,6 +501,29 @@ TimeStamp is not in namespace loki. When used alongside loki:: types,
 always qualify as ::TimeStamp (global scope). This applies to function
 signatures, lambdas, and local variables.
 
+### Loader -- time_columns and space delimiter
+When `delimiter` is `' '` or `'\t'`, `_splitLine` uses `operator>>` (word extraction)
+to handle multiple consecutive spaces. For all other delimiters, exact splitting is used.
+`time_columns` (0-based field indices) controls which fields are joined to form the
+time token. Default empty = field 0 only. Example: `[0, 1]` for split UTC date/time.
+`columns` (1-based from start of line) selects value columns. Example: `[3]` = third
+column in file (0-based field index 2).
+
+### plotHomogeneity -- fwdSlash helper
+Gnuplot on Windows requires forward slashes. `fwdSlash()` static helper converts
+backslashes in all path strings passed to gnuplot.
+
+### SeriesAdjuster -- reference segment
+Reference = **first segment** (index 0). All subsequent segments are pulled toward
+the level of the first segment using prefix sums of shifts.
+`prefixShift[0] = 0`, `prefixShift[j] = sum(shifts[0..j-1])`.
+`adjusted[i] = original[i] - prefixShift[segmentIdx(i)]`.
+
+### min_segment_duration -- human-readable format
+`detection.min_segment_duration` in JSON (e.g. `"180d"`, `"1y"`, `"6h"`, `"30m"`, `"60s"`)
+is parsed by `ConfigLoader::_parseDuration()` and stored in `minSegmentSeconds`.
+Takes precedence over `min_segment_seconds` if non-empty.
+
 ---
 
 ## Implemented Modules
@@ -667,22 +533,25 @@ signatures, lambdas, and local variables.
 - `version.hpp` -- `0.1.0`
 - `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
 - `logger.hpp / .cpp` -- Meyers singleton, file + stdout/stderr, macros
-- `config.hpp` -- all config structs
-- `configLoader.hpp / .cpp` -- JSON loader, path resolution
+- `config.hpp` -- all config structs including `InputConfig::timeColumns`,
+                   `DetectionConfig::minSegmentDuration`, `PlotConfig::correctionCurve`
+- `configLoader.hpp / .cpp` -- JSON loader, path resolution, `_parseDuration()`
 
 ### loki::timeseries -- complete
 - `timeStamp.hpp / .cpp` -- MJD internal, GPS/UTC/Unix conversions
 - `timeSeries.hpp / .cpp` -- Observation, SeriesMetadata, append, slice, indexOf
 - `gapFiller.hpp / .cpp` -- LINEAR, FORWARD_FILL, MEAN, NONE strategies;
-                             MEDIAN_YEAR blocked (ConfigException) until integrated
-                             with MedianYearSeries; detects NaN and time-jump gaps;
+                             MEDIAN_YEAR blocked (ConfigException) until O3;
+                             detects NaN and time-jump gaps;
                              bfill/ffill on leading/trailing edges; maxFillLength limit
 
 ### loki::stats -- complete
 - `descriptive.hpp / .cpp` -- mean, median, variance, IQR, ACF, Hurst, summarize()
+- `filter.hpp / .cpp` -- movingAverage (centered, O(n)), EMA, WMA
 
 ### loki::io -- complete
-- `loader.hpp / .cpp` -- file loading (in io/, NOT timeseries/)
+- `loader.hpp / .cpp` -- multi-field time parsing, space-delimiter word extraction,
+                          1-based absolute column indexing
 - `dataManager.hpp / .cpp`
 - `gnuplot.hpp / .cpp`
 - `plot.hpp / .cpp`
@@ -690,68 +559,168 @@ signatures, lambdas, and local variables.
 ### apps/loki -- complete
 Full pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> stats -> Plot.
 
-### loki_homogeneity -- partially implemented
+### loki_homogeneity -- complete (H1-H10)
 - `changePointResult.hpp` -- ChangePointResult + ChangePoint structs
-- `changePointDetector.hpp / .cpp` -- single segment, O(n) prefix sums, sigmaStar
-- `multiChangePointDetector.hpp / .cpp` -- recursive binary splitting
+- `changePointDetector.hpp / .cpp` -- single segment SNHT, O(n) prefix sums, sigmaStar
+- `multiChangePointDetector.hpp / .cpp` -- recursive binary splitting with
+                                           minSegmentPoints + minSegmentSeconds guards
 - `medianYearSeries.hpp / .cpp` -- median annual profile, auto-detected resolution
-                                    (daily=366 slots, 6h=1464 slots, etc.);
-                                    sub-hourly -> ConfigException;
-                                    under-populated slots -> NaN + warning (no throw);
-                                    short series -> warning + continues with available data
-- `filter.hpp / .cpp` -- movingAverage (centered, O(n) prefix sums),
-                         exponentialMovingAverage, weightedMovingAverage;
-                         all reject NaN input (DataException); checkNoNaN helper
-- `deseasonalizer.hpp / .cpp` -- Strategy: MOVING_AVERAGE (default), MEDIAN_YEAR, NONE;
-                                  MEDIAN_YEAR requires profileLookup lambda + step >= 1h;
-                                  Result: {residuals, seasonal, series with _deseas suffix}
-- `seriesAdjuster.hpp / .cpp` -- cumulative shift correction, reference = rightmost segment;
+- `deseasonalizer.hpp / .cpp` -- MOVING_AVERAGE, MEDIAN_YEAR, NONE strategies
+- `seriesAdjuster.hpp / .cpp` -- prefix sum correction, reference = first segment
+- `homogenizer.hpp / .cpp` -- full pipeline orchestration
+- `plotHomogeneity.hpp / .cpp` -- 8 plot types including correction curve step function
 
-### Not yet implemented
-- `loki_homogeneity/harmonicSeries` -- H4
-- `loki_homogeneity/seriesAdjuster` -- H6
-- `loki_homogeneity/homogenizer` -- H7
-- `apps/loki_homogeneity` -- H8
-- `loki_outlier` -- future
-- All other planned modules
+### apps/loki_homogeneity -- complete
+Pipeline: CLI -> ConfigLoader -> Logger -> DataManager -> Homogenizer -> CSV + PlotHomogeneity.
+Generic plots (histogram, ACF, QQ, boxplot) also called via loki::Plot.
+
+### loki_outlier -- in progress
+- `outlierResult.hpp` -- OutlierPoint + OutlierResult structs (two-level, O1 DONE)
+- `libs/loki_outlier/CMakeLists.txt` -- library target (O1 DONE)
+- Detectors, OutlierCleaner, app: O2-O5 planned
 
 ---
 
 ## Planned Thread Sequence for loki_homogeneity
 
+| Thread | Scope | Status |
+|---|---|---|
+| H1 | ChangePointResult, ChangePointDetector | DONE |
+| H2 | MultiChangePointDetector (binary splitting) | DONE |
+| G  | GapFiller (loki_core/timeseries) | DONE |
+| H3 | MedianYearSeries | DONE |
+| H4 | HarmonicSeries | POSTPONED -> loki_spectral |
+| H5 | MA filter + Deseasonalizer | DONE |
+| H6 | SeriesAdjuster | DONE |
+| H7 | Homogenizer + CMakeLists.txt | DONE |
+| H8 | apps/loki_homogeneity/main.cpp + plots | DONE |
+| H9 | Config review, MedianYearSeries wiring, plot fixes | DONE |
+| H10 | Algorithm validation, loader fixes, SeriesAdjuster direction fix | DONE |
+| H11 | data_domain / resolution-aware defaults | planned (low priority) |
+
+---
+
+## Planned Thread Sequence for loki_outlier
+
+### Pipeline design
+```
+Input TimeSeries
+      |
+      v
+[1. Deseasonalize]     -- uses Deseasonalizer from loki_homogeneity (or NONE)
+      |                -- required for IQR, MAD, Z-score
+      v                -- not required for hat matrix
+[2. Detect outliers]   -- configurable method: IQR | MAD | Z-score | hat_matrix
+      |
+      v
+[3. Replace outliers]  -- mark as NaN, then fill via GapFiller (LINEAR | MEDIAN_YEAR | ...)
+      |
+      v
+[4. Reconstruct]       -- add seasonal component back (if deseasonalized in step 1)
+      |
+      v
+Output TimeSeries (cleaned)
+```
+
+Step 4 is essential -- without it the output would be in residual units, not original units.
+Replacement reuses `GapFiller` directly -- no code duplication.
+
+### Key types (agreed design, O1 DONE)
+
+Two-level result structure in `namespace loki::outlier`:
+
+```cpp
+// Per-outlier detail
+struct OutlierPoint {
+    std::size_t index;          // position in the residual / series vector
+    double      originalValue;  // value before replacement
+    double      replacedValue;  // NaN until OutlierCleaner fills it
+    double      score;          // z-score, IQR multiple, Mahal. distance, etc.
+    double      threshold;      // threshold that was exceeded
+    int         flag{1};        // 1 = detected, 2 = replaced
+};
+
+// Summary for one detection run on one series
+struct OutlierResult {
+    std::vector<OutlierPoint> points;    // one per detected outlier
+    std::string               method;   // "IQR", "MAD", "Z-score", "hat_matrix"
+    double                    location; // robust location estimate (median / mean)
+    double                    scale;    // robust scale estimate (IQR / MAD / std)
+    std::size_t               n;        // number of input points
+    std::size_t               nOutliers;// equals points.size()
+};
+```
+
+### Thread plan
+
 | Thread | Scope | Deliverables | Status |
 |---|---|---|---|
-| H1 | `ChangePointResult`, `ChangePointDetector` | `.hpp`, `.cpp`, `test_changePointDetector.cpp` | DONE |
-| H2 | `MultiChangePointDetector` (binary splitting) | `.hpp`, `.cpp`, `test_multiChangePointDetector.cpp` | DONE |
-| G  | `GapFiller` (loki_core/timeseries) | `.hpp`, `.cpp`, `test_gapFiller.cpp` | DONE |
-| H3 | `MedianYearSeries` | `.hpp`, `.cpp`, `test_medianYearSeries.cpp` | DONE |
-| H4 | `HarmonicSeries` (LSQ, replaces old fit+deseas) | `.hpp`, `.cpp` | POSTPONED - urobime v loki_spectral (FFT) |
-| H5 | `MA filter + Deseasonalizer` | `filter.hpp/.cpp`, `deseasonalizer.hpp/.cpp`, `test_filter.cpp, test_deseasonalizer.cpp` | DONE |
-| H6 | `SeriesAdjuster` | `.hpp`, `.cpp`, `test_seriesAdjuster.cpp` | DONE |
-| H7 | `Homogenizer` + `CMakeLists.txt` for `loki_homogeneity` | `.hpp`, `.cpp` | DONE |
-| H8 | `apps/loki_homogeneity/main.cpp` + `CMakeLists.txt` | pipeline app | DONE |
-| H9 | Review robustnosti, doplnenie config parametrov, MedianYearSeries wiring | DONE |
-| H10 | Ladenie algoritmov -- validacia vysledkov SNHT, sigmaStar, binary splitting | next |
-| H11 | data_domain / resolution-aware defaults | planned |
+| O1 | Architecture, OutlierResult, CMakeLists.txt | `outlierResult.hpp`, `CMakeLists.txt` for loki_outlier | DONE |
+| O2 | IqrDetector, MadDetector, ZScoreDetector | `.hpp`, `.cpp`, `test_iqrDetector.cpp`, `test_madDetector.cpp`, `test_zScoreDetector.cpp` | planned |
+| O3 | OutlierCleaner (pipeline orchestration) | `outlierCleaner.hpp/.cpp`, `test_outlierCleaner.cpp`, integration with GapFiller + Deseasonalizer | planned |
+| O4 | HatMatrixDetector (leverage + Cook's D) | `hatMatrixDetector.hpp/.cpp`, `test_hatMatrixDetector.cpp` | planned |
+| O5 | apps/loki_outlier, JSON config, wire into loki_homogeneity | `main.cpp`, `outlier.json`, enable preOutlier/postOutlier in HomogenizerConfig | planned |
 
-### data_domain -- resolution-aware pipeline defaults (planned, H11)
-User declares data domain in JSON ("gnss_seconds", "hourly", "climatological" etc.).
-buildHomogenizerConfig() sets sensible strategy defaults based on domain first,
-then JSON explicit overrides are applied on top.
-Motivation: sub-second/second data -> MA filter short window;
-6h/daily climatological -> MEDIAN_YEAR gaps + deseas, long window.
-data_domain candidate location: InputConfig or SeriesMetadata enum.
+### loki_outlier -- design rules
+- All detectors operate on `std::vector<double>` residuals (deseasonalized values).
+- Detectors return `OutlierResult` -- they do NOT modify the series.
+- Replacement is always done by `OutlierCleaner` via `GapFiller`, not inside detectors.
+- If `GapFiller` needs a new capability for outlier replacement, add a method to
+  `GapFiller` -- do not create a separate replacer class.
+- Detectors are stateless: construct with Config, call `detect(residuals)`.
+- `OutlierCleaner` owns the full pipeline (deseasonalize -> detect -> replace -> reconstruct).
+- `loki_homogeneity` will link against `loki_outlier` once O5 is complete.
 
-### How to start each thread
-Paste this at the beginning of each new conversation:
+### loki_outlier -- detector method summary
 
+| Method | Input | Threshold | Notes |
+|---|---|---|---|
+| IQR | residuals | k * IQR (default k=1.5) | Requires deseasonalization |
+| MAD | residuals | k * MAD / 0.6745 (default k=3.0) | More robust than IQR for heavy tails |
+| Z-score | residuals | abs(z) > threshold (default 3.0) | Assumes normal distribution |
+| Hat matrix | residuals + design matrix | leverage + Cook's D | Detects influential points |
+
+### loki_outlier.json -- planned configuration schema
+
+Keys to be confirmed and extended in O2-O5. Current placeholder:
+
+```json
+{
+    "workspace": "...",
+    "input": {
+        "file": "...",
+        "time_format": "gpst_seconds",
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [],
+        "merge_strategy": "separate"
+    },
+    "output": {
+        "log_level": "info"
+    },
+    "outlier": {
+        "deseasonalization": {
+            "strategy": "median_year | moving_average | none",
+            "ma_window_size": 365
+        },
+        "detection": {
+            "method": "iqr | mad | zscore | hat_matrix",
+            "iqr_multiplier": 1.5,
+            "mad_multiplier": 3.0,
+            "zscore_threshold": 3.0
+        },
+        "replacement": {
+            "strategy": "linear | forward_fill | nearest | median_year | none"
+        }
+    }
+}
 ```
-Working on LOKI -- see CLAUDE.md [paste full CLAUDE.md content here]
 
-Thread <ID>: <one-line description>
-
-[Attach relevant old code if refactoring]
-```
+Parameters to be confirmed/added per thread:
+- O2: `iqr_multiplier`, `mad_multiplier`, `zscore_threshold` (confirm defaults)
+- O3: `replacement.strategy`, `median_year.min_years`
+- O4: `hat_matrix.leverage_threshold` (default: auto = 2*(p+1)/n), `hat_matrix.cooks_d_threshold`
+- O5: integration keys in `homogenization.json` for `pre_outlier` / `post_outlier`
 
 ---
 
@@ -770,63 +739,62 @@ After detecting the candidate change point at index `m`:
 2. Compute ACF of `VALSIGMA` using `loki::stats::acf()`.
 3. Estimate `f0` using Bartlett window of width `L = ceil(n^(1/3))`.
 4. `sigmaStar = sqrt(|f0|)`.
-5. If `acfLag1 > acfDependenceLimit`: multiply critical value by `sigmaStar`.
+5. Scale critical value by `sigmaStar` unconditionally.
 
 ### Binary splitting -- min segment constraint
 Both conditions must be satisfied before recursing:
 - `(end - begin) >= minSegmentPoints`
-- If timestamps available: time span >= `minSegmentSeconds`
+- If timestamps available and `minSegmentSeconds > 0`:
+  time span in seconds >= `minSegmentSeconds`
+`minSegmentDuration` in JSON (e.g. "180d") is parsed to seconds and stored in
+`minSegmentSeconds` by ConfigLoader. Overrides explicit `min_segment_seconds`.
 
-### Homogenization direction
-Reference segment = **last (rightmost)**. Adjust all previous segments
-left-to-right by cumulative shift sum. This matches the original approach.
+### Homogenization direction -- SeriesAdjuster
+Reference segment = **first segment** (leftmost). All subsequent segments are
+adjusted toward the level of the first segment using prefix sums of detected shifts.
+Rationale: the first measurement period is assumed correct; replacements/reconfigurations
+occur later and introduce inhomogeneities.
 
 ### GapFiller -- gap detection
 Two sources of gaps detected simultaneously:
 - NaN value in Observation (time present, value missing).
 - Time jump > expectedStep * gapThresholdFactor (entire rows absent).
 Expected step = median of consecutive MJD differences (robust to outlier jumps).
-Absent-row gaps use sentinel endIndex < startIndex to distinguish from NaN gaps.
-Leading/trailing NaN always filled (bfill/ffill) regardless of maxFillLength.
 
 ### GapFiller -- MEDIAN_YEAR integration
 GapFiller::Strategy::MEDIAN_YEAR is defined but blocked with ConfigException.
-When MedianYearSeries is integrated (post-H3), add:
-  fillMedianYear(series, gaps, const MedianYearSeries&) const
-to GapFiller without changing the public interface.
+Integration deferred to O3 (OutlierCleaner) or a future GapFiller extension thread.
 
 ### MedianYearSeries -- profile structure
 Flat vector of 366 * slotsPerDay medians. Slot index:
   slot = (doy - 1) * slotsPerDay + slotOfDay
 doy in [1, 366], slotOfDay in [0, slotsPerDay).
 slotsPerDay = round(1 / stepDays), clamped to [1, 24].
-Leap year DOY 366 slot allocated but only populated in leap years.
 Sub-hourly resolution (step < 1h) rejected -- median year loses statistical meaning.
-Short series (span < minYears) -> LOKI_WARNING, continues with available data.
-Under-populated slots (count < minYears) -> NaN, LOKI_WARNING logged.
-minYears default = 5, configurable (future: from JSON).
 
-### MedianYearSeries location
-Lives in `loki_homogeneity`, not `loki_core`, because it is specific to the
-homogeneity analysis pipeline. GapFiller (loki_core) receives it by reference.
+### HarmonicSeries -- POSTPONED
+Will be implemented after loki_spectral (FFT -> dominant periods -> harmonic fit).
 
-### HarmonicSeries -- LSQ, replaces old newmat-based fit.cpp
-Model: `y = a0 + sum_{j=1}^{order} [a_j * sin(2*pi*j*t/P) + b_j * cos(2*pi*j*t/P)]`
-Period P = 365.25 days (climatological). Uses Eigen3 instead of newmat.
+### Loader -- column indexing
+`columns` values are 1-based from the **start of the line** (field 0 = column 1).
+Time fields (controlled by `time_columns`) are excluded automatically via the
+`fieldIdx < firstValueField` guard. Example: for a file with columns
+`[date] [time] [value]` and `time_columns: [0, 1]`, use `columns: [3]`.
+
+### PlotHomogeneity -- correction curve
+`plotCorrectionCurve()` computes the same prefix sums as SeriesAdjuster and
+plots them as a step function using gnuplot `w steps`. This shows the cumulative
+correction applied to each segment relative to the first (reference) segment.
 
 ### loki::stats ACF -- already implemented
 `loki::stats::acf(x, maxLag)` exists in `descriptive.hpp`. Do NOT reimplement
-in `loki_homogeneity`. Import `loki_core` and call directly.
+in any other module. Import `loki_core` and call directly.
 
-### HarmonicSeries -- POSTPONED
-Bez FFT/spektralnej analyzy nie je mozne odhadnut periody spolahlivo.
-Bude implementovana po loki_spectral: FFT -> dominant periods -> harmonic fit.
-
-### Deseasonalizer strategies (revised)
-MEDIAN_YEAR: signal - medianYear[slot], pouziva MedianYearSeries cez referenciu
-MOVING_AVERAGE: centered simple MA, windowSize konfigurovatelny (default 365)
-NONE: no-op
-MA filter implementovany v loki_core/stats (nie loki_homogeneity).
+### loki_outlier -- OutlierResult is two-level
+`OutlierPoint` holds per-outlier detail (index, score, threshold, flags).
+`OutlierResult` holds the summary (method, location, scale, n, nOutliers, vector of points).
+Detectors return `OutlierResult`. OutlierCleaner fills `replacedValue` in each point
+after running GapFiller and sets `flag = 2`.
 
 ---
 
@@ -842,187 +810,10 @@ MA filter implementovany v loki_core/stats (nie loki_homogeneity).
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `SeriesMetadata` must be populated by Loader after loading.
 - Plot output -> `OUTPUT/IMG/`, temp files use `.tmp_` prefix.
-
-## Changes from Thread H7/H8
-
-### New files
-
-| File | Location |
-|---|---|
-| `homogenizer.hpp` | `libs/loki_homogeneity/include/loki/homogeneity/` |
-| `homogenizer.cpp` | `libs/loki_homogeneity/src/` |
-| `plotHomogeneity.hpp` | `libs/loki_homogeneity/include/loki/homogeneity/` |
-| `plotHomogeneity.cpp` | `libs/loki_homogeneity/src/` |
-| `apps/loki_homogeneity/main.cpp` | updated (homogenization pipeline) |
-| `apps/loki_homogeneity/CMakeLists.txt` | target renamed to `homogenization` |
-| `config/homogenization.json` | new config for homogenization app |
-
-### Updated files
-
-| File | Changes |
-|---|---|
-| `libs/loki_core/include/loki/core/config.hpp` | Added `GapFillingConfig`, `OutlierFilterConfig`, `DeseasonalizationConfig`, `DetectionConfig`; expanded `HomogeneityConfig`; added homogeneity plot flags to `PlotConfig` |
-| `libs/loki_core/src/core/configLoader.cpp` | Parsing of all new `homogeneity.*` JSON keys; new plot flags |
-| `libs/loki_homogeneity/CMakeLists.txt` | Added `plotHomogeneity.cpp` to sources |
-
-### CMake target names
-- Library: `loki_homogeneity` (unchanged)
-- Executable: `homogenization` (was `loki_homogeneity` -- renamed to avoid CMake target conflict)
-
-### Key design decisions
-
-#### Config structs outside class (GCC 13 workaround)
-All Config/Result structs for loki_homogeneity classes are defined OUTSIDE
-their owning class as named types (e.g. `HomogenizerConfig`, `HomogenizerResult`),
-with `using Config = HomogenizerConfig` aliases inside the class.
-Reason: GCC 13 on Windows cannot use nested structs with in-class initializers
-as default arguments (`Config cfg = Config{}`).
-
-#### Observation member names
-`Observation::time` (not `timestamp`), `TimeStamp::mjd()` (not `toMJD()`).
-
-#### PlotHomogeneity -- Gnuplot pipe (not std::system)
-Uses `loki::Gnuplot` pipe directly, same as `loki::Plot`.
-Does NOT write `.plt` script files.
-Temporary `.dat` files use `.tmp_` prefix, deleted after each plot.
-
-#### Windows path separator in gnuplot
-Gnuplot on Windows requires forward slashes in paths.
-`plotHomogeneity.cpp` uses a local `fwdSlash()` helper:
-```cpp
-static std::string fwdSlash(const std::filesystem::path& p)
-{
-    std::string s = p.string();
-    for (auto& c : s) { if (c == '\\') c = '/'; }
-    return s;
-}
-```
-TODO: Make cross-platform using `#ifdef _WIN32` when doing Linux port.
-
-#### Seasonal component in plotAll
-`seasonal = original_value - residual` computed in `main.cpp`.
-Not stored in `HomogenizerResult` -- derived on the fly.
-
-#### OutlierConfig -- placeholder
-`preOutlier` and `postOutlier` in `HomogenizerConfig` are always `enabled=false`.
-ConfigLoader warns and forces `false` if JSON sets `enabled=true`.
-Full implementation deferred to `loki_outlier`.
-
-### Planned thread sequence update
-
-| Thread | Scope | Status |
-|---|---|---|
-| H7 | `Homogenizer` + `loki_homogeneity CMakeLists.txt` | DONE |
-| H8 | `apps/loki_homogeneity/main.cpp` + plots | DONE |
-| H9 | Ladenie vysledkov, tuning pipeline parametrov | next |
-
-### apps/loki_homogeneity pipeline (main.cpp)
-1. Parse CLI args
-2. ConfigLoader::load()
-3. Logger::initDefault()
-4. DataManager::load()
-5. stats::summarize() (optional)
-6. For each series: Homogenizer::process()
-7. writeCsv() -> OUTPUT/CSV/<name>_homogeneity.csv
-8. PlotHomogeneity::plotAll() -> OUTPUT/IMG/
-
-### homogenization.json -- full schema
-```json
-{
-    "workspace": "...",
-    "input": { ... },
-    "output": { "log_level": "info" },
-    "plots": {
-        "output_format": "png",
-        "enabled": {
-            "original_series": true,
-            "seasonal_overlay": true,
-            "deseasonalized": true,
-            "change_points": true,
-            "adjusted_series": true,
-            "homog_comparison": true,
-            "shift_magnitudes": true
-        }
-    },
-    "stats": { "enabled": true, "nan_policy": "skip", "hurst": false },
-    "homogeneity": {
-        "apply_gap_filling": true,
-        "gap_filling": { "strategy": "linear|forward_fill|mean|none", "max_fill_length": 0 },
-        "pre_outlier": { "enabled": false, "threshold": 3.0 },
-        "deseasonalization": { "strategy": "median_year|moving_average|none", "ma_window_size": 365 },
-        "post_outlier": { "enabled": false, "threshold": 3.0 },
-        "detection": {
-            "min_segment_points": 60,
-            "min_segment_seconds": 0.0,
-            "significance_level": 0.05,
-            "acf_dependence_limit": 0.2,
-            "correct_for_dependence": true
-        },
-        "apply_adjustment": true
-    }
-}
-```
-
----
-
-## Config Parameters Review (Thread H7/H8)
-
-The following parameters exist in JSON / AppConfig but require attention
-in the next review thread. Each item notes the issue and suggested action.
-
-### 1. `plots.enabled.time_series/histogram/acf/qq_plot/boxplot`
-- **Status:** Parsed into `PlotConfig` but never used in `apps/loki_homogeneity/main.cpp`.
-- **Issue:** `PlotHomogeneity` uses its own flags (`original_series`, `seasonal_overlay`, etc.).
-  The generic plot flags are dead code in the homogenization app.
-- **Action:** Either wire generic plots into homogenization main (call `loki::Plot` for
-  original series histogram/ACF etc.), or remove them from `homogenization.json`.
-
-### 2. `homogeneity.detection.correct_for_dependence`
-- **Status:** Parsed into `DetectionConfig::correctForDependence` but NOT forwarded
-  to `ChangePointDetectorConfig` in `buildHomogenizerConfig()` (member was removed in H1).
-- **Issue:** JSON parameter silently ignored.
-- **Action:** Either remove from JSON + `DetectionConfig`, or re-add
-  `correctForDependence` to `ChangePointDetectorConfig` if the flag is wanted back.
-
-### 3. `homogeneity.gap_filling.max_fill_length: 0`
-- **Status:** Parsed and used. Value 0 = unlimited fill length.
-- **Issue:** Semantics of 0 not obvious from JSON. Not logged at startup.
-- **Action:** Log effective max_fill_length at startup (0 = unlimited). Add comment
-  to JSON template in CLAUDE.md.
-
-### 4. `deseasonalization.strategy` -- auto-selection
-- **Status:** User must manually set `moving_average` for high-frequency data.
-- **Issue:** No guard in `Homogenizer::process()` -- if user sets `median_year`
-  for second-resolution data, `MedianYearSeries` will throw `ConfigException`
-  (sub-hourly resolution). Error is caught and logged but not helpful.
-- **Action:** Add a resolution check before calling `Deseasonalizer` -- if series
-  step < 1h and strategy == MEDIAN_YEAR, log a clear warning and auto-switch to
-  MOVING_AVERAGE (or throw `ConfigException` with a helpful message).
-
-### 5. `deseasonalization.ma_window_size: 365`
-- **Status:** Used as number of samples, not days.
-- **Issue:** For daily data 365 = 1 year (correct). For GPS second data
-  (86400 samples/day) 365 samples = ~6 minutes, which is meaningless.
-- **Action:** Add `ma_window_unit: samples|days` to JSON, or document clearly
-  that the value is always in samples and user must compute the right number.
-  Log effective window in time units at startup.
-
-### 6. `input.columns: []`
-- **Status:** Empty = load all columns. Functional.
-- **Issue:** Which columns were actually loaded is not visible in log.
-- **Action:** Log column names/indices after loading (already partly done via
-  `Series[i] name=...` but index not shown).
-
-### 7. `plots.output_format`
-- **Status:** Used in `PlotHomogeneity::_terminal()`. Functional for png/eps/svg.
-- **Issue:** Not validated -- unknown format string silently defaults to png
-  without warning.
-- **Action:** Add validation in `_parsePlots()` or `PlotHomogeneity::_terminal()`.
-
-### 8. `plots.time_format`
-- **Status:** Parsed into `PlotConfig::timeFormat` but `PlotHomogeneity` uses
-  MJD on x-axis unconditionally.
-- **Issue:** Parameter has no effect in homogenization plots.
-- **Action:** Implement x-axis time formatting in `PlotHomogeneity` (UTC string,
-  GPS seconds, MJD) based on `PlotConfig::timeFormat` / `InputConfig::timeFormat`.
-  This is a usability improvement -- MJD on x-axis is not human-readable.
+- Every new library module follows the same structure as `loki_core` and
+  `loki_homogeneity`: own `include/loki/<module>/` and `src/` directories,
+  own `CMakeLists.txt`, linked as a CMake target.
+- Time series input may have no periodic component (GNSS, non-climatological data).
+  Each detector must behave sensibly when deseasonalization strategy is NONE.
+- Sampling rate varies from milliseconds to 6 hours. Detectors must not assume
+  any fixed time step. Threshold defaults should be robust across resolutions.
