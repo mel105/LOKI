@@ -13,6 +13,7 @@
 # App (optional, default: loki):
 #   loki             apps/loki/loki.exe
 #   homogenization   apps/loki_homogeneity/homogenization.exe
+#   outlier          apps/loki_outlier/loki_outlier.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -28,6 +29,7 @@
 # Examples:
 #   ./scripts/loki.sh build
 #   ./scripts/loki.sh build homogenization --copy-dlls
+#   ./scripts/loki.sh build outlier --copy-dlls
 #   ./scripts/loki.sh build all --tests --copy-dlls
 #   ./scripts/loki.sh build release
 #   ./scripts/loki.sh clean
@@ -36,6 +38,8 @@
 #   ./scripts/loki.sh run
 #   ./scripts/loki.sh run homogenization
 #   ./scripts/loki.sh run homogenization config/homogenization.json
+#   ./scripts/loki.sh run outlier
+#   ./scripts/loki.sh run outlier config/outlier.json
 #   ./scripts/loki.sh test
 #   ./scripts/loki.sh test --filter exceptions --verbose
 #   ./scripts/loki.sh test --rebuild
@@ -61,10 +65,12 @@ RUNTIME_DLLS=(
 declare -A APP_EXE=(
     [loki]="apps/loki/loki.exe"
     [homogenization]="apps/loki_homogeneity/homogenization.exe"
+    [outlier]="apps/loki_outlier/loki_outlier.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
     [homogenization]="config/homogenization.json"
+    [outlier]="config/outlier.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -92,7 +98,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|all)
+        loki|homogenization|outlier|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;
@@ -267,7 +273,7 @@ cmd_clean() {
 cmd_run() {
     # Validate app
     if [ "${APP}" = "all" ]; then
-        echo "[LOKI] ERROR: 'run' does not support app=all. Specify: loki | homogenization" >&2
+        echo "[LOKI] ERROR: 'run' does not support app=all. Specify: loki | homogenization | outlier" >&2
         exit 1
     fi
     if [ -z "${APP_EXE[$APP]+x}" ]; then

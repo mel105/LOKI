@@ -79,10 +79,22 @@
         },
 
         "pre_outlier": {
-            "_comment": "Pre-deseasonalization outlier removal. Not yet implemented. Keep enabled=false.",
+            "_comment": "Coarse outlier removal on the raw gap-filled series, before deseasonalization.",
+            "_comment_enabled": "Set true to activate. Removes physically impossible values (sensor overflow, spikes).",
             "enabled": false,
-            "threshold": 3.0
-        },
+            "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad_bounds (works without deseasonalization).",
+            "method": "mad_bounds",
+            "_comment_mad_multiplier": "Threshold = median +/- k * MAD. Use large k (5.0-10.0) for coarse removal only.",
+            "mad_multiplier": 5,
+            "_comment_iqr_multiplier": "Used only when method=iqr. Standard box-plot rule: 1.5 (mild), 3.0 (extreme).",
+            "iqr_multiplier": 1.5,
+            "_comment_zscore_threshold": "Used only when method=zscore. Default 3.0.",
+            "zscore_threshold": 3,
+            "_comment_replacement_strategy": "Options: linear | forward_fill | mean",
+            "replacement_strategy": "linear",
+            "_comment_max_fill_length": "Max consecutive outlier positions to fill. 0 = unlimited.",
+            "max_fill_length": 0
+         },
 
         "deseasonalization": {
             "_comment_strategy": "Options: median_year (climatological/GNSS, requires calendar timestamp) | moving_average (sensor/signal data) | none",
@@ -93,10 +105,22 @@
             "median_year_min_years": 5
         },
 
-        "post_outlier": {
-            "_comment": "Post-deseasonalization outlier removal. Not yet implemented. Keep enabled=false.",
+         "post_outlier": {
+            "_comment": "Fine outlier removal on deseasonalized residuals, before change point detection.",
+            "_comment_enabled": "Set true to activate. Removes residual anomalies that would bias change point detection.",
             "enabled": false,
-            "threshold": 3.0
+            "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad or iqr on residuals.",
+            "method": "mad",
+            "_comment_mad_multiplier": "Use smaller k (3.0) for fine removal on residuals.",
+            "mad_multiplier": 3,
+            "_comment_iqr_multiplier": "Used only when method=iqr.",
+            "iqr_multiplier": 1.5,
+            "_comment_zscore_threshold": "Used only when method=zscore.",
+            "zscore_threshold": 3,
+            "_comment_replacement_strategy": "Options: linear | forward_fill | mean",
+            "replacement_strategy": "linear",
+            "_comment_max_fill_length": "Max consecutive outlier positions to fill. 0 = unlimited.",
+            "max_fill_length": 0
         },
 
         "detection": {

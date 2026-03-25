@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     loki
-    VERSION 0.1.0
+    VERSION 0.3.0
     DESCRIPTION "LOKI — Statistical Analysis Toolkit for Time Series Data"
     LANGUAGES CXX
 )
@@ -26,10 +26,12 @@ option(LOKI_BUILD_TESTS "Build unit and integration tests" ON)
 # ── Libraries ─────────────────────────────────────────────────────────────────
 add_subdirectory(libs/loki_core)
 add_subdirectory(libs/loki_homogeneity)
+add_subdirectory(libs/loki_outlier)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
 add_subdirectory(apps/loki_homogeneity)
+add_subdirectory(apps/loki_outlier)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

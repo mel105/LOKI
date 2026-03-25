@@ -88,6 +88,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.input       = _parseInput      (j.value("input",       json::object()), inputDir);
     cfg.output      = _parseOutput     (j.value("output",      json::object()));
     cfg.homogeneity = _parseHomogeneity(j.value("homogeneity", json::object()));
+    cfg.outlier     = _parseOutlier    (j.value("outlier",     json::object()));
     cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
     cfg.stats       = _parseStats      (j);
 
@@ -95,7 +96,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
 }
 
 // -----------------------------------------------------------------------------
-//  Private: section parsers
+//  Private: _parseInput
 // -----------------------------------------------------------------------------
 
 InputConfig ConfigLoader::_parseInput(const nlohmann::json& j,
@@ -135,7 +136,6 @@ InputConfig ConfigLoader::_parseInput(const nlohmann::json& j,
     const std::string commentStr = getOrDefault<std::string>(j, "comment_char", "%");
     cfg.commentChar = commentStr.empty() ? '%' : commentStr.front();
 
-    // Value columns (1-based, values <= 1 are skipped in loader).
     if (j.contains("columns")) {
         cfg.columns = j.at("columns").get<std::vector<int>>();
         std::erase_if(cfg.columns, [](int c) { return c <= 1; });
@@ -143,30 +143,19 @@ InputConfig ConfigLoader::_parseInput(const nlohmann::json& j,
         LOKI_WARNING("Config 'input.columns' not specified -- all value columns will be loaded.");
     }
 
-    // Time columns (0-based field indices that together form the time token).
-    // Default: empty = field 0 only (single-column time).
-    // Example: [0, 1] for "1990-01-01" "00:00:00" split across two fields.
     if (j.contains("time_columns")) {
         cfg.timeColumns = j.at("time_columns").get<std::vector<int>>();
-        if (cfg.timeColumns.empty()) {
-            LOKI_WARNING("Config 'input.time_columns' is empty -- defaulting to field 0.");
-        } else {
-            std::string msg = "Config 'input.time_columns': joining fields [";
-            for (std::size_t i = 0; i < cfg.timeColumns.size(); ++i) {
-                if (i > 0) msg += ", ";
-                msg += std::to_string(cfg.timeColumns[i]);
-            }
-            msg += "] as time token.";
-            LOKI_INFO(msg);
-        }
     }
-    // If time_columns is absent: empty vector, loader uses field 0 by default.
 
     const std::string mergeStr = getOrDefault<std::string>(j, "merge_strategy", "separate");
     cfg.mergeStrategy = _parseMergeStrategy(mergeStr);
 
     return cfg;
 }
+
+// -----------------------------------------------------------------------------
+//  Private: _parseOutput
+// -----------------------------------------------------------------------------
 
 OutputConfig ConfigLoader::_parseOutput(const nlohmann::json& j)
 {
@@ -182,6 +171,28 @@ OutputConfig ConfigLoader::_parseOutput(const nlohmann::json& j)
     }
     return cfg;
 }
+
+// -----------------------------------------------------------------------------
+//  Private: _parseOutlierFilter  (shared helper for HomogeneityConfig)
+// -----------------------------------------------------------------------------
+
+OutlierFilterConfig ConfigLoader::_parseOutlierFilter(const nlohmann::json& j,
+                                                      double defaultMadMultiplier)
+{
+    OutlierFilterConfig cfg;
+    cfg.enabled             = getOrDefault<bool>  (j, "enabled",              false,                false);
+    cfg.method              = getOrDefault<std::string>(j, "method",           "mad_bounds",         false);
+    cfg.madMultiplier       = getOrDefault<double>(j, "mad_multiplier",        defaultMadMultiplier, false);
+    cfg.iqrMultiplier       = getOrDefault<double>(j, "iqr_multiplier",        1.5,                  false);
+    cfg.zscoreThreshold     = getOrDefault<double>(j, "zscore_threshold",      3.0,                  false);
+    cfg.replacementStrategy = getOrDefault<std::string>(j, "replacement_strategy", "linear",         false);
+    cfg.maxFillLength       = getOrDefault<int>   (j, "max_fill_length",       0,                    false);
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseHomogeneity
+// -----------------------------------------------------------------------------
 
 HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 {
@@ -199,80 +210,89 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
         cfg.gapFilling.minSeriesYears     = getOrDefault<int>        (gf, "min_series_years",      10,       false);
     }
 
-    // -- Pre outlier (future) -------------------------------------------------
+    // -- Pre outlier ----------------------------------------------------------
     if (j.contains("pre_outlier")) {
-        const auto& po = j.at("pre_outlier");
-        cfg.preOutlier.enabled   = getOrDefault<bool>  (po, "enabled",   false, false);
-        cfg.preOutlier.threshold = getOrDefault<double>(po, "threshold",  3.0,  false);
+        cfg.preOutlier = _parseOutlierFilter(j.at("pre_outlier"), 5.0);
         if (cfg.preOutlier.enabled) {
-            LOKI_WARNING("Config 'homogeneity.pre_outlier.enabled=true' -- "
-                         "loki_outlier is not yet implemented. Skipping.");
-            cfg.preOutlier.enabled = false;
+            LOKI_INFO("Config: homogeneity.pre_outlier enabled (method=" + cfg.preOutlier.method + ").");
         }
     }
 
     // -- Deseasonalization ----------------------------------------------------
     if (j.contains("deseasonalization")) {
         const auto& ds = j.at("deseasonalization");
-        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",               "median_year", false);
-        cfg.deseasonalization.maWindowSize        = getOrDefault<int>        (ds, "ma_window_size",          365,           false);
-        cfg.deseasonalization.medianYearMinYears  = getOrDefault<int>        (ds, "median_year_min_years",   5,             false);
+        cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "median_year", false);
+        cfg.deseasonalization.maWindowSize      = getOrDefault<int>        (ds, "ma_window_size",         365,           false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>       (ds, "median_year_min_years",  5,             false);
     }
 
-    // -- Post outlier (future) ------------------------------------------------
+    // -- Post outlier ---------------------------------------------------------
     if (j.contains("post_outlier")) {
-        const auto& po = j.at("post_outlier");
-        cfg.postOutlier.enabled   = getOrDefault<bool>  (po, "enabled",   false, false);
-        cfg.postOutlier.threshold = getOrDefault<double>(po, "threshold",  3.0,  false);
+        cfg.postOutlier = _parseOutlierFilter(j.at("post_outlier"), 3.0);
         if (cfg.postOutlier.enabled) {
-            LOKI_WARNING("Config 'homogeneity.post_outlier.enabled=true' -- "
-                         "loki_outlier is not yet implemented. Skipping.");
-            cfg.postOutlier.enabled = false;
+            LOKI_INFO("Config: homogeneity.post_outlier enabled (method=" + cfg.postOutlier.method + ").");
         }
     }
 
     // -- Detection ------------------------------------------------------------
     if (j.contains("detection")) {
         const auto& det = j.at("detection");
-        cfg.detection.minSegmentPoints   = getOrDefault<int>   (det, "min_segment_points",   60,    false);
-        cfg.detection.minSegmentSeconds  = getOrDefault<double>(det, "min_segment_seconds",  0.0,   false);
-        cfg.detection.minSegmentDuration = getOrDefault<std::string>(det, "min_segment_duration", "", false);
-        cfg.detection.significanceLevel  = getOrDefault<double>(det, "significance_level",   0.05,  false);
-        cfg.detection.acfDependenceLimit = getOrDefault<double>(det, "acf_dependence_limit", 0.2,   false);
-
-        // Parse min_segment_duration and convert to seconds (overrides min_segment_seconds).
-        if (!cfg.detection.minSegmentDuration.empty()) {
-            const double parsed = _parseDuration(cfg.detection.minSegmentDuration);
-            if (parsed > 0.0) {
-                cfg.detection.minSegmentSeconds = parsed;
-                LOKI_INFO("Config 'detection.min_segment_duration': '"
-                          + cfg.detection.minSegmentDuration + "' -> "
-                          + std::to_string(static_cast<long long>(parsed)) + " s.");
-            } else {
-                LOKI_WARNING("Config 'detection.min_segment_duration': cannot parse '"
-                             + cfg.detection.minSegmentDuration
-                             + "' -- ignoring. Use format: 1y | 180d | 6h | 30m | 60s.");
-            }
-        }
+        cfg.detection.minSegmentPoints      = getOrDefault<int>   (det, "min_segment_points",      60,    false);
+        cfg.detection.minSegmentSeconds     = getOrDefault<double>(det, "min_segment_seconds",     0.0,   false);
+        cfg.detection.minSegmentDuration    = getOrDefault<std::string>(det, "min_segment_duration", "", false);
+        cfg.detection.significanceLevel     = getOrDefault<double>(det, "significance_level",      0.05,  false);
+        cfg.detection.acfDependenceLimit    = getOrDefault<double>(det, "acf_dependence_limit",    0.2,   false);
+        cfg.detection.correctForDependence  = getOrDefault<bool>  (det, "correct_for_dependence",  true,  false);
     }
 
     return cfg;
 }
 
+// -----------------------------------------------------------------------------
+//  Private: _parseOutlier
+// -----------------------------------------------------------------------------
+
+OutlierConfig ConfigLoader::_parseOutlier(const nlohmann::json& j)
+{
+    OutlierConfig cfg;
+
+    // -- Deseasonalization ----------------------------------------------------
+    if (j.contains("deseasonalization")) {
+        const auto& ds = j.at("deseasonalization");
+        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",             "none", false);
+        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        365,    false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,      false);
+    }
+
+    // -- Detection ------------------------------------------------------------
+    if (j.contains("detection")) {
+        const auto& det = j.at("detection");
+        cfg.detection.method          = getOrDefault<std::string>(det, "method",           "mad",  false);
+        cfg.detection.iqrMultiplier   = getOrDefault<double>     (det, "iqr_multiplier",   1.5,    false);
+        cfg.detection.madMultiplier   = getOrDefault<double>     (det, "mad_multiplier",   3.0,    false);
+        cfg.detection.zscoreThreshold = getOrDefault<double>     (det, "zscore_threshold", 3.0,    false);
+    }
+
+    // -- Replacement ----------------------------------------------------------
+    if (j.contains("replacement")) {
+        const auto& rep = j.at("replacement");
+        cfg.replacement.strategy      = getOrDefault<std::string>(rep, "strategy",       "linear", false);
+        cfg.replacement.maxFillLength = getOrDefault<int>        (rep, "max_fill_length", 0,        false);
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parsePlots
+// -----------------------------------------------------------------------------
+
 PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
 {
     PlotConfig cfg;
 
-    if (j.contains("output_format")) {
-        const std::string fmt = j["output_format"].get<std::string>();
-        if (fmt != "png" && fmt != "eps" && fmt != "svg") {
-            throw ConfigException(
-                "Config 'plots.output_format' must be 'png', 'eps', or 'svg'. Got: '" + fmt + "'.");
-        }
-        cfg.outputFormat = fmt;
-    }
-
-    if (j.contains("time_format")) cfg.timeFormat = j["time_format"].get<std::string>();
+    if (j.contains("output_format")) cfg.outputFormat = j["output_format"].get<std::string>();
+    if (j.contains("time_format"))   cfg.timeFormat   = j["time_format"].get<std::string>();
 
     if (j.contains("enabled")) {
         const auto& e = j["enabled"];
@@ -298,6 +318,10 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
 
     return cfg;
 }
+
+// -----------------------------------------------------------------------------
+//  Private: _parseStats
+// -----------------------------------------------------------------------------
 
 StatsConfig ConfigLoader::_parseStats(const nlohmann::json& j)
 {
@@ -358,43 +382,6 @@ std::filesystem::path ConfigLoader::_resolvePath(const std::string&           ra
 {
     const std::filesystem::path p(raw);
     return p.is_absolute() ? p : baseDir / p;
-}
-
-// -----------------------------------------------------------------------------
-//  Private: duration parser
-// -----------------------------------------------------------------------------
-
-double ConfigLoader::_parseDuration(const std::string& s)
-{
-    // Format: <number><unit> where unit is one of: y d h m s
-    // Examples: "1y", "180d", "6h", "30m", "60s"
-    if (s.empty()) return 0.0;
-
-    static constexpr double SECONDS_PER_MINUTE = 60.0;
-    static constexpr double SECONDS_PER_HOUR   = 3600.0;
-    static constexpr double SECONDS_PER_DAY    = 86400.0;
-    static constexpr double SECONDS_PER_YEAR   = 365.25 * SECONDS_PER_DAY;
-
-    const char unit = s.back();
-    const std::string numStr = s.substr(0, s.size() - 1);
-
-    double value = 0.0;
-    try {
-        value = std::stod(numStr);
-    } catch (...) {
-        return 0.0;
-    }
-
-    if (value <= 0.0) return 0.0;
-
-    switch (unit) {
-        case 'y': return value * SECONDS_PER_YEAR;
-        case 'd': return value * SECONDS_PER_DAY;
-        case 'h': return value * SECONDS_PER_HOUR;
-        case 'm': return value * SECONDS_PER_MINUTE;
-        case 's': return value;
-        default:  return 0.0;
-    }
 }
 
 } // namespace loki

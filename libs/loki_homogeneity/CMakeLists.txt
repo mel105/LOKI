@@ -26,21 +26,23 @@ add_library(loki_homogeneity STATIC
 target_include_directories(loki_homogeneity
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/libs/loki_outlier/include>
         $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(loki_homogeneity
-    PUBLIC  
+    PUBLIC
         loki::core
+        loki_outlier
         Eigen3::Eigen
     PRIVATE loki_compiler_options
 )
 
 target_compile_features(loki_homogeneity PUBLIC cxx_std_20)
- 
+
 set_target_properties(loki_homogeneity PROPERTIES
     CXX_EXTENSIONS OFF
 )
- 
+
 # Alias used by apps and tests: loki::homogeneity
 add_library(loki::homogeneity ALIAS loki_homogeneity)

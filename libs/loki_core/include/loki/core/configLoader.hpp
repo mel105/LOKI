@@ -14,7 +14,7 @@ namespace loki {
  * default values with a LOKI_WARNING. Missing required keys throw ConfigException.
  *
  * ### Required keys
- * - `workspace` — absolute path to the workspace root directory.
+ * - `workspace` -- absolute path to the workspace root directory.
  *
  * ### Optional keys (all others)
  * Every other key has a documented default value. A warning is logged when
@@ -26,8 +26,8 @@ namespace loki {
  *
  * Usage example:
  * @code
- *   AppConfig cfg = ConfigLoader::load("config/loki_homogeneity.json");
- *   Logger::initDefault(cfg.logDir, "loki_homogeneity", cfg.output.logLevel);
+ *   AppConfig cfg = ConfigLoader::load("config/outlier.json");
+ *   Logger::initDefault(cfg.logDir, "loki_outlier", cfg.output.logLevel);
  * @endcode
  */
 class ConfigLoader {
@@ -45,23 +45,23 @@ public:
 
 private:
 
-    static InputConfig       _parseInput        (const nlohmann::json& j,
-                                                 const std::filesystem::path& inputDir);
-    static OutputConfig      _parseOutput       (const nlohmann::json& j);
-    static HomogeneityConfig _parseHomogeneity  (const nlohmann::json& j);
-    static PlotConfig        _parsePlots        (const nlohmann::json& j);
-    static TimeFormat        _parseTimeFormat   (const std::string& s);
-    static MergeStrategy     _parseMergeStrategy(const std::string& s);
-    static StatsConfig       _parseStats        (const nlohmann::json& j);
+    static InputConfig        _parseInput        (const nlohmann::json& j,
+                                                  const std::filesystem::path& inputDir);
+    static OutputConfig       _parseOutput       (const nlohmann::json& j);
+    static HomogeneityConfig  _parseHomogeneity  (const nlohmann::json& j);
+    static OutlierConfig      _parseOutlier      (const nlohmann::json& j);
+    static PlotConfig         _parsePlots        (const nlohmann::json& j);
+    static StatsConfig        _parseStats        (const nlohmann::json& j);
+    static TimeFormat         _parseTimeFormat   (const std::string& s);
+    static MergeStrategy      _parseMergeStrategy(const std::string& s);
+
+    /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
+    static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,
+                                                   double defaultMadMultiplier = 5.0);
 
     /// Resolves a path against baseDir if not already absolute.
     static std::filesystem::path _resolvePath(const std::string& raw,
                                               const std::filesystem::path& baseDir);
-
-    /// Parses a human-readable duration string to seconds.
-    /// Supported formats: "1y", "180d", "6h", "30m", "60s".
-    /// Returns 0.0 on parse failure.
-    static double _parseDuration(const std::string& s);
 };
 
 } // namespace loki

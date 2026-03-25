@@ -1,13 +1,63 @@
 #include <loki/homogeneity/homogenizer.hpp>
 #include <loki/homogeneity/medianYearSeries.hpp>
+#include <loki/outlier/outlierCleaner.hpp>
+#include <loki/outlier/iqrDetector.hpp>
+#include <loki/outlier/madDetector.hpp>
+#include <loki/outlier/zScoreDetector.hpp>
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 
+#include <memory>
 #include <sstream>
 
 using namespace loki;
 using namespace loki::homogeneity;
 
+// ----------------------------------------------------------------------------
+//  Internal helpers
+// ----------------------------------------------------------------------------
+
+namespace {
+
+/// Builds a detector from OutlierConfig parameters.
+std::unique_ptr<loki::outlier::OutlierDetector>
+buildDetector(const OutlierConfig& cfg)
+{
+    const std::string& m = cfg.method;
+
+    if (m == "iqr") {
+        return std::make_unique<loki::outlier::IqrDetector>(cfg.iqrMultiplier);
+    }
+    if (m == "mad" || m == "mad_bounds") {
+        return std::make_unique<loki::outlier::MadDetector>(cfg.madMultiplier);
+    }
+    if (m == "zscore") {
+        return std::make_unique<loki::outlier::ZScoreDetector>(cfg.zscoreThreshold);
+    }
+
+    LOKI_WARNING("Homogenizer: unknown outlier method '" + m + "' -- falling back to 'mad'.");
+    return std::make_unique<loki::outlier::MadDetector>(cfg.madMultiplier);
+}
+
+/// Builds OutlierCleaner::Config from OutlierConfig.
+loki::outlier::OutlierCleaner::Config
+buildCleanerConfig(const OutlierConfig& cfg)
+{
+    loki::outlier::OutlierCleaner::Config c;
+
+    const std::string& rs = cfg.replacementStrategy;
+    if      (rs == "forward_fill") { c.fillStrategy = GapFiller::Strategy::FORWARD_FILL; }
+    else if (rs == "mean")         { c.fillStrategy = GapFiller::Strategy::MEAN;         }
+    else                           { c.fillStrategy = GapFiller::Strategy::LINEAR;        }
+
+    c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.maxFillLength));
+    return c;
+}
+
+} // anonymous namespace
+
+// ----------------------------------------------------------------------------
+//  Homogenizer
 // ----------------------------------------------------------------------------
 
 Homogenizer::Homogenizer(Config cfg)
@@ -21,6 +71,8 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
     if (input.size() == 0) {
         throw DataException("Homogenizer::process: input series is empty.");
     }
+
+    HomogenizerResult result;
 
     // ------------------------------------------------------------------
     // Step 1 -- Gap filling
@@ -45,11 +97,28 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
     }
 
     // ------------------------------------------------------------------
-    // Step 2 -- Pre-deseasonalization outlier removal (future)
+    // Step 2 -- Pre-deseasonalization outlier removal (coarse, raw series)
     // ------------------------------------------------------------------
     if (m_cfg.preOutlier.enabled) {
-        LOKI_WARNING("Homogenizer: preOutlier.enabled=true but loki_outlier is not yet "
-                     "implemented. Skipping.");
+        LOKI_INFO("Homogenizer: pre-outlier removal (method="
+                  + m_cfg.preOutlier.method + ")");
+
+        auto detector   = buildDetector(m_cfg.preOutlier);
+        auto cleanerCfg = buildCleanerConfig(m_cfg.preOutlier);
+        loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
+
+        auto cleanResult = cleaner.clean(working);
+
+        result.preOutlierDetection = cleanResult.detection;
+        result.preOutlierCleaned   = cleanResult.cleaned;
+        working                    = cleanResult.cleaned;
+
+        LOKI_INFO("Homogenizer: pre-outlier removed "
+                  + std::to_string(cleanResult.detection.nOutliers)
+                  + " point(s).");
+    } else {
+        // Preserve gap-filled series for diagnostic access even when disabled.
+        result.preOutlierCleaned = working;
     }
 
     // ------------------------------------------------------------------
@@ -68,22 +137,47 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
         return deseasonalizer.deseasonalize(working);
     }();
 
-    const std::vector<double>& residuals = deseasResult.residuals;
-
     {
         std::ostringstream oss;
         oss << "Homogenizer: deseasonalization complete ("
-            << residuals.size() << " residuals).";
+            << deseasResult.residuals.size() << " residuals).";
         LOKI_INFO(oss.str());
     }
 
     // ------------------------------------------------------------------
-    // Step 4 -- Post-deseasonalization outlier removal (future)
+    // Step 4 -- Post-deseasonalization outlier removal (fine, on residuals)
     // ------------------------------------------------------------------
+    // residualSeries is the TimeSeries of residuals built by Deseasonalizer.
+    // After cleaning we use the cleaned residuals for change point detection.
+    // The seasonal component is added back by OutlierCleaner automatically.
+    std::vector<double> detectionResiduals = deseasResult.residuals;
+
     if (m_cfg.postOutlier.enabled) {
-        LOKI_WARNING("Homogenizer: postOutlier.enabled=true but loki_outlier is not yet "
-                     "implemented. Skipping.");
+        LOKI_INFO("Homogenizer: post-outlier removal (method="
+                  + m_cfg.postOutlier.method + ")");
+
+        auto detector   = buildDetector(m_cfg.postOutlier);
+        auto cleanerCfg = buildCleanerConfig(m_cfg.postOutlier);
+        loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
+
+        // Pass residual TimeSeries + seasonal so cleaner can reconstruct.
+        auto cleanResult = cleaner.clean(deseasResult.series, deseasResult.seasonal);
+
+        result.postOutlierDetection = cleanResult.detection;
+
+        // Extract cleaned residual values for change point detection.
+        detectionResiduals.clear();
+        detectionResiduals.reserve(cleanResult.residuals.size());
+        for (std::size_t i = 0; i < cleanResult.residuals.size(); ++i) {
+            detectionResiduals.push_back(cleanResult.residuals[i].value);
+        }
+
+        LOKI_INFO("Homogenizer: post-outlier removed "
+                  + std::to_string(cleanResult.detection.nOutliers)
+                  + " point(s).");
     }
+
+    result.deseasonalizedValues = detectionResiduals;
 
     // ------------------------------------------------------------------
     // Step 5 -- Change point detection
@@ -95,7 +189,7 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
     }
 
     MultiChangePointDetector detector{m_cfg.detector};
-    std::vector<ChangePoint> changePoints = detector.detect(residuals, times);
+    std::vector<ChangePoint> changePoints = detector.detect(detectionResiduals, times);
 
     {
         std::ostringstream oss;
@@ -126,12 +220,8 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
         LOKI_INFO("Homogenizer: applyAdjustment=false -- series unchanged.");
     }
 
-    // ------------------------------------------------------------------
-    // Assemble result
-    // ------------------------------------------------------------------
-    return Result{
-        std::move(changePoints),
-        std::move(adjusted),
-        residuals
-    };
+    result.changePoints   = std::move(changePoints);
+    result.adjustedSeries = std::move(adjusted);
+
+    return result;
 }
