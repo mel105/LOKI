@@ -3,7 +3,7 @@
 
     "input": {
         "_comment_file": "Path to input file, relative to <workspace>/INPUT/ or absolute.",
-        "file": "DATA.txt",
+        "file": "CLIM_DATA_EX1.txt",
 
         "_comment_time_format": "Options: gpst_seconds | gpst_week_sow | utc | mjd | unix | index",
         "time_format": "utc",
@@ -37,12 +37,22 @@
         "time_format": "utc",
 
         "enabled": {
-            "_comment": "Outlier pipeline plots.",
+            "_comment_generic": "Generic plots applied to the original series.",
             "time_series": true,
             "histogram":   true,
             "acf":         false,
             "qq_plot":     false,
-            "boxplot":     true
+            "boxplot":     true,
+
+            "_comment_outlier": "Outlier pipeline plots.",
+            "_comment_original_series": "Original series with outlier markers (triangles).",
+            "original_series":   true,
+            "_comment_adjusted_series": "Cleaned (outlier-replaced) series.",
+            "adjusted_series":   true,
+            "_comment_homog_comparison": "Original vs cleaned overlay.",
+            "homog_comparison":  true,
+            "_comment_deseasonalized": "Residuals with outlier markers. Only rendered when deseasonalization is active.",
+            "deseasonalized":    true
         }
     },
 

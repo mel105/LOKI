@@ -5,6 +5,7 @@
 #include "loki/stats/descriptive.hpp"
 #include "loki/homogeneity/deseasonalizer.hpp"
 #include "loki/homogeneity/medianYearSeries.hpp"
+#include "loki/outlier/plotOutlier.hpp"
 #include "loki/outlier/outlierCleaner.hpp"
 #include "loki/outlier/iqrDetector.hpp"
 #include "loki/outlier/madDetector.hpp"
@@ -297,13 +298,16 @@ int main(int argc, char* argv[])
     auto detector = buildDetector(cfg.outlier.detection);
     const auto cleanerCfg = buildCleanerConfig(cfg.outlier);
     const loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
+    const loki::outlier::PlotOutlier    plotter(cfg, "outlier");
 
     // -- Outlier pipeline per series ------------------------------------------
     for (const auto& r : loadResults) {
         for (const auto& ts : r.series) {
-            const std::string name = ts.metadata().stationId + "_"
-                                   + ts.metadata().componentName;
-            LOKI_INFO("--- Processing series: " + name + " ---");
+            const std::string name = ts.metadata().stationId.empty()
+                ? ts.metadata().componentName
+                : ts.metadata().stationId + "_" + ts.metadata().componentName;
+            LOKI_INFO("--- Processing series: " + name
+                      + "  n=" + std::to_string(ts.size()) + " ---");
 
             try {
                 // Step 1: deseasonalize (or pass-through if strategy == none).
@@ -311,23 +315,48 @@ int main(int argc, char* argv[])
                 const auto [seasonal, hasComponent] =
                     runDeseasonalize(ts, cfg.outlier.deseasonalization, dsResult);
 
+                LOKI_INFO("Deseasonalization: strategy=" + cfg.outlier.deseasonalization.strategy);
+
                 // Step 2+3: detect and replace.
                 loki::outlier::OutlierCleaner::CleanResult result =
                     hasComponent
                         ? cleaner.clean(ts, seasonal)
                         : cleaner.clean(ts);
 
-                // Log summary.
+                // Log detection summary.
                 const std::size_t nOut = result.detection.nOutliers;
                 LOKI_INFO("Outliers detected: " + std::to_string(nOut)
                           + " / " + std::to_string(ts.size())
-                          + "  (" + cfg.outlier.detection.method + ")");
+                          + "  method=" + cfg.outlier.detection.method
+                          + "  location=" + std::to_string(result.detection.location)
+                          + "  scale="    + std::to_string(result.detection.scale));
+
+                if (nOut > 0) {
+                    for (const auto& pt : result.detection.points) {
+                        LOKI_INFO("  outlier idx=" + std::to_string(pt.index)
+                                  + "  mjd=" + std::to_string(ts[pt.index].time.mjd())
+                                  + "  orig=" + std::to_string(pt.originalValue)
+                                  + "  score=" + std::to_string(pt.score)
+                                  + "  threshold=" + std::to_string(pt.threshold));
+                    }
+                }
 
                 // Step 4: CSV export.
                 try {
                     writeCsv(cfg.csvDir, ts, result, seasonal);
                 } catch (const loki::LOKIException& ex) {
                     LOKI_ERROR(std::string("CSV export failed: ") + ex.what());
+                }
+
+                // Step 5: Plots.
+                try {
+                    plotter.plotAll(ts,
+                                    result.cleaned,
+                                    result.residuals,
+                                    result.detection,
+                                    hasComponent);
+                } catch (const loki::LOKIException& ex) {
+                    LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
                 }
 
             } catch (const loki::LOKIException& ex) {

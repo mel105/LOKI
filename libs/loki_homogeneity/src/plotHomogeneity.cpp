@@ -1,4 +1,5 @@
 #include <loki/homogeneity/plotHomogeneity.hpp>
+#include <loki/outlier/plotOutlier.hpp>
 #include <loki/io/gnuplot.hpp>
 #include <loki/io/plot.hpp>
 #include <loki/core/logger.hpp>
@@ -14,12 +15,14 @@ using namespace loki::homogeneity;
 //  Path helper
 // ----------------------------------------------------------------------------
 
+// Gnuplot on Windows requires forward slashes in paths.
 static std::string fwdSlash(const std::filesystem::path& p)
 {
     std::string s = p.string();
     for (auto& c : s) { if (c == '\\') c = '/'; }
     return s;
 }
+
 
 // ----------------------------------------------------------------------------
 //  Construction
@@ -39,21 +42,34 @@ void PlotHomogeneity::plotAll(const TimeSeries&          original,
 {
     const auto& p = m_cfg.plots;
 
-    // Homogeneity-specific plots.
-    if (p.originalSeries)  plotOriginal(original);
-    if (p.seasonalOverlay) plotSeasonalOverlay(original, seasonal);
-    if (p.deseasonalized)  plotDeseasonalized(original, result.deseasonalizedValues);
-    if (p.changePoints)    plotChangePoints(original, result.deseasonalizedValues,
-                                            result.changePoints);
-    if (p.adjustedSeries)  plotAdjusted(result.adjustedSeries);
-    if (p.homogComparison) plotComparison(original, result.adjustedSeries);
+    if (p.originalSeries)   plotOriginal(original);
+    if (p.seasonalOverlay)  plotSeasonalOverlay(original, seasonal);
+    if (p.deseasonalized)   plotDeseasonalized(original, result.deseasonalizedValues);
+    if (p.changePoints)     plotChangePoints(original, result.deseasonalizedValues,
+                                             result.changePoints);
+    if (p.adjustedSeries)   plotAdjusted(result.adjustedSeries);
+    if (p.homogComparison)  plotComparison(original, result.adjustedSeries);
     if (p.shiftMagnitudes && !result.changePoints.empty())
         plotShiftMagnitudes(original, result.changePoints);
     if (p.correctionCurve)
         plotCorrectionCurve(original, result.changePoints);
 
-    // Generic plots (timeSeries, histogram, acf, qqPlot, boxplot).
-    // These operate on the original series using loki::Plot.
+    // Outlier overlay -- renders pre and post detection passes on one plot.
+    // Only produced when at least one pass actually detected something.
+    const bool hasOutliers = (result.preOutlierDetection.nOutliers  > 0 ||
+                              result.postOutlierDetection.nOutliers > 0);
+    if (hasOutliers) {
+        try {
+            loki::outlier::PlotOutlier outlierPlotter(m_cfg, "homogeneity");
+            outlierPlotter.plotOutlierOverlay(original,
+                                              result.preOutlierDetection,
+                                              result.postOutlierDetection);
+        } catch (const LOKIException& ex) {
+            LOKI_WARNING("PlotHomogeneity: outlier overlay failed: " + std::string(ex.what()));
+        }
+    }
+
+    // Generic plots via loki::Plot.
     try {
         Plot plot{m_cfg};
         if (p.timeSeries) plot.timeSeries(original);
@@ -99,10 +115,10 @@ void PlotHomogeneity::plotOriginal(const TimeSeries& series) const
 void PlotHomogeneity::plotSeasonalOverlay(const TimeSeries&          series,
                                            const std::vector<double>& seasonal) const
 {
-    const std::string base    = _baseName(series);
-    const auto        datOrig = m_cfg.imgDir / (".tmp_" + base + "_seas_orig.dat");
-    const auto        datSeas = m_cfg.imgDir / (".tmp_" + base + "_seas_seas.dat");
-    const auto        outPath = _outPath(base, "seasonal_overlay");
+    const std::string base     = _baseName(series);
+    const auto        datOrig  = m_cfg.imgDir / (".tmp_" + base + "_seas_orig.dat");
+    const auto        datSeas  = m_cfg.imgDir / (".tmp_" + base + "_seas_seas.dat");
+    const auto        outPath  = _outPath(base, "seasonal_overlay");
 
     _writeSeriesDat(series, datOrig);
 
@@ -282,20 +298,19 @@ void PlotHomogeneity::plotShiftMagnitudes(const TimeSeries&               series
         gp("set xlabel 'MJD'");
         gp("set ylabel 'Shift'");
         gp("set grid ytics");
-        gp("set key off");
-
-        // Use boxes with real x-axis so inter-CP spacing is proportional to time.
-        // Rotate x-axis labels 45 degrees so MJD values are readable.
+        gp("set style data histogram");
         gp("set style fill solid 0.7 border -1");
-        gp("set xtics rotate by -45 right");
-        gp("set boxwidth 5 absolute");
-        gp("plot '" + fwdSlash(datPath) + "' u 1:2 w boxes lc rgb '#d7191c' notitle");
+        gp("set boxwidth 0.6");
+        gp("set key off");
+        gp("plot '" + fwdSlash(datPath) + "' u 2:xtic(1) lc rgb '#d7191c' notitle");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotHomogeneity::plotShiftMagnitudes failed: " + std::string(ex.what()));
     }
     std::filesystem::remove(datPath);
 }
 
+// ----------------------------------------------------------------------------
+//  plotCorrectionCurve
 // ----------------------------------------------------------------------------
 
 void PlotHomogeneity::plotCorrectionCurve(
@@ -310,31 +325,25 @@ void PlotHomogeneity::plotCorrectionCurve(
     _writeSeriesDat(series, datOrig);
 
     // Build cumulative correction step function.
-    // Sort CPs by globalIndex ascending (same as SeriesAdjuster).
     std::vector<ChangePoint> sorted = changePoints;
     std::sort(sorted.begin(), sorted.end(),
               [](const ChangePoint& a, const ChangePoint& b) {
                   return a.globalIndex < b.globalIndex;
               });
 
-    // prefixShift[j] = sum of shifts at CP[0..j-1] (correction for segment j).
     const std::size_t numCp = sorted.size();
     std::vector<double> prefixShift(numCp + 1, 0.0);
     for (std::size_t j = 0; j < numCp; ++j) {
         prefixShift[j + 1] = prefixShift[j] + sorted[j].shift;
     }
 
-    // Write step function: two points per CP (just before and just after)
-    // to produce a clean vertical step, plus start and end points.
     {
         std::ofstream dat(datCorr);
         dat << std::fixed << std::setprecision(10);
         const std::size_t n = series.size();
         std::size_t segIdx = 0;
         for (std::size_t i = 0; i < n; ++i) {
-            while (segIdx < numCp && sorted[segIdx].globalIndex <= i) {
-                ++segIdx;
-            }
+            while (segIdx < numCp && sorted[segIdx].globalIndex <= i) ++segIdx;
             dat << series[i].time.mjd() << '\t' << prefixShift[segIdx] << '\n';
         }
     }
@@ -362,14 +371,12 @@ void PlotHomogeneity::plotCorrectionCurve(
 
 std::string PlotHomogeneity::_baseName(const TimeSeries& series) const
 {
-    const auto& m = series.metadata();
-    std::string name = m.stationId;
-    if (!m.componentName.empty()) {
-        if (!name.empty()) name += "_";
-        name += m.componentName;
-    }
-    if (name.empty()) name = "series";
-    return name;
+    // Format: homogeneity_[dataset]_[parameter]
+    const auto&  meta    = series.metadata();
+    std::string  dataset = m_cfg.input.file.stem().string();
+    if (dataset.empty()) dataset = "data";
+    std::string  param   = meta.componentName.empty() ? "series" : meta.componentName;
+    return "homogeneity_" + dataset + "_" + param;
 }
 
 std::filesystem::path PlotHomogeneity::_outPath(const std::string& baseName,

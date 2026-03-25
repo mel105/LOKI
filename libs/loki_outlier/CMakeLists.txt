@@ -17,6 +17,7 @@ target_sources(loki_outlier
         src/madDetector.cpp
         src/zScoreDetector.cpp
         src/outlierCleaner.cpp
+        src/plotOutlier.cpp
 )
 
 target_include_directories(loki_outlier
