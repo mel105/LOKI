@@ -3,8 +3,8 @@
 #include "loki/core/version.hpp"
 #include "loki/io/dataManager.hpp"
 #include "loki/stats/descriptive.hpp"
-#include "loki/homogeneity/deseasonalizer.hpp"
-#include "loki/homogeneity/medianYearSeries.hpp"
+#include "loki/timeseries/deseasonalizer.hpp"
+#include "loki/timeseries/medianYearSeries.hpp"
 #include "loki/outlier/plotOutlier.hpp"
 #include "loki/outlier/outlierCleaner.hpp"
 #include "loki/outlier/iqrDetector.hpp"
@@ -78,7 +78,7 @@ static CliArgs parseArgs(int argc, char* argv[])
 }
 
 // ----------------------------------------------------------------------------
-//  Build detector from OutlierConfig::DetectionSection
+//  Build detector
 // ----------------------------------------------------------------------------
 
 static std::unique_ptr<loki::outlier::OutlierDetector>
@@ -86,22 +86,19 @@ buildDetector(const loki::OutlierConfig::DetectionSection& det)
 {
     const std::string& m = det.method;
 
-    if (m == "iqr") {
+    if (m == "iqr")
         return std::make_unique<loki::outlier::IqrDetector>(det.iqrMultiplier);
-    }
-    if (m == "mad" || m == "mad_bounds") {
+    if (m == "mad" || m == "mad_bounds")
         return std::make_unique<loki::outlier::MadDetector>(det.madMultiplier);
-    }
-    if (m == "zscore") {
+    if (m == "zscore")
         return std::make_unique<loki::outlier::ZScoreDetector>(det.zscoreThreshold);
-    }
 
     LOKI_WARNING("outlier.detection.method '" + m + "' unknown -- falling back to 'mad'.");
     return std::make_unique<loki::outlier::MadDetector>(det.madMultiplier);
 }
 
 // ----------------------------------------------------------------------------
-//  Build OutlierCleaner::Config from OutlierConfig
+//  Build OutlierCleaner::Config
 // ----------------------------------------------------------------------------
 
 static loki::outlier::OutlierCleaner::Config
@@ -115,12 +112,11 @@ buildCleanerConfig(const loki::OutlierConfig& cfg)
     else                           { c.fillStrategy = loki::GapFiller::Strategy::LINEAR;        }
 
     c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.replacement.maxFillLength));
-
     return c;
 }
 
 // ----------------------------------------------------------------------------
-//  Deseasonalize -- returns seasonal vector and populates dsResult
+//  Deseasonalize
 // ----------------------------------------------------------------------------
 
 struct DeseasonalizeResult {
@@ -131,31 +127,29 @@ struct DeseasonalizeResult {
 static DeseasonalizeResult
 runDeseasonalize(const loki::TimeSeries&                              ts,
                  const loki::OutlierConfig::DeseasonalizationSection& dsCfg,
-                 loki::homogeneity::Deseasonalizer::Result&           dsResult)
+                 loki::Deseasonalizer::Result&                        dsResult)
 {
-    using Strategy = loki::homogeneity::Deseasonalizer::Strategy;
-
-    loki::homogeneity::Deseasonalizer::Config cfg;
+    loki::Deseasonalizer::Config cfg;
     cfg.maWindowSize = dsCfg.maWindowSize;
 
-    if      (dsCfg.strategy == "median_year")    { cfg.strategy = Strategy::MEDIAN_YEAR;    }
-    else if (dsCfg.strategy == "moving_average") { cfg.strategy = Strategy::MOVING_AVERAGE; }
-    else                                         { cfg.strategy = Strategy::NONE;            }
+    if      (dsCfg.strategy == "median_year")    { cfg.strategy = loki::Deseasonalizer::Strategy::MEDIAN_YEAR;    }
+    else if (dsCfg.strategy == "moving_average") { cfg.strategy = loki::Deseasonalizer::Strategy::MOVING_AVERAGE; }
+    else                                         { cfg.strategy = loki::Deseasonalizer::Strategy::NONE;            }
 
-    if (cfg.strategy == Strategy::NONE) {
+    if (cfg.strategy == loki::Deseasonalizer::Strategy::NONE) {
         dsResult.residuals = {};
         dsResult.seasonal  = std::vector<double>(ts.size(), 0.0);
         dsResult.series    = ts;
         return {std::vector<double>(ts.size(), 0.0), false};
     }
 
-    loki::homogeneity::Deseasonalizer ds(cfg);
+    loki::Deseasonalizer ds(cfg);
 
-    if (cfg.strategy == Strategy::MEDIAN_YEAR) {
-        loki::homogeneity::MedianYearSeries::Config myCfg;
+    if (cfg.strategy == loki::Deseasonalizer::Strategy::MEDIAN_YEAR) {
+        loki::MedianYearSeries::Config myCfg;
         myCfg.minYears = dsCfg.medianYearMinYears;
 
-        const loki::homogeneity::MedianYearSeries profile(ts, myCfg);
+        const loki::MedianYearSeries profile(ts, myCfg);
         auto lookup = [&profile](const ::TimeStamp& t) {
             return profile.valueAt(t);
         };
@@ -171,10 +165,10 @@ runDeseasonalize(const loki::TimeSeries&                              ts,
 //  CSV export
 // ----------------------------------------------------------------------------
 
-static void writeCsv(const std::filesystem::path&                         csvDir,
-                     const loki::TimeSeries&                              original,
-                     const loki::outlier::OutlierCleaner::CleanResult&   result,
-                     const std::vector<double>&                           seasonal)
+static void writeCsv(const std::filesystem::path&                       csvDir,
+                     const loki::TimeSeries&                            original,
+                     const loki::outlier::OutlierCleaner::CleanResult&  result,
+                     const std::vector<double>&                         seasonal)
 {
     const auto& m    = original.metadata();
     std::string base = m.stationId;
@@ -294,7 +288,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // -- Build detector and cleaner once --------------------------------------
+    // -- Build detector and cleaner -------------------------------------------
     auto detector = buildDetector(cfg.outlier.detection);
     const auto cleanerCfg = buildCleanerConfig(cfg.outlier);
     const loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
@@ -310,8 +304,8 @@ int main(int argc, char* argv[])
                       + "  n=" + std::to_string(ts.size()) + " ---");
 
             try {
-                // Step 1: deseasonalize (or pass-through if strategy == none).
-                loki::homogeneity::Deseasonalizer::Result dsResult;
+                // Step 1: deseasonalize.
+                loki::Deseasonalizer::Result dsResult;
                 const auto [seasonal, hasComponent] =
                     runDeseasonalize(ts, cfg.outlier.deseasonalization, dsResult);
 
@@ -323,7 +317,6 @@ int main(int argc, char* argv[])
                         ? cleaner.clean(ts, seasonal)
                         : cleaner.clean(ts);
 
-                // Log detection summary.
                 const std::size_t nOut = result.detection.nOutliers;
                 LOKI_INFO("Outliers detected: " + std::to_string(nOut)
                           + " / " + std::to_string(ts.size())
@@ -356,9 +349,6 @@ int main(int argc, char* argv[])
                                     result.detection,
                                     hasComponent);
 
-                    // Residuals with detection bounds.
-                    // Convention: detection on raw series -> preDetection slot.
-                    //             detection on residuals  -> postDetection slot.
                     const loki::outlier::OutlierResult empty{};
                     if (hasComponent) {
                         plotter.plotResidualsWithBounds(ts,

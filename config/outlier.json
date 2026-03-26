@@ -40,8 +40,8 @@
             "_comment_generic": "Generic plots applied to the original series.",
             "time_series": true,
             "histogram":   true,
-            "acf":         false,
-            "qq_plot":     false,
+            "acf":         true,
+            "qq_plot":     true,
             "boxplot":     true,
 
             "_comment_outlier": "Outlier pipeline plots.",
@@ -71,7 +71,7 @@
             "_comment_strategy_median_year":    "  median_year    -- Subtracts median annual profile. Best for climatological and GNSS data with a clear annual cycle.",
             "_comment_strategy_moving_average": "  moving_average -- Subtracts centred moving average. Best for sensor / signal data without a strict annual period.",
             "_comment_strategy_none":           "  none           -- No deseasonalization. Use when the series has no periodic component (economic, count, residuals).",
-            "strategy": "none",
+            "strategy": "median_year",
 
             "_comment_ma_window_size": "Window length in samples for moving_average. Examples: daily data: 365 = 1 year. 6-hourly data: 1461 = 1 year. 1-second data: 86400 = 1 day.",
             "ma_window_size": 365,

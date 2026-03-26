@@ -5,6 +5,7 @@
 #include "loki/stats/descriptive.hpp"
 #include "loki/homogeneity/homogenizer.hpp"
 #include "loki/homogeneity/plotHomogeneity.hpp"
+#include "loki/timeseries/deseasonalizer.hpp"
 #include "loki/timeseries/gapFiller.hpp"
 
 #include <filesystem>
@@ -95,7 +96,7 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
             std::max(0, h.gapFilling.maxFillLength));
     }
 
-    // Outlier helper lambda -- maps OutlierFilterConfig -> homogeneity::OutlierConfig
+    // Outlier helper lambda
     auto mapOutlier = [](const loki::OutlierFilterConfig& src,
                          double defaultMadMultiplier)
         -> loki::homogeneity::OutlierConfig
@@ -113,28 +114,27 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
         return o;
     };
 
-    hcfg.preOutlier  = mapOutlier(h.preOutlier,  5.0);  // coarse -- raw series
-    hcfg.postOutlier = mapOutlier(h.postOutlier,  3.0);  // fine   -- residuals
+    hcfg.preOutlier  = mapOutlier(h.preOutlier,  5.0);
+    hcfg.postOutlier = mapOutlier(h.postOutlier,  3.0);
 
-    // Deseasonalization
+    // Deseasonalization -- loki::Deseasonalizer is now in loki_core
     {
         const std::string& s = h.deseasonalization.strategy;
         if      (s == "median_year")    hcfg.deseasonalizer.strategy =
-            loki::homogeneity::Deseasonalizer::Strategy::MEDIAN_YEAR;
+            loki::Deseasonalizer::Strategy::MEDIAN_YEAR;
         else if (s == "moving_average") hcfg.deseasonalizer.strategy =
-            loki::homogeneity::Deseasonalizer::Strategy::MOVING_AVERAGE;
+            loki::Deseasonalizer::Strategy::MOVING_AVERAGE;
         else                            hcfg.deseasonalizer.strategy =
-            loki::homogeneity::Deseasonalizer::Strategy::NONE;
+            loki::Deseasonalizer::Strategy::NONE;
         hcfg.deseasonalizer.maWindowSize = h.deseasonalization.maWindowSize;
     }
 
     // Detection
-    hcfg.detector.minSegmentPoints              = static_cast<std::size_t>(
+    hcfg.detector.minSegmentPoints         = static_cast<std::size_t>(
         std::max(0, h.detection.minSegmentPoints));
-    hcfg.detector.minSegmentSeconds             = h.detection.minSegmentSeconds;
-    hcfg.detector.detectorConfig.significanceLevel    = h.detection.significanceLevel;
-    hcfg.detector.detectorConfig.acfDependenceLimit   = h.detection.acfDependenceLimit;
-    // hcfg.detector.detectorConfig.correctForDependence = h.detection.correctForDependence;
+    hcfg.detector.minSegmentSeconds        = h.detection.minSegmentSeconds;
+    hcfg.detector.detectorConfig.significanceLevel  = h.detection.significanceLevel;
+    hcfg.detector.detectorConfig.acfDependenceLimit = h.detection.acfDependenceLimit;
 
     // Adjustment
     hcfg.applyAdjustment = h.applyAdjustment;
@@ -146,9 +146,9 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
 //  CSV export
 // ----------------------------------------------------------------------------
 
-static void writeCsv(const std::filesystem::path&                   csvDir,
-                     const loki::TimeSeries&                        original,
-                     const loki::homogeneity::HomogenizerResult&    result)
+static void writeCsv(const std::filesystem::path&                csvDir,
+                     const loki::TimeSeries&                     original,
+                     const loki::homogeneity::HomogenizerResult& result)
 {
     const auto& m    = original.metadata();
     std::string base = m.stationId;
@@ -170,17 +170,16 @@ static void writeCsv(const std::filesystem::path&                   csvDir,
 
     const std::size_t n = original.size();
     for (std::size_t i = 0; i < n; ++i) {
-        const double mjd      = original[i].time.mjd();
-        const double origVal  = original[i].value;
-        const double deseas   = (i < result.deseasonalizedValues.size())
-                                    ? result.deseasonalizedValues[i]
-                                    : std::numeric_limits<double>::quiet_NaN();
-        const double adj      = (i < result.adjustedSeries.size())
-                                    ? result.adjustedSeries[i].value
-                                    : std::numeric_limits<double>::quiet_NaN();
-        const int    flag     = original[i].flag;
+        const double mjd     = original[i].time.mjd();
+        const double origVal = original[i].value;
+        const double deseas  = (i < result.deseasonalizedValues.size())
+                                   ? result.deseasonalizedValues[i]
+                                   : std::numeric_limits<double>::quiet_NaN();
+        const double adj     = (i < result.adjustedSeries.size())
+                                   ? result.adjustedSeries[i].value
+                                   : std::numeric_limits<double>::quiet_NaN();
+        const int    flag    = original[i].flag;
 
-        // Mark change point rows
         bool isCp = false;
         for (const auto& cp : result.changePoints) {
             if (cp.globalIndex == i) { isCp = true; break; }
@@ -290,7 +289,6 @@ int main(int argc, char* argv[])
                 continue;
             }
 
-            // Log change points
             LOKI_INFO("Change points detected: "
                       + std::to_string(result.changePoints.size()));
             for (const auto& cp : result.changePoints) {
@@ -300,16 +298,13 @@ int main(int argc, char* argv[])
                           + "  p="     + std::to_string(cp.pValue));
             }
 
-            // CSV export
             try {
                 writeCsv(cfg.csvDir, ts, result);
             } catch (const loki::LOKIException& ex) {
                 LOKI_ERROR(std::string("CSV export failed: ") + ex.what());
             }
 
-            // Plots
             try {
-                // seasonal = original - residual (element-wise)
                 std::vector<double> seasonal;
                 seasonal.reserve(ts.size());
                 for (std::size_t i = 0; i < ts.size(); ++i) {
@@ -318,7 +313,6 @@ int main(int argc, char* argv[])
                                            : 0.0;
                     seasonal.push_back(ts[i].value - res);
                 }
-
                 plotter.plotAll(ts, result, seasonal);
             } catch (const loki::LOKIException& ex) {
                 LOKI_ERROR(std::string("Plotting failed: ") + ex.what());

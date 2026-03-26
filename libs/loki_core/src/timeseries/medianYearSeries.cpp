@@ -1,7 +1,6 @@
-#include "loki/homogeneity/medianYearSeries.hpp"
-
-#include "loki/core/exceptions.hpp"
-#include "loki/core/logger.hpp"
+#include <loki/timeseries/medianYearSeries.hpp>
+#include <loki/core/exceptions.hpp>
+#include <loki/core/logger.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +10,8 @@
 #include <vector>
 
 using namespace loki;
-using namespace loki::homogeneity;
+
+namespace loki {
 
 // =============================================================================
 //  Constants
@@ -19,11 +19,7 @@ using namespace loki::homogeneity;
 
 namespace {
 
-// A leap year has 366 days. We always allocate 366 day-slots so that leap-year
-// data (DOY 366) has a valid bucket. Non-leap years simply never populate it.
-constexpr int DAYS_PER_PROFILE = 366;
-
-// Fractional tolerance when mapping a timestamp to a slot (1 ms in days).
+constexpr int    DAYS_PER_PROFILE    = 366;
 constexpr double SLOT_TOLERANCE_DAYS = 1.0e-8;
 
 } // anonymous namespace
@@ -55,11 +51,9 @@ MedianYearSeries::MedianYearSeries(const TimeSeries& series, Config cfg)
         throw ConfigException(oss.str());
     }
 
-    // Derive slotsPerDay: round to nearest integer, clamp to [1, 24].
-    const int raw = static_cast<int>(std::round(1.0 / m_stepDays));
-    m_slotsPerDay = std::max(1, std::min(raw, 24));
+    const int raw     = static_cast<int>(std::round(1.0 / m_stepDays));
+    m_slotsPerDay     = std::max(1, std::min(raw, 24));
 
-    // Warn if the series spans fewer years than minYears.
     const double spanYears =
         (series[series.size() - 1].time.mjd() - series[0].time.mjd()) / 365.25;
     if (static_cast<int>(spanYears) < m_cfg.minYears) {
@@ -107,13 +101,11 @@ double MedianYearSeries::estimateStep(const TimeSeries& series)
     diffs.reserve(series.size() - 1);
     for (std::size_t i = 1; i < series.size(); ++i) {
         const double d = series[i].time.mjd() - series[i - 1].time.mjd();
-        if (d > 0.0) {
-            diffs.push_back(d);
-        }
+        if (d > 0.0) diffs.push_back(d);
     }
     if (diffs.empty()) {
         throw ConfigException(
-            "MedianYearSeries: all consecutive timestamps are identical — "
+            "MedianYearSeries: all consecutive timestamps are identical -- "
             "cannot determine sampling resolution.");
     }
 
@@ -139,7 +131,6 @@ void MedianYearSeries::computeProfile(const TimeSeries& series)
         static_cast<std::size_t>(DAYS_PER_PROFILE) *
         static_cast<std::size_t>(m_slotsPerDay);
 
-    // Accumulate all valid values per slot.
     std::vector<std::vector<double>> buckets(totalSlots);
 
     std::size_t skippedNaN = 0;
@@ -157,7 +148,6 @@ void MedianYearSeries::computeProfile(const TimeSeries& series)
                   " NaN observation(s) during profile computation.");
     }
 
-    // Compute median per slot; mark under-populated slots as NaN.
     m_profile.resize(totalSlots);
     std::size_t thinSlots = 0;
 
@@ -168,7 +158,6 @@ void MedianYearSeries::computeProfile(const TimeSeries& series)
             ++thinSlots;
             continue;
         }
-        // Median via nth_element (partial sort — O(n) average).
         const std::size_t mid = bucket.size() / 2;
         std::nth_element(bucket.begin(),
                          bucket.begin() + static_cast<std::ptrdiff_t>(mid),
@@ -201,32 +190,25 @@ void MedianYearSeries::computeProfile(const TimeSeries& series)
 
 std::size_t MedianYearSeries::slotIndex(const TimeStamp& ts) const noexcept
 {
-    // Day-of-year: derived from month and day using the standard formula.
-    // We use the calendar getters on TimeStamp (UTC).
     const int month = ts.month();
     const int day   = ts.day();
 
-    // Cumulative days before each month (non-leap year base).
     static constexpr int MONTH_START[13] = {
         0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
     };
 
-    // Leap year correction: add 1 for March onwards in a leap year.
-    const int year = ts.year();
-    const bool isLeap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    const int leapCorr = (isLeap && month >= 3) ? 1 : 0;
+    const int  year     = ts.year();
+    const bool isLeap   = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    const int  leapCorr = (isLeap && month >= 3) ? 1 : 0;
+    const int  doy      = MONTH_START[month] + day + leapCorr;
 
-    // doy in [1, 366].
-    const int doy = MONTH_START[month] + day + leapCorr;
+    const double fracDay  = ts.mjd() - std::floor(ts.mjd());
+    const int    slotOfDay =
+        static_cast<int>(fracDay * m_slotsPerDay + 0.5) % m_slotsPerDay;
 
-    // Slot within the day: derived from hour and fractional time.
-    // slotOfDay = floor(fractionalDayPosition * slotsPerDay)
-    // Fractional position within the day comes from the MJD fractional part.
-    const double fracDay = ts.mjd() - std::floor(ts.mjd());
-    const int slotOfDay  = static_cast<int>(fracDay * m_slotsPerDay + 0.5) % m_slotsPerDay;
-
-    // Clamp doy to [1, DAYS_PER_PROFILE] for safety (should never exceed 366).
     const int safeDoy = std::max(1, std::min(doy, DAYS_PER_PROFILE));
 
     return static_cast<std::size_t>((safeDoy - 1) * m_slotsPerDay + slotOfDay);
 }
+
+} // namespace loki

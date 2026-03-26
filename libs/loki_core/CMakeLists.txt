@@ -1,15 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# loki_core — foundational library
-#   • exception hierarchy
-#   • Logger
-#   • TimeSeries / TimeStamp
-#   • Config + ConfigLoader
-#   • DirectoryScanner
-#   • Loader / DataManager
-# ─────────────────────────────────────────────────────────────────────────────
-
 add_library(loki_core STATIC)
 
 target_sources(loki_core
@@ -20,6 +10,8 @@ target_sources(loki_core
         src/timeseries/timeStamp.cpp
         src/timeseries/timeSeries.cpp
         src/timeseries/gapFiller.cpp
+        src/timeseries/deseasonalizer.cpp
+        src/timeseries/medianYearSeries.cpp
         src/io/loader.cpp
         src/io/dataManager.cpp
         src/io/gnuplot.cpp

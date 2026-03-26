@@ -8,14 +8,13 @@
 #include <string>
 #include <vector>
 
-namespace loki::homogeneity {
+namespace loki {
 
 /**
  * @brief Removes the seasonal component from a time series.
  *
  * Supports three strategies:
- *  - MOVING_AVERAGE : subtracts a centered simple moving average
- *                     (default; works for any resolution).
+ *  - MOVING_AVERAGE : subtracts a centered simple moving average.
  *  - MEDIAN_YEAR    : subtracts the median annual profile obtained from
  *                     a MedianYearSeries lookup. Requires a time axis with
  *                     calendar meaning (UTC / GPST / MJD). Throws
@@ -24,7 +23,7 @@ namespace loki::homogeneity {
  *
  * The caller supplies the profile lookup for MEDIAN_YEAR via a
  * std::function<double(const TimeStamp&)> (typically a lambda wrapping
- * MedianYearSeries::valueAt). This mirrors the pattern used by GapFiller.
+ * MedianYearSeries::valueAt).
  */
 class Deseasonalizer {
 public:
@@ -65,7 +64,7 @@ public:
         std::vector<double> seasonal;
 
         /// Residuals as a TimeSeries with the same time axis as the input.
-        /// SeriesMetadata::name receives the suffix "_deseas".
+        /// SeriesMetadata::componentName receives the suffix "_deseas".
         TimeSeries series;
     };
 
@@ -91,11 +90,7 @@ public:
      *
      * For Strategy::MEDIAN_YEAR profileLookup must be provided.
      * The series step must be >= 1 hour; finer resolution throws
-     * ConfigException because a median annual profile loses statistical
-     * meaning at sub-hourly scale.
-     *
-     * All series values must be finite (no NaN). If NaN is present,
-     * DataException is thrown. Run GapFiller before calling this method.
+     * ConfigException.
      *
      * @param series        Input time series.
      * @param profileLookup Callable (TimeStamp -> double) providing the
@@ -104,7 +99,7 @@ public:
      * @return Result containing residuals, seasonal component, and a
      *         TimeSeries with name suffix "_deseas".
      * @throws ConfigException if the strategy/series combination is invalid.
-     * @throws DataException   if the series contains NaN values.
+     * @throws DataException   if the series contains NaN values or is empty.
      */
     [[nodiscard]]
     Result deseasonalize(
@@ -115,19 +110,15 @@ private:
 
     Config m_cfg;
 
-    // ------------------------------------------------------------------
-    // Internal helpers
-    // ------------------------------------------------------------------
-
-    /// MOVING_AVERAGE path.
+    [[nodiscard]]
     Result applyMovingAverage(const TimeSeries& series) const;
 
-    /// MEDIAN_YEAR path.
+    [[nodiscard]]
     Result applyMedianYear(
         const TimeSeries& series,
         const std::function<double(const ::TimeStamp&)>& profileLookup) const;
 
-    /// NONE path.
+    [[nodiscard]]
     Result applyNone(const TimeSeries& series) const;
 
     /// Validates that the series step is >= 1 hour (for MEDIAN_YEAR).
@@ -135,4 +126,4 @@ private:
     static void checkMinResolution(const TimeSeries& series);
 };
 
-} // namespace loki::homogeneity
+} // namespace loki
