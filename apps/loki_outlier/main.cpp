@@ -36,19 +36,9 @@ static void printHelp()
         << "Usage:\n"
         << "  loki_outlier.exe <config.json> [options]\n"
         << "\n"
-        << "Arguments:\n"
-        << "  <config.json>   Path to the JSON configuration file.\n"
-        << "                  Defaults to config/outlier.json\n"
-        << "\n"
         << "Options:\n"
-        << "  --help          Show this message and exit.\n"
-        << "  --version       Show version string and exit.\n"
-        << "\n"
-        << "Pipeline steps (controlled via JSON 'outlier' section):\n"
-        << "  1. (optional) Deseasonalizer  -- subtract seasonal component\n"
-        << "  2. Outlier detector           -- iqr | mad | zscore | mad_bounds\n"
-        << "  3. GapFiller                  -- replace outliers via linear | forward_fill | mean\n"
-        << "  4. (optional) Reconstruct     -- add seasonal component back\n";
+        << "  --help     Show this message and exit.\n"
+        << "  --version  Show version string and exit.\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -70,8 +60,7 @@ static CliArgs parseArgs(int argc, char* argv[])
         else if (arg == "--version" || arg == "-v") { args.showVersion = true; }
         else if (arg[0] != '-') { args.configPath = argv[i]; }
         else {
-            std::cerr << "[loki_outlier] Unknown option: " << arg
-                      << "  (use --help)\n";
+            std::cerr << "[loki_outlier] Unknown option: " << arg << "  (use --help)\n";
         }
     }
     return args;
@@ -85,7 +74,6 @@ static std::unique_ptr<loki::outlier::OutlierDetector>
 buildDetector(const loki::OutlierConfig::DetectionSection& det)
 {
     const std::string& m = det.method;
-
     if (m == "iqr")
         return std::make_unique<loki::outlier::IqrDetector>(det.iqrMultiplier);
     if (m == "mad" || m == "mad_bounds")
@@ -105,12 +93,10 @@ static loki::outlier::OutlierCleaner::Config
 buildCleanerConfig(const loki::OutlierConfig& cfg)
 {
     loki::outlier::OutlierCleaner::Config c;
-
     const std::string& rs = cfg.replacement.strategy;
     if      (rs == "forward_fill") { c.fillStrategy = loki::GapFiller::Strategy::FORWARD_FILL; }
     else if (rs == "mean")         { c.fillStrategy = loki::GapFiller::Strategy::MEAN;         }
     else                           { c.fillStrategy = loki::GapFiller::Strategy::LINEAR;        }
-
     c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.replacement.maxFillLength));
     return c;
 }
@@ -148,11 +134,8 @@ runDeseasonalize(const loki::TimeSeries&                              ts,
     if (cfg.strategy == loki::Deseasonalizer::Strategy::MEDIAN_YEAR) {
         loki::MedianYearSeries::Config myCfg;
         myCfg.minYears = dsCfg.medianYearMinYears;
-
         const loki::MedianYearSeries profile(ts, myCfg);
-        auto lookup = [&profile](const ::TimeStamp& t) {
-            return profile.valueAt(t);
-        };
+        auto lookup = [&profile](const ::TimeStamp& t) { return profile.valueAt(t); };
         dsResult = ds.deseasonalize(ts, lookup);
     } else {
         dsResult = ds.deseasonalize(ts);
@@ -205,12 +188,8 @@ static void writeCsv(const std::filesystem::path&                       csvDir,
             if (pt.index == i) { isOutlier = true; break; }
         }
 
-        csv << mjd      << ";"
-            << origVal  << ";"
-            << residual << ";"
-            << cleaned  << ";"
-            << seas     << ";"
-            << (isOutlier ? 1 : 0) << "\n";
+        csv << mjd << ";" << origVal << ";" << residual << ";"
+            << cleaned << ";" << seas << ";" << (isOutlier ? 1 : 0) << "\n";
     }
 
     LOKI_INFO("CSV written: " + outPath.string());
@@ -223,11 +202,9 @@ static void writeCsv(const std::filesystem::path&                       csvDir,
 int main(int argc, char* argv[])
 {
     const CliArgs args = parseArgs(argc, argv);
-
     if (args.showHelp)    { printHelp();    return EXIT_SUCCESS; }
     if (args.showVersion) { printVersion(); return EXIT_SUCCESS; }
 
-    // -- Load config ----------------------------------------------------------
     loki::AppConfig cfg;
     try {
         cfg = loki::ConfigLoader::load(args.configPath);
@@ -236,7 +213,6 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // -- Logger ---------------------------------------------------------------
     try {
         loki::Logger::initDefault(cfg.logDir, "loki_outlier", cfg.output.logLevel);
     } catch (const loki::LOKIException& ex) {
@@ -248,12 +224,10 @@ int main(int argc, char* argv[])
     LOKI_INFO("Config:    " + args.configPath.string());
     LOKI_INFO("Workspace: " + cfg.workspace.string());
 
-    // -- Load data ------------------------------------------------------------
     std::vector<loki::LoadResult> loadResults;
     try {
         loki::DataManager dm(cfg);
         loadResults = dm.load();
-
         for (const auto& r : loadResults) {
             LOKI_INFO("Loaded: " + r.filePath.filename().string()
                       + "  lines=" + std::to_string(r.linesRead)
@@ -269,7 +243,6 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // -- Descriptive stats (optional) -----------------------------------------
     if (cfg.stats.enabled) {
         try {
             for (const auto& r : loadResults) {
@@ -279,8 +252,7 @@ int main(int argc, char* argv[])
                     for (const auto& obs : ts) vals.push_back(obs.value);
                     const auto st = loki::stats::summarize(
                         vals, cfg.stats.nanPolicy, cfg.stats.hurst);
-                    LOKI_INFO(loki::stats::formatSummary(
-                        st, ts.metadata().componentName));
+                    LOKI_INFO(loki::stats::formatSummary(st, ts.metadata().componentName));
                 }
             }
         } catch (const loki::LOKIException& ex) {
@@ -288,13 +260,11 @@ int main(int argc, char* argv[])
         }
     }
 
-    // -- Build detector and cleaner -------------------------------------------
-    auto detector = buildDetector(cfg.outlier.detection);
+    auto detector     = buildDetector(cfg.outlier.detection);
     const auto cleanerCfg = buildCleanerConfig(cfg.outlier);
     const loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
     const loki::outlier::PlotOutlier    plotter(cfg, "outlier");
 
-    // -- Outlier pipeline per series ------------------------------------------
     for (const auto& r : loadResults) {
         for (const auto& ts : r.series) {
             const std::string name = ts.metadata().stationId.empty()
@@ -309,29 +279,25 @@ int main(int argc, char* argv[])
                 const auto [seasonal, hasComponent] =
                     runDeseasonalize(ts, cfg.outlier.deseasonalization, dsResult);
 
-                LOKI_INFO("Deseasonalization: strategy=" + cfg.outlier.deseasonalization.strategy);
+                LOKI_INFO("Deseasonalization: strategy="
+                          + cfg.outlier.deseasonalization.strategy);
 
                 // Step 2+3: detect and replace.
                 loki::outlier::OutlierCleaner::CleanResult result =
-                    hasComponent
-                        ? cleaner.clean(ts, seasonal)
-                        : cleaner.clean(ts);
+                    hasComponent ? cleaner.clean(ts, seasonal) : cleaner.clean(ts);
 
-                const std::size_t nOut = result.detection.nOutliers;
-                LOKI_INFO("Outliers detected: " + std::to_string(nOut)
+                LOKI_INFO("Outliers detected: " + std::to_string(result.detection.nOutliers)
                           + " / " + std::to_string(ts.size())
                           + "  method=" + cfg.outlier.detection.method
                           + "  location=" + std::to_string(result.detection.location)
                           + "  scale="    + std::to_string(result.detection.scale));
 
-                if (nOut > 0) {
-                    for (const auto& pt : result.detection.points) {
-                        LOKI_INFO("  outlier idx=" + std::to_string(pt.index)
-                                  + "  mjd=" + std::to_string(ts[pt.index].time.mjd())
-                                  + "  orig=" + std::to_string(pt.originalValue)
-                                  + "  score=" + std::to_string(pt.score)
-                                  + "  threshold=" + std::to_string(pt.threshold));
-                    }
+                for (const auto& pt : result.detection.points) {
+                    LOKI_INFO("  outlier idx=" + std::to_string(pt.index)
+                              + "  mjd=" + std::to_string(ts[pt.index].time.mjd())
+                              + "  orig=" + std::to_string(pt.originalValue)
+                              + "  score=" + std::to_string(pt.score)
+                              + "  threshold=" + std::to_string(pt.threshold));
                 }
 
                 // Step 4: CSV export.
@@ -341,26 +307,14 @@ int main(int argc, char* argv[])
                     LOKI_ERROR(std::string("CSV export failed: ") + ex.what());
                 }
 
-                // Step 5: Plots.
+                // Step 5: Plots -- all controlled via JSON flags in plotAll.
                 try {
                     plotter.plotAll(ts,
                                     result.cleaned,
                                     result.residuals,
                                     result.detection,
-                                    hasComponent);
-
-                    const loki::outlier::OutlierResult empty{};
-                    if (hasComponent) {
-                        plotter.plotResidualsWithBounds(ts,
-                                                        result.residuals,
-                                                        empty,
-                                                        result.detection);
-                    } else {
-                        plotter.plotResidualsWithBounds(ts,
-                                                        result.residuals,
-                                                        result.detection,
-                                                        empty);
-                    }
+                                    hasComponent,
+                                    seasonal);
                 } catch (const loki::LOKIException& ex) {
                     LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
                 }

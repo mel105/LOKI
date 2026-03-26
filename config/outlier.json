@@ -2,110 +2,60 @@
     "workspace": "C:/Users/eliasmichal/Documents/Osobne",
 
     "input": {
-        "_comment_file": "Path to input file, relative to <workspace>/INPUT/ or absolute.",
         "file": "CLIM_DATA_EX1.txt",
-
-        "_comment_time_format": "Options: gpst_seconds | gpst_week_sow | utc | mjd | unix | index",
         "time_format": "utc",
-
-        "_comment_time_columns": "0-based field indices that form the time token. Empty = field 0 only. Use [0,1] when date and time are in separate columns, e.g. '1990-01-01' '00:00:00'.",
         "time_columns": [0, 1],
-
-        "_comment_delimiter": "Field separator. Use ' ' for space-delimited files.",
         "delimiter": " ",
-
-        "_comment_comment_char": "Lines starting with this character are skipped.",
         "comment_char": "%",
-
-        "_comment_columns": "1-based indices of value columns to load. Empty = load all value columns. Index counts from 1 after the time field(s).",
         "columns": [3],
-
-        "_comment_merge_strategy": "Options: separate (each file -> independent series) | merge (all files concatenated and sorted).",
         "merge_strategy": "separate"
     },
 
     "output": {
-        "_comment_log_level": "Options: debug | info | warning | error",
         "log_level": "info"
     },
 
     "plots": {
-        "_comment_output_format": "Options: png | eps | svg",
         "output_format": "png",
-
-        "_comment_time_format": "X-axis label format. Options: mjd | utc | gpst_seconds | unix. Empty = inherit from input.time_format.",
         "time_format": "utc",
-
         "enabled": {
-            "_comment_generic": "Generic plots applied to the original series.",
-            "time_series": true,
-            "histogram":   true,
-            "acf":         true,
-            "qq_plot":     true,
-            "boxplot":     true,
+            
+            "time_series":           true,
+            "histogram":             true,
+            "acf":                   true,
+            "qq_plot":               true,
+            "boxplot":               true,
 
-            "_comment_outlier": "Outlier pipeline plots.",
-            "_comment_original_series": "Original series with outlier markers (triangles).",
-            "original_series":   true,
-            "_comment_adjusted_series": "Cleaned (outlier-replaced) series.",
-            "adjusted_series":   true,
-            "_comment_homog_comparison": "Original vs cleaned overlay.",
-            "homog_comparison":  true,
-            "_comment_deseasonalized": "Residuals with outlier markers. Only rendered when deseasonalization is active.",
-            "deseasonalized":    true
+            "original_series":       true,
+            "adjusted_series":       true,
+            "homog_comparison":      true,
+            "deseasonalized":        true,
+            "seasonal_overlay":      true,
+            "residuals_with_bounds": true,
+            "outlier_overlay":       false
         }
     },
 
     "stats": {
         "enabled": true,
-        "_comment_nan_policy": "Options: skip | throw | propagate",
         "nan_policy": "skip",
-        "_comment_hurst": "Compute Hurst exponent. Can be slow for large series.",
         "hurst": false
     },
 
     "outlier": {
-
         "deseasonalization": {
-            "_comment_strategy": "Subtract a seasonal component before detection so that detectors operate on residuals rather than the raw signal. Options:",
-            "_comment_strategy_median_year":    "  median_year    -- Subtracts median annual profile. Best for climatological and GNSS data with a clear annual cycle.",
-            "_comment_strategy_moving_average": "  moving_average -- Subtracts centred moving average. Best for sensor / signal data without a strict annual period.",
-            "_comment_strategy_none":           "  none           -- No deseasonalization. Use when the series has no periodic component (economic, count, residuals).",
             "strategy": "median_year",
-
-            "_comment_ma_window_size": "Window length in samples for moving_average. Examples: daily data: 365 = 1 year. 6-hourly data: 1461 = 1 year. 1-second data: 86400 = 1 day.",
             "ma_window_size": 365,
-
-            "_comment_median_year_min_years": "Minimum number of years of data required per day-of-year slot in the median annual profile. Slots with fewer years produce NaN and are not subtracted.",
             "median_year_min_years": 5
         },
-
         "detection": {
-            "_comment_method": "Outlier detection algorithm. Options:",
-            "_comment_method_iqr":        "  iqr        -- IQR-based (box-plot rule). Flags values outside Q1/Q3 +/- multiplier * IQR. Classic, widely used.",
-            "_comment_method_mad":        "  mad        -- MAD-based (robust). Flags values outside median +/- k * MAD / 0.6745. Robust to non-Gaussian tails.",
-            "_comment_method_zscore":     "  zscore     -- Z-score. Flags values with |z| > threshold. Assumes approximate normality of residuals.",
-            "_comment_method_mad_bounds": "  mad_bounds -- Global MAD bounds on the raw series. No deseasonalization required. Best for coarse removal of physically impossible values (e.g. sensor overflow, instrument resets).",
             "method": "mad",
-
-            "_comment_iqr_multiplier": "Fence width multiplier for iqr method. Standard box-plot rule: 1.5 (mild), 3.0 (extreme). Default: 1.5.",
             "iqr_multiplier": 1.5,
-
-            "_comment_mad_multiplier": "Threshold multiplier for mad and mad_bounds methods. Roughly analogous to sigma units after normalisation by 0.6745. Default: 3.0. Use 5.0 or higher for coarse pre-filtering.",
             "mad_multiplier": 3.0,
-
-            "_comment_zscore_threshold": "Z-score threshold. Values with |z| > threshold are flagged. Default: 3.0 (corresponds to ~0.3 % of Gaussian tail).",
             "zscore_threshold": 3.0
         },
-
         "replacement": {
-            "_comment_strategy": "How to fill NaN values left after outlier removal. Options:",
-            "_comment_strategy_linear":       "  linear       -- Linear interpolation between the nearest valid neighbours. Best for smooth signals.",
-            "_comment_strategy_forward_fill": "  forward_fill -- Copy the last valid value forward. Best for step-like or slowly varying signals.",
-            "_comment_strategy_mean":         "  mean         -- Replace with the series mean. Use only when temporal order is not meaningful.",
             "strategy": "linear",
-
-            "_comment_max_fill_length": "Maximum number of consecutive NaN samples to fill. 0 = no limit. Set > 0 to leave long gaps as NaN (e.g. instrument outages that should not be interpolated).",
             "max_fill_length": 0
         }
     }

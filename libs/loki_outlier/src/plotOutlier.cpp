@@ -1,5 +1,6 @@
 #include <loki/outlier/plotOutlier.hpp>
 #include <loki/io/gnuplot.hpp>
+#include <loki/io/plot.hpp>
 #include <loki/core/logger.hpp>
 #include <loki/core/exceptions.hpp>
 
@@ -40,8 +41,8 @@ std::string PlotOutlier::_datasetName() const
 std::string PlotOutlier::_stem(const TimeSeries&  series,
                                 const std::string& plotType) const
 {
-    const auto& meta   = series.metadata();
-    std::string param  = meta.componentName.empty() ? "series" : meta.componentName;
+    const auto& meta  = series.metadata();
+    std::string param = meta.componentName.empty() ? "series" : meta.componentName;
     return m_programName + "_" + _datasetName() + "_" + param + "_" + plotType;
 }
 
@@ -75,6 +76,18 @@ void PlotOutlier::_writeOutlierDat(const TimeSeries&            series,
     }
 }
 
+void PlotOutlier::_writeVectorDat(const std::vector<double>&   times,
+                                   const std::vector<double>&   values,
+                                   const std::filesystem::path& path) const
+{
+    std::ofstream dat(path);
+    dat << std::fixed << std::setprecision(10);
+    const std::size_t n = std::min(times.size(), values.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        dat << times[i] << "\t" << values[i] << "\n";
+    }
+}
+
 // ----------------------------------------------------------------------------
 //  Construction
 // ----------------------------------------------------------------------------
@@ -105,14 +118,15 @@ void PlotOutlier::plotOriginalWithOutliers(const TimeSeries&   series,
         Gnuplot gp;
         gp("set terminal " + _terminal());
         gp("set output '" + _fwdSlash(outPath) + "'");
-        gp("set title 'Outlier detection: " + _datasetName() + "  n="
-           + std::to_string(detection.nOutliers) + " detected  method=" + detection.method + "' noenhanced");
+        gp("set title 'Outlier detection: " + _datasetName()
+           + "  n=" + std::to_string(detection.nOutliers)
+           + " detected  method=" + detection.method + "' noenhanced");
         gp("set xlabel 'MJD'");
         gp("set ylabel 'Value'");
         gp("set grid");
         gp("set key top right");
         gp("set style line 1 lc rgb '#2166ac' lw 1.2");
-        gp("set style line 2 lc rgb '#d7191c' pt 9 ps 1.2");  // pt 9 = filled triangle up
+        gp("set style line 2 lc rgb '#d7191c' pt 9 ps 1.2");
         gp("plot '" + _fwdSlash(datSer) + "' u 1:2 w l ls 1 t 'Original',"
            " '" + _fwdSlash(datOut) + "' u 1:2 w p ls 2 t 'Outlier'");
     } catch (const LOKIException& ex) {
@@ -175,7 +189,8 @@ void PlotOutlier::plotComparison(const TimeSeries& original,
         gp("set ylabel 'Value'");
         gp("set grid");
         gp("set key top right");
-        gp("plot '" + _fwdSlash(datOrig) + "' u 1:2 w l lc rgb '#808080' lw 1.0 t 'Original',"
+        // Original in blue (consistent with plotOriginalWithOutliers)
+        gp("plot '" + _fwdSlash(datOrig) + "' u 1:2 w l lc rgb '#2166ac' lw 1.0 t 'Original',"
            " '" + _fwdSlash(datCln)  + "' u 1:2 w l lc rgb '#1a9641' lw 1.5 t 'Cleaned'");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotOutlier::plotComparison failed: " + std::string(ex.what()));
@@ -198,7 +213,6 @@ void PlotOutlier::plotResiduals(const TimeSeries&   original,
     const auto        outPath = _outPath(stem);
 
     _writeSeriesDat(residuals, datRes);
-    // Outlier markers use residual values, not original.
     _writeOutlierDat(residuals, detection, datOut);
 
     try {
@@ -223,33 +237,98 @@ void PlotOutlier::plotResiduals(const TimeSeries&   original,
 }
 
 // ----------------------------------------------------------------------------
+//  plotSeasonalOverlay
+// ----------------------------------------------------------------------------
+
+void PlotOutlier::plotSeasonalOverlay(const TimeSeries&          series,
+                                       const std::vector<double>& seasonal) const
+{
+    if (seasonal.empty()) return;
+
+    const std::string stem    = _stem(series, "seasonal_overlay");
+    const auto        datOrig = m_cfg.imgDir / (".tmp_" + stem + "_orig.dat");
+    const auto        datSeas = m_cfg.imgDir / (".tmp_" + stem + "_seas.dat");
+    const auto        outPath = _outPath(stem);
+
+    _writeSeriesDat(series, datOrig);
+
+    std::vector<double> times;
+    times.reserve(series.size());
+    for (std::size_t i = 0; i < series.size(); ++i)
+        times.push_back(series[i].time.mjd());
+    _writeVectorDat(times, seasonal, datSeas);
+
+    try {
+        Gnuplot gp;
+        gp("set terminal " + _terminal());
+        gp("set output '" + _fwdSlash(outPath) + "'");
+        gp("set title 'Original + seasonal model: " + _datasetName() + "' noenhanced");
+        gp("set xlabel 'MJD'");
+        gp("set ylabel 'Value'");
+        gp("set grid");
+        gp("set key top right");
+        gp("plot '" + _fwdSlash(datOrig) + "' u 1:2 w l lc rgb '#2166ac' lw 1.0 t 'Original',"
+           " '" + _fwdSlash(datSeas) + "' u 1:2 w l lc rgb '#d7191c' lw 2.0 t 'Seasonal'");
+    } catch (const LOKIException& ex) {
+        LOKI_WARNING("PlotOutlier::plotSeasonalOverlay failed: " + std::string(ex.what()));
+    }
+    std::filesystem::remove(datOrig);
+    std::filesystem::remove(datSeas);
+}
+
+// ----------------------------------------------------------------------------
 //  plotAll
 // ----------------------------------------------------------------------------
 
-void PlotOutlier::plotAll(const TimeSeries&   original,
-                           const TimeSeries&   cleaned,
-                           const TimeSeries&   residuals,
-                           const OutlierResult& detection,
-                           bool                hasResiduals) const
+void PlotOutlier::plotAll(const TimeSeries&          original,
+                           const TimeSeries&          cleaned,
+                           const TimeSeries&          residuals,
+                           const OutlierResult&        detection,
+                           bool                        hasComponent,
+                           const std::vector<double>& seasonal) const
 {
     const auto& p = m_cfg.plots;
 
     if (p.originalSeries)  plotOriginalWithOutliers(original, detection);
     if (p.adjustedSeries)  plotCleaned(cleaned);
     if (p.homogComparison) plotComparison(original, cleaned);
-    if (p.deseasonalized && hasResiduals)
+
+    if (p.deseasonalized && hasComponent)
         plotResiduals(original, residuals, detection);
+
+    if (p.seasonalOverlay && hasComponent && !seasonal.empty())
+        plotSeasonalOverlay(original, seasonal);
+
+    if (p.residualsWithBounds) {
+        const OutlierResult empty{};
+        if (hasComponent) {
+            plotResidualsWithBounds(original, residuals, empty, detection);
+        } else {
+            plotResidualsWithBounds(original, residuals, detection, empty);
+        }
+    }
+
+    // Generic core plots
+    try {
+        Plot corePlot(m_cfg);
+        if (p.timeSeries) corePlot.timeSeries(original);
+        if (p.histogram)  corePlot.histogram(original);
+        if (p.acf)        corePlot.acf(original);
+        if (p.qqPlot)     corePlot.qqPlot(original);
+        if (p.boxplot)    corePlot.boxplot(original);
+    } catch (const LOKIException& ex) {
+        LOKI_WARNING("PlotOutlier::plotAll core plots failed: " + std::string(ex.what()));
+    }
 }
 
 // ----------------------------------------------------------------------------
-//  plotOutlierOverlay  (homogeneity pipeline)
+//  plotOutlierOverlay
 // ----------------------------------------------------------------------------
 
 void PlotOutlier::plotOutlierOverlay(const TimeSeries&   series,
                                       const OutlierResult& preDetection,
                                       const OutlierResult& postDetection) const
 {
-    // Skip if nothing was detected in either pass.
     if (preDetection.nOutliers == 0 && postDetection.nOutliers == 0) return;
 
     const std::string stem    = _stem(series, "outlier_overlay");
@@ -274,11 +353,9 @@ void PlotOutlier::plotOutlierOverlay(const TimeSeries&   series,
         gp("set ylabel 'Value'");
         gp("set grid");
         gp("set key top right");
-
-        // Series in grey, pre-outlier in red (triangle up), post-outlier in blue (triangle down).
         gp("set style line 1 lc rgb '#808080' lw 1.0");
-        gp("set style line 2 lc rgb '#d7191c' pt 9  ps 1.4");  // filled triangle up
-        gp("set style line 3 lc rgb '#2166ac' pt 11 ps 1.4");  // filled triangle down
+        gp("set style line 2 lc rgb '#d7191c' pt 9  ps 1.4");
+        gp("set style line 3 lc rgb '#2166ac' pt 11 ps 1.4");
 
         std::string plotCmd =
             "plot '" + _fwdSlash(datSer) + "' u 1:2 w l ls 1 t 'Series'";
@@ -292,7 +369,6 @@ void PlotOutlier::plotOutlierOverlay(const TimeSeries&   series,
                     + "' u 1:2 w p ls 3 t 'Post-outlier'";
 
         gp(plotCmd);
-
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotOutlier::plotOutlierOverlay failed: " + std::string(ex.what()));
     }
@@ -310,7 +386,6 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
                                            const OutlierResult& preDetection,
                                            const OutlierResult& postDetection) const
 {
-    // Skip if neither pass was active (no location/scale info available).
     const bool hasPre  = (preDetection.n  > 0);
     const bool hasPost = (postDetection.n > 0);
     if (!hasPre && !hasPost) return;
@@ -325,21 +400,12 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
     if (hasPre)  _writeOutlierDat(residuals, preDetection,  datPre);
     if (hasPost) _writeOutlierDat(residuals, postDetection, datPost);
 
-    // Derive threshold bounds from OutlierResult.
-    // threshold stored in OutlierPoint is the actual bound that was exceeded.
-    // For symmetric detectors: upper = location + threshold_offset,
-    // lower = location - threshold_offset.
-    // We recover threshold_offset from the first detected point, or from scale
-    // directly when no outliers were detected (pass ran but found nothing).
     auto getBounds = [](const OutlierResult& det) -> std::pair<double, double> {
         double offset = 0.0;
         if (!det.points.empty()) {
-            // threshold field = the actual cutoff value (e.g. median + k*MAD).
-            // offset from location = threshold - location.
             offset = det.points.front().threshold - det.location;
-            if (offset < 0.0) offset = -offset;  // lower bound case
+            if (offset < 0.0) offset = -offset;
         } else {
-            // No outliers detected but pass ran -- use scale as proxy.
             offset = det.scale;
         }
         return {det.location - offset, det.location + offset};
@@ -359,8 +425,6 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
         gp("set grid");
         gp("set key top right");
 
-        // Horizontal bound lines via arrow (from/to graph edges).
-        // pre-outlier bounds: red dashed
         if (hasPre) {
             const auto [lo, hi] = getBounds(preDetection);
             std::ostringstream oss;
@@ -376,7 +440,6 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
             gp(oss.str());
         }
 
-        // post-outlier bounds: blue dashed
         if (hasPost) {
             const auto [lo, hi] = getBounds(postDetection);
             std::ostringstream oss;
@@ -392,7 +455,6 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
             gp(oss.str());
         }
 
-        // Build plot command.
         std::string plotCmd =
             "plot '" + _fwdSlash(datRes) + "' u 1:2 w l lc rgb '#1a9641' lw 1.0 t 'Residuals'";
 
@@ -405,7 +467,6 @@ void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
                     + "' u 1:2 w p lc rgb '#2166ac' pt 11 ps 1.2 t 'Post-outlier'";
 
         gp(plotCmd);
-
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotOutlier::plotResidualsWithBounds failed: " + std::string(ex.what()));
     }
