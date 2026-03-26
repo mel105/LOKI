@@ -130,6 +130,32 @@ public:
                             const OutlierResult& preDetection,
                             const OutlierResult& postDetection) const;
 
+    /**
+     * @brief Plots deseasonalized residuals with outlier markers and detection bounds.
+     *
+     * Renders the residual series with horizontal bound lines showing the
+     * detection thresholds for each active pass:
+     *   - Pre-outlier bounds  : red dashed horizontal lines at +/- threshold
+     *   - Post-outlier bounds : blue dashed horizontal lines at +/- threshold
+     *   - Pre-outlier points  : red triangles
+     *   - Post-outlier points : blue triangles
+     *
+     * The threshold value is taken from OutlierResult: upper = location + scale*k,
+     * lower = location - scale*k, derived from the first detected point's threshold
+     * field, or from location +/- scale directly when no points are present.
+     *
+     * Output: homogeneity_[dataset]_[param]_residuals_with_bounds.[fmt]
+     *
+     * @param series         Original series (for time axis and metadata).
+     * @param residuals      Deseasonalized residual series.
+     * @param preDetection   Detection result from the pre-deseasonalization pass.
+     * @param postDetection  Detection result from the post-deseasonalization pass.
+     */
+    void plotResidualsWithBounds(const TimeSeries&   series,
+                                 const TimeSeries&   residuals,
+                                 const OutlierResult& preDetection,
+                                 const OutlierResult& postDetection) const;
+
 private:
 
     AppConfig   m_cfg;

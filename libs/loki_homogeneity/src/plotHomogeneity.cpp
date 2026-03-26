@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 
 using namespace loki;
@@ -60,12 +61,36 @@ void PlotHomogeneity::plotAll(const TimeSeries&          original,
                               result.postOutlierDetection.nOutliers > 0);
     if (hasOutliers) {
         try {
-            loki::outlier::PlotOutlier outlierPlotter(m_cfg, "homogeneity");
+            loki::outlier::PlotOutlier outlierPlotter(m_cfg);
             outlierPlotter.plotOutlierOverlay(original,
                                               result.preOutlierDetection,
                                               result.postOutlierDetection);
         } catch (const LOKIException& ex) {
             LOKI_WARNING("PlotHomogeneity: outlier overlay failed: " + std::string(ex.what()));
+        }
+    }
+
+    // Residuals with detection bounds -- always rendered when either pass ran.
+    const bool eitherPassRan = (result.preOutlierDetection.n  > 0 ||
+                                result.postOutlierDetection.n > 0);
+    if (p.deseasonalized && eitherPassRan) {
+        try {
+            // Build a TimeSeries of residuals for the plotter.
+            loki::TimeSeries residualSeries(original.metadata());
+            residualSeries.reserve(original.size());
+            for (std::size_t i = 0; i < original.size(); ++i) {
+                const double v = (i < result.deseasonalizedValues.size())
+                                     ? result.deseasonalizedValues[i]
+                                     : std::numeric_limits<double>::quiet_NaN();
+                residualSeries.append(original[i].time, v);
+            }
+            loki::outlier::PlotOutlier outlierPlotter(m_cfg);
+            outlierPlotter.plotResidualsWithBounds(original,
+                                                   residualSeries,
+                                                   result.preOutlierDetection,
+                                                   result.postOutlierDetection);
+        } catch (const LOKIException& ex) {
+            LOKI_WARNING("PlotHomogeneity: residuals with bounds failed: " + std::string(ex.what()));
         }
     }
 

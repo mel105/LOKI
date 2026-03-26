@@ -300,3 +300,117 @@ void PlotOutlier::plotOutlierOverlay(const TimeSeries&   series,
     std::filesystem::remove(datPre);
     std::filesystem::remove(datPost);
 }
+
+// ----------------------------------------------------------------------------
+//  plotResidualsWithBounds
+// ----------------------------------------------------------------------------
+
+void PlotOutlier::plotResidualsWithBounds(const TimeSeries&   series,
+                                           const TimeSeries&   residuals,
+                                           const OutlierResult& preDetection,
+                                           const OutlierResult& postDetection) const
+{
+    // Skip if neither pass was active (no location/scale info available).
+    const bool hasPre  = (preDetection.n  > 0);
+    const bool hasPost = (postDetection.n > 0);
+    if (!hasPre && !hasPost) return;
+
+    const std::string stem    = _stem(series, "residuals_with_bounds");
+    const auto        datRes  = m_cfg.imgDir / (".tmp_" + stem + "_res.dat");
+    const auto        datPre  = m_cfg.imgDir / (".tmp_" + stem + "_pre.dat");
+    const auto        datPost = m_cfg.imgDir / (".tmp_" + stem + "_post.dat");
+    const auto        outPath = _outPath(stem);
+
+    _writeSeriesDat(residuals, datRes);
+    if (hasPre)  _writeOutlierDat(residuals, preDetection,  datPre);
+    if (hasPost) _writeOutlierDat(residuals, postDetection, datPost);
+
+    // Derive threshold bounds from OutlierResult.
+    // threshold stored in OutlierPoint is the actual bound that was exceeded.
+    // For symmetric detectors: upper = location + threshold_offset,
+    // lower = location - threshold_offset.
+    // We recover threshold_offset from the first detected point, or from scale
+    // directly when no outliers were detected (pass ran but found nothing).
+    auto getBounds = [](const OutlierResult& det) -> std::pair<double, double> {
+        double offset = 0.0;
+        if (!det.points.empty()) {
+            // threshold field = the actual cutoff value (e.g. median + k*MAD).
+            // offset from location = threshold - location.
+            offset = det.points.front().threshold - det.location;
+            if (offset < 0.0) offset = -offset;  // lower bound case
+        } else {
+            // No outliers detected but pass ran -- use scale as proxy.
+            offset = det.scale;
+        }
+        return {det.location - offset, det.location + offset};
+    };
+
+    try {
+        Gnuplot gp;
+        gp("set terminal " + _terminal());
+        gp("set output '" + _fwdSlash(outPath) + "'");
+
+        std::string title = "Residuals + detection bounds: " + _datasetName();
+        if (hasPre)  title += "  pre="  + std::to_string(preDetection.nOutliers);
+        if (hasPost) title += "  post=" + std::to_string(postDetection.nOutliers);
+        gp("set title '" + title + "' noenhanced");
+        gp("set xlabel 'MJD'");
+        gp("set ylabel 'Residual'");
+        gp("set grid");
+        gp("set key top right");
+
+        // Horizontal bound lines via arrow (from/to graph edges).
+        // pre-outlier bounds: red dashed
+        if (hasPre) {
+            const auto [lo, hi] = getBounds(preDetection);
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(6);
+            oss << "set arrow 1 from graph 0, first " << hi
+                << " to graph 1, first " << hi
+                << " nohead lc rgb '#d7191c' lw 1.5 dt 2";
+            gp(oss.str());
+            oss.str("");
+            oss << "set arrow 2 from graph 0, first " << lo
+                << " to graph 1, first " << lo
+                << " nohead lc rgb '#d7191c' lw 1.5 dt 2";
+            gp(oss.str());
+        }
+
+        // post-outlier bounds: blue dashed
+        if (hasPost) {
+            const auto [lo, hi] = getBounds(postDetection);
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(6);
+            oss << "set arrow 3 from graph 0, first " << hi
+                << " to graph 1, first " << hi
+                << " nohead lc rgb '#2166ac' lw 1.5 dt 2";
+            gp(oss.str());
+            oss.str("");
+            oss << "set arrow 4 from graph 0, first " << lo
+                << " to graph 1, first " << lo
+                << " nohead lc rgb '#2166ac' lw 1.5 dt 2";
+            gp(oss.str());
+        }
+
+        // Build plot command.
+        std::string plotCmd =
+            "plot '" + _fwdSlash(datRes) + "' u 1:2 w l lc rgb '#1a9641' lw 1.0 t 'Residuals'";
+
+        if (hasPre && preDetection.nOutliers > 0)
+            plotCmd += ", '" + _fwdSlash(datPre)
+                    + "' u 1:2 w p lc rgb '#d7191c' pt 9 ps 1.2 t 'Pre-outlier'";
+
+        if (hasPost && postDetection.nOutliers > 0)
+            plotCmd += ", '" + _fwdSlash(datPost)
+                    + "' u 1:2 w p lc rgb '#2166ac' pt 11 ps 1.2 t 'Post-outlier'";
+
+        gp(plotCmd);
+
+    } catch (const LOKIException& ex) {
+        LOKI_WARNING("PlotOutlier::plotResidualsWithBounds failed: " + std::string(ex.what()));
+    }
+
+    std::filesystem::remove(datRes);
+    if (hasPre)  std::filesystem::remove(datPre);
+    if (hasPost) std::filesystem::remove(datPost);
+}

@@ -37,6 +37,15 @@ static constexpr int    DEFAULT_HEIGHT_PX =  600;
 static constexpr int    COMPARE_HEIGHT_PX =  900;
 static constexpr double CONF_95_COEFF     = 1.96;  // 95% confidence band multiplier
 
+// Builds a stem string following the project naming convention:
+// core_[dataset]_[parameter]_[plotType]
+static std::string makeStem(const std::string& dataset,
+                             const std::string& parameter,
+                             const std::string& plotType)
+{
+    return "core_" + dataset + "_" + parameter + "_" + plotType;
+}
+
 // ── Construction ──────────────────────────────────────────────────────────────
 
 Plot::Plot(const AppConfig& config)
@@ -59,7 +68,8 @@ void Plot::timeSeries(const TimeSeries& ts, const std::string& title)
         ? (meta.stationId + " - " + meta.componentName)
         : title;
 
-    const std::string stem = "timeSeries_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "timeseries");
     const auto dataFile    = writeTempData(".tmp_" + stem, toXY(ts));
 
     const std::string yLabel = meta.componentName.empty()
@@ -107,7 +117,8 @@ void Plot::comparison(const TimeSeries& analysed,
         ? ("Comparison - " + meta.stationId)
         : title;
 
-    const std::string stem = "comparison_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "comparison");
 
     // Build three-column data: x, analysed, reference.
     // Use the analysed series as the time backbone; reference values are
@@ -185,7 +196,8 @@ void Plot::acf(const TimeSeries& ts, int maxLag)
     }
 
     const auto& meta = ts.metadata();
-    const std::string stem = "acf_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "acf");
     acf(vals, maxLag, stem);
 }
 
@@ -202,7 +214,8 @@ void Plot::histogram(const TimeSeries& ts, int bins)
     }
 
     const auto& meta = ts.metadata();
-    const std::string stem = "histogram_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "histogram");
     histogram(vals, bins, stem);
 }
 
@@ -219,7 +232,8 @@ void Plot::qqPlot(const TimeSeries& ts)
     }
 
     const auto& meta = ts.metadata();
-    const std::string stem = "qqplot_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "qqplot");
     qqPlot(vals, stem);
 }
 
@@ -236,7 +250,8 @@ void Plot::boxplot(const TimeSeries& ts)
     }
 
     const auto& meta = ts.metadata();
-    const std::string stem = "boxplot_" + meta.stationId + "_" + meta.componentName;
+    const std::string dataset = m_config.input.file.stem().string().empty() ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset, meta.componentName.empty() ? meta.stationId : meta.componentName, "boxplot");
     boxplot(vals, stem);
 }
 

@@ -355,6 +355,22 @@ int main(int argc, char* argv[])
                                     result.residuals,
                                     result.detection,
                                     hasComponent);
+
+                    // Residuals with detection bounds.
+                    // Convention: detection on raw series -> preDetection slot.
+                    //             detection on residuals  -> postDetection slot.
+                    const loki::outlier::OutlierResult empty{};
+                    if (hasComponent) {
+                        plotter.plotResidualsWithBounds(ts,
+                                                        result.residuals,
+                                                        empty,
+                                                        result.detection);
+                    } else {
+                        plotter.plotResidualsWithBounds(ts,
+                                                        result.residuals,
+                                                        result.detection,
+                                                        empty);
+                    }
                 } catch (const loki::LOKIException& ex) {
                     LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
                 }

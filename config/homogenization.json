@@ -81,7 +81,7 @@
         "pre_outlier": {
             "_comment": "Coarse outlier removal on the raw gap-filled series, before deseasonalization.",
             "_comment_enabled": "Set true to activate. Removes physically impossible values (sensor overflow, spikes).",
-            "enabled": false,
+            "enabled": true,
             "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad_bounds (works without deseasonalization).",
             "method": "mad_bounds",
             "_comment_mad_multiplier": "Threshold = median +/- k * MAD. Use large k (5.0-10.0) for coarse removal only.",
@@ -108,7 +108,7 @@
          "post_outlier": {
             "_comment": "Fine outlier removal on deseasonalized residuals, before change point detection.",
             "_comment_enabled": "Set true to activate. Removes residual anomalies that would bias change point detection.",
-            "enabled": false,
+            "enabled": true,
             "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad or iqr on residuals.",
             "method": "mad",
             "_comment_mad_multiplier": "Use smaller k (3.0) for fine removal on residuals.",
