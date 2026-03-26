@@ -45,7 +45,6 @@ struct HomogenizerConfig {
 
     OutlierConfig                    preOutlier{};
 
-    /// Uses loki::Deseasonalizer (moved to loki_core).
     loki::Deseasonalizer::Config     deseasonalizer{};
 
     int                              medianYearMinYears{5};
@@ -67,11 +66,26 @@ struct HomogenizerConfig {
  * @brief Output of the homogenization pipeline.
  */
 struct HomogenizerResult {
+    /// Detected structural breaks.
     std::vector<ChangePoint>     changePoints;
+
+    /// Homogenized series (shift-corrected).
     TimeSeries                   adjustedSeries;
+
+    /// Deseasonalized residuals after outlier cleaning (input to change point detection).
     std::vector<double>          deseasonalizedValues;
+
+    /// Seasonal component from Deseasonalizer::Result.
+    /// Use this directly for plotting -- do not recompute from original - residuals.
+    std::vector<double>          seasonal;
+
+    /// Detection report from the pre-deseasonalization outlier pass.
     loki::outlier::OutlierResult preOutlierDetection;
+
+    /// Detection report from the post-deseasonalization outlier pass.
     loki::outlier::OutlierResult postOutlierDetection;
+
+    /// Gap-filled series after pre-outlier removal.
     TimeSeries                   preOutlierCleaned;
 };
 
@@ -84,9 +98,10 @@ struct HomogenizerResult {
  *
  * Pipeline order:
  *   1. GapFiller
- *   2. OutlierCleaner (pre)  -- coarse removal on raw series
+ *   2. OutlierCleaner (pre)  -- coarse removal on raw series, never on residuals
  *   3. Deseasonalizer        -- removes seasonal signal (loki_core)
- *   4. OutlierCleaner (post) -- fine removal on residuals
+ *   4. OutlierCleaner (post) -- fine removal on residuals directly,
+ *                               no seasonal passed (already removed in step 3)
  *   5. MultiChangePointDetector
  *   6. SeriesAdjuster
  */
@@ -96,19 +111,8 @@ public:
     using Config = HomogenizerConfig;
     using Result = HomogenizerResult;
 
-    /**
-     * @brief Constructs a Homogenizer with the given configuration.
-     */
     explicit Homogenizer(HomogenizerConfig cfg = HomogenizerConfig{});
 
-    /**
-     * @brief Runs the full homogenization pipeline on a single time series.
-     *
-     * @param input Input time series. Must not be empty.
-     * @return HomogenizerResult.
-     * @throws loki::DataException   if the input series is empty.
-     * @throws loki::ConfigException if pipeline configuration is incompatible.
-     */
     [[nodiscard]]
     HomogenizerResult process(const TimeSeries& input) const;
 

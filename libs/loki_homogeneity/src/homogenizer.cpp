@@ -23,7 +23,6 @@ std::unique_ptr<loki::outlier::OutlierDetector>
 buildDetector(const OutlierConfig& cfg)
 {
     const std::string& m = cfg.method;
-
     if (m == "iqr")
         return std::make_unique<loki::outlier::IqrDetector>(cfg.iqrMultiplier);
     if (m == "mad" || m == "mad_bounds")
@@ -39,12 +38,10 @@ loki::outlier::OutlierCleaner::Config
 buildCleanerConfig(const OutlierConfig& cfg)
 {
     loki::outlier::OutlierCleaner::Config c;
-
     const std::string& rs = cfg.replacementStrategy;
     if      (rs == "forward_fill") { c.fillStrategy = GapFiller::Strategy::FORWARD_FILL; }
     else if (rs == "mean")         { c.fillStrategy = GapFiller::Strategy::MEAN;         }
     else                           { c.fillStrategy = GapFiller::Strategy::LINEAR;        }
-
     c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.maxFillLength));
     return c;
 }
@@ -58,8 +55,6 @@ buildCleanerConfig(const OutlierConfig& cfg)
 Homogenizer::Homogenizer(Config cfg)
     : m_cfg{std::move(cfg)}
 {}
-
-// ----------------------------------------------------------------------------
 
 Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
 {
@@ -93,15 +88,28 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
 
     // ------------------------------------------------------------------
     // Step 2 -- Pre-deseasonalization outlier removal
+    //
+    // Operates on the raw (gap-filled) series. Purpose: remove only the
+    // coarsest anomalies (sensor overflow, physically impossible values)
+    // that would corrupt the seasonal profile construction in Step 3.
+    //
+    // Use a large mad_multiplier (>= 5.0) -- this pass must not remove
+    // legitimate seasonal peaks, only values far outside any reasonable
+    // physical range.
+    //
+    // clean(working) is called WITHOUT a seasonal vector: detection runs
+    // on the original-scale values, no seasonal subtraction occurs here.
     // ------------------------------------------------------------------
     if (m_cfg.preOutlier.enabled) {
         LOKI_INFO("Homogenizer: pre-outlier removal (method="
-                  + m_cfg.preOutlier.method + ")");
+                  + m_cfg.preOutlier.method
+                  + ", multiplier=" + std::to_string(m_cfg.preOutlier.madMultiplier) + ")");
 
         auto detector   = buildDetector(m_cfg.preOutlier);
         auto cleanerCfg = buildCleanerConfig(m_cfg.preOutlier);
         loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
 
+        // No seasonal argument -- detection on raw values only.
         auto cleanResult = cleaner.clean(working);
 
         result.preOutlierDetection = cleanResult.detection;
@@ -116,6 +124,9 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
 
     // ------------------------------------------------------------------
     // Step 3 -- Deseasonalization
+    //
+    // Constructs the seasonal model from the pre-outlier-cleaned series
+    // and subtracts it. Result: residuals centred near zero.
     // ------------------------------------------------------------------
     loki::Deseasonalizer deseasonalizer{m_cfg.deseasonalizer};
     loki::Deseasonalizer::Result deseasResult = [&]() {
@@ -130,30 +141,41 @@ Homogenizer::Result Homogenizer::process(const TimeSeries& input) const
         return deseasonalizer.deseasonalize(working);
     }();
 
+    // Store seasonal for plotting -- do not recompute in main.
+    result.seasonal = deseasResult.seasonal;
+
     LOKI_INFO("Homogenizer: deseasonalization complete ("
               + std::to_string(deseasResult.residuals.size()) + " residuals).");
 
     // ------------------------------------------------------------------
     // Step 4 -- Post-deseasonalization outlier removal
+    //
+    // deseasResult.series already contains residuals (seasonal removed).
+    // We pass it to clean() WITHOUT seasonal -- the cleaner must NOT
+    // subtract seasonal again. Detection operates directly on residuals.
     // ------------------------------------------------------------------
     std::vector<double> detectionResiduals = deseasResult.residuals;
 
     if (m_cfg.postOutlier.enabled) {
         LOKI_INFO("Homogenizer: post-outlier removal (method="
-                  + m_cfg.postOutlier.method + ")");
+                  + m_cfg.postOutlier.method
+                  + ", multiplier=" + std::to_string(m_cfg.postOutlier.madMultiplier) + ")");
 
         auto detector   = buildDetector(m_cfg.postOutlier);
         auto cleanerCfg = buildCleanerConfig(m_cfg.postOutlier);
         loki::outlier::OutlierCleaner cleaner(cleanerCfg, *detector);
 
-        auto cleanResult = cleaner.clean(deseasResult.series, deseasResult.seasonal);
+        // deseasResult.series = residuals. Pass WITHOUT seasonal --
+        // seasonal was already removed in Step 3.
+        auto cleanResult = cleaner.clean(deseasResult.series);
 
         result.postOutlierDetection = cleanResult.detection;
 
+        // Use the cleaned residual values for change point detection.
         detectionResiduals.clear();
-        detectionResiduals.reserve(cleanResult.residuals.size());
-        for (std::size_t i = 0; i < cleanResult.residuals.size(); ++i) {
-            detectionResiduals.push_back(cleanResult.residuals[i].value);
+        detectionResiduals.reserve(cleanResult.cleaned.size());
+        for (std::size_t i = 0; i < cleanResult.cleaned.size(); ++i) {
+            detectionResiduals.push_back(cleanResult.cleaned[i].value);
         }
 
         LOKI_INFO("Homogenizer: post-outlier removed "

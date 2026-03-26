@@ -32,19 +32,9 @@ static void printHelp()
         << "Usage:\n"
         << "  loki_homogeneity.exe <config.json> [options]\n"
         << "\n"
-        << "Arguments:\n"
-        << "  <config.json>   Path to the JSON configuration file.\n"
-        << "                  Defaults to config/loki_homogeneity.json\n"
-        << "\n"
         << "Options:\n"
-        << "  --help          Show this message and exit.\n"
-        << "  --version       Show version string and exit.\n"
-        << "\n"
-        << "Pipeline steps (controlled via JSON 'homogeneity' section):\n"
-        << "  1. GapFiller\n"
-        << "  2. Deseasonalizer\n"
-        << "  3. MultiChangePointDetector\n"
-        << "  4. SeriesAdjuster\n";
+        << "  --help     Show this message and exit.\n"
+        << "  --version  Show version string and exit.\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -66,8 +56,7 @@ static CliArgs parseArgs(int argc, char* argv[])
         else if (arg == "--version" || arg == "-v") { args.showVersion = true; }
         else if (arg[0] != '-') { args.configPath = argv[i]; }
         else {
-            std::cerr << "[loki_homogeneity] Unknown option: " << arg
-                      << "  (use --help)\n";
+            std::cerr << "[loki_homogeneity] Unknown option: " << arg << "  (use --help)\n";
         }
     }
     return args;
@@ -81,10 +70,8 @@ static loki::homogeneity::HomogenizerConfig
 buildHomogenizerConfig(const loki::AppConfig& cfg)
 {
     const auto& h = cfg.homogeneity;
-
     loki::homogeneity::HomogenizerConfig hcfg{};
 
-    // Gap filling
     hcfg.applyGapFilling = h.applyGapFilling;
     {
         const std::string& s = h.gapFilling.strategy;
@@ -96,7 +83,6 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
             std::max(0, h.gapFilling.maxFillLength));
     }
 
-    // Outlier helper lambda
     auto mapOutlier = [](const loki::OutlierFilterConfig& src,
                          double defaultMadMultiplier)
         -> loki::homogeneity::OutlierConfig
@@ -117,7 +103,6 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
     hcfg.preOutlier  = mapOutlier(h.preOutlier,  5.0);
     hcfg.postOutlier = mapOutlier(h.postOutlier,  3.0);
 
-    // Deseasonalization -- loki::Deseasonalizer is now in loki_core
     {
         const std::string& s = h.deseasonalization.strategy;
         if      (s == "median_year")    hcfg.deseasonalizer.strategy =
@@ -129,14 +114,12 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
         hcfg.deseasonalizer.maWindowSize = h.deseasonalization.maWindowSize;
     }
 
-    // Detection
     hcfg.detector.minSegmentPoints         = static_cast<std::size_t>(
         std::max(0, h.detection.minSegmentPoints));
     hcfg.detector.minSegmentSeconds        = h.detection.minSegmentSeconds;
     hcfg.detector.detectorConfig.significanceLevel  = h.detection.significanceLevel;
     hcfg.detector.detectorConfig.acfDependenceLimit = h.detection.acfDependenceLimit;
 
-    // Adjustment
     hcfg.applyAdjustment = h.applyAdjustment;
 
     return hcfg;
@@ -165,13 +148,16 @@ static void writeCsv(const std::filesystem::path&                csvDir,
         return;
     }
 
-    csv << "mjd;original;deseasonalized;adjusted;flag;change_point\n";
+    csv << "mjd;original;seasonal;deseasonalized;adjusted;flag;change_point\n";
     csv << std::fixed << std::setprecision(10);
 
     const std::size_t n = original.size();
     for (std::size_t i = 0; i < n; ++i) {
         const double mjd     = original[i].time.mjd();
         const double origVal = original[i].value;
+        const double seas    = (i < result.seasonal.size())
+                                   ? result.seasonal[i]
+                                   : std::numeric_limits<double>::quiet_NaN();
         const double deseas  = (i < result.deseasonalizedValues.size())
                                    ? result.deseasonalizedValues[i]
                                    : std::numeric_limits<double>::quiet_NaN();
@@ -185,11 +171,12 @@ static void writeCsv(const std::filesystem::path&                csvDir,
             if (cp.globalIndex == i) { isCp = true; break; }
         }
 
-        csv << mjd      << ";"
-            << origVal  << ";"
-            << deseas   << ";"
-            << adj      << ";"
-            << flag     << ";"
+        csv << mjd     << ";"
+            << origVal << ";"
+            << seas    << ";"
+            << deseas  << ";"
+            << adj     << ";"
+            << flag    << ";"
             << (isCp ? 1 : 0) << "\n";
     }
 
@@ -203,11 +190,9 @@ static void writeCsv(const std::filesystem::path&                csvDir,
 int main(int argc, char* argv[])
 {
     const CliArgs args = parseArgs(argc, argv);
-
     if (args.showHelp)    { printHelp();    return EXIT_SUCCESS; }
     if (args.showVersion) { printVersion(); return EXIT_SUCCESS; }
 
-    // -- Load config ----------------------------------------------------------
     loki::AppConfig cfg;
     try {
         cfg = loki::ConfigLoader::load(args.configPath);
@@ -216,7 +201,6 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // -- Logger ---------------------------------------------------------------
     try {
         loki::Logger::initDefault(cfg.logDir, "loki_homogeneity", cfg.output.logLevel);
     } catch (const loki::LOKIException& ex) {
@@ -228,12 +212,10 @@ int main(int argc, char* argv[])
     LOKI_INFO("Config:    " + args.configPath.string());
     LOKI_INFO("Workspace: " + cfg.workspace.string());
 
-    // -- Load data ------------------------------------------------------------
     std::vector<loki::LoadResult> loadResults;
     try {
         loki::DataManager dm(cfg);
         loadResults = dm.load();
-
         for (const auto& r : loadResults) {
             LOKI_INFO("Loaded: " + r.filePath.filename().string()
                       + "  lines=" + std::to_string(r.linesRead)
@@ -249,11 +231,9 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // -- Build HomogenizerConfig once -----------------------------------------
     const auto hcfg = buildHomogenizerConfig(cfg);
     const loki::homogeneity::Homogenizer homogenizer{hcfg};
 
-    // -- Descriptive stats (optional) -----------------------------------------
     if (cfg.stats.enabled) {
         try {
             for (const auto& r : loadResults) {
@@ -263,8 +243,7 @@ int main(int argc, char* argv[])
                     for (const auto& obs : ts) vals.push_back(obs.value);
                     const auto st = loki::stats::summarize(
                         vals, cfg.stats.nanPolicy, cfg.stats.hurst);
-                    LOKI_INFO(loki::stats::formatSummary(
-                        st, ts.metadata().componentName));
+                    LOKI_INFO(loki::stats::formatSummary(st, ts.metadata().componentName));
                 }
             }
         } catch (const loki::LOKIException& ex) {
@@ -272,7 +251,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    // -- Homogenization pipeline ----------------------------------------------
     loki::homogeneity::PlotHomogeneity plotter{cfg};
 
     for (const auto& r : loadResults) {
@@ -305,15 +283,9 @@ int main(int argc, char* argv[])
             }
 
             try {
-                std::vector<double> seasonal;
-                seasonal.reserve(ts.size());
-                for (std::size_t i = 0; i < ts.size(); ++i) {
-                    const double res = (i < result.deseasonalizedValues.size())
-                                           ? result.deseasonalizedValues[i]
-                                           : 0.0;
-                    seasonal.push_back(ts[i].value - res);
-                }
-                plotter.plotAll(ts, result, seasonal);
+                // Use result.seasonal directly -- set by Homogenizer from
+                // Deseasonalizer::Result. Do not recompute here.
+                plotter.plotAll(ts, result, result.seasonal);
             } catch (const loki::LOKIException& ex) {
                 LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
             }

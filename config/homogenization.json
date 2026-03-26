@@ -3,48 +3,28 @@
 
     "input": {
         "file": "CLIM_DATA_EX1.txt",
-
-        "_comment_time_format": "Options: gpst_seconds | gpst_week_sow | utc | mjd | unix | index",
         "time_format": "utc",
-
-        "_comment_time_columns": "0-based field indices that form the time token. Empty = field 0 only. Use [0,1] when date and time are in separate columns, e.g. '1990-01-01' '00:00:00'.",
         "time_columns": [0, 1],
-
-        "_comment_delimiter": "Field separator. Use ' ' for space-delimited files.",
         "delimiter": " ",
-
-        "_comment_comment_char": "Lines starting with this character are skipped.",
         "comment_char": "%",
-
-        "_comment_columns": "1-based indices of value columns to load. Empty = load all value columns. Index counts from 1 after the time field(s).",
         "columns": [3],
-
-        "_comment_merge_strategy": "Options: separate (each file -> independent series) | merge (all files concatenated and sorted).",
         "merge_strategy": "separate"
     },
 
     "output": {
-        "_comment_log_level": "Options: debug | info | warning | error",
         "log_level": "info"
     },
 
     "plots": {
-        "_comment_output_format": "Options: png | eps | svg",
         "output_format": "png",
-
-        "_comment_time_format": "X-axis label format. Options: mjd | utc | gpst_seconds | unix. Empty = inherit from input.time_format.",
         "time_format": "utc",
-
         "enabled": {
-            "_comment_generic": "Generic plots applied to the original series.",
-            "time_series":  true,
-            "comparison":   false,
-            "histogram":    true,
-            "acf":          true,
-            "qq_plot":      true,
-            "boxplot":      true,
-
-            "_comment_homogeneity": "Homogeneity pipeline plots.",
+            "time_series":       true,
+            "comparison":        false,
+            "histogram":         true,
+            "acf":               true,
+            "qq_plot":           true,
+            "boxplot":           true,
             "original_series":   true,
             "seasonal_overlay":  true,
             "deseasonalized":    true,
@@ -52,91 +32,56 @@
             "adjusted_series":   true,
             "homog_comparison":  true,
             "shift_magnitudes":  true,
-            "correction_curve":  true
+            "correction_curve":  true,
+            "outlier_overlay":   true,
+            "residuals_with_bounds": true
         }
     },
 
     "stats": {
         "enabled": true,
-        "_comment_nan_policy": "Options: skip | throw | propagate",
         "nan_policy": "skip",
-        "_comment_hurst": "Compute Hurst exponent. Slow for large series.",
         "hurst": false
     },
 
     "homogeneity": {
         "apply_gap_filling": true,
-
         "gap_filling": {
-            "_comment_strategy": "Options: linear | forward_fill | mean | none",
             "strategy": "linear",
-            "_comment_max_fill_length": "Max consecutive missing samples to fill. 0 = unlimited.",
             "max_fill_length": 0,
-            "_comment_gap_threshold_factor": "Time jump > median_step * factor is treated as a gap. Default 1.5.",
             "gap_threshold_factor": 1.5,
-            "_comment_min_series_years": "Minimum series span in years for MEDIAN_YEAR gap filling.",
             "min_series_years": 10
         },
-
         "pre_outlier": {
-            "_comment": "Coarse outlier removal on the raw gap-filled series, before deseasonalization.",
-            "_comment_enabled": "Set true to activate. Removes physically impossible values (sensor overflow, spikes).",
             "enabled": true,
-            "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad_bounds (works without deseasonalization).",
             "method": "mad_bounds",
-            "_comment_mad_multiplier": "Threshold = median +/- k * MAD. Use large k (5.0-10.0) for coarse removal only.",
-            "mad_multiplier": 5,
-            "_comment_iqr_multiplier": "Used only when method=iqr. Standard box-plot rule: 1.5 (mild), 3.0 (extreme).",
+            "mad_multiplier": 5.0,
             "iqr_multiplier": 1.5,
-            "_comment_zscore_threshold": "Used only when method=zscore. Default 3.0.",
-            "zscore_threshold": 3,
-            "_comment_replacement_strategy": "Options: linear | forward_fill | mean",
+            "zscore_threshold": 3.0,
             "replacement_strategy": "linear",
-            "_comment_max_fill_length": "Max consecutive outlier positions to fill. 0 = unlimited.",
             "max_fill_length": 0
-         },
-
+        },
         "deseasonalization": {
-            "_comment_strategy": "Options: median_year (climatological/GNSS, requires calendar timestamp) | moving_average (sensor/signal data) | none",
             "strategy": "median_year",
-            "_comment_ma_window_size": "Window in samples for moving_average. Daily data: 365=1yr. 6h data: 1461=1yr. 1s data: 86400=1day.",
             "ma_window_size": 1461,
-            "_comment_median_year_min_years": "Min years of data per slot in the median year profile. Slots below this produce NaN.",
             "median_year_min_years": 5
         },
-
-         "post_outlier": {
-            "_comment": "Fine outlier removal on deseasonalized residuals, before change point detection.",
-            "_comment_enabled": "Set true to activate. Removes residual anomalies that would bias change point detection.",
+        "post_outlier": {
             "enabled": true,
-            "_comment_method": "Options: mad_bounds | iqr | mad | zscore. Recommended: mad or iqr on residuals.",
             "method": "mad",
-            "_comment_mad_multiplier": "Use smaller k (3.0) for fine removal on residuals.",
-            "mad_multiplier": 3,
-            "_comment_iqr_multiplier": "Used only when method=iqr.",
+            "mad_multiplier": 3.0,
             "iqr_multiplier": 1.5,
-            "_comment_zscore_threshold": "Used only when method=zscore.",
-            "zscore_threshold": 3,
-            "_comment_replacement_strategy": "Options: linear | forward_fill | mean",
+            "zscore_threshold": 3.0,
             "replacement_strategy": "linear",
-            "_comment_max_fill_length": "Max consecutive outlier positions to fill. 0 = unlimited.",
             "max_fill_length": 0
         },
-
         "detection": {
-            "_comment_min_segment_points": "Min observations in a segment before detection is attempted.",
             "min_segment_points": 60,
-            "_comment_min_segment_duration": "Minimum segment duration before detection is attempted. Format: 1y | 180d | 6h | 30m | 60s. Overrides min_segment_seconds if set. For 6h data: 180d = ~6 months. For daily data: 1y = 1 year. For hourly: 90d. For second data: 1h.",
             "min_segment_duration": "180d",
-            "_comment_min_segment_seconds": "Alternative: min segment in seconds (used if min_segment_duration is absent). 0 = disabled.",
             "min_segment_seconds": 0.0,
-            "_comment_significance_level": "SNHT significance level. Options: 0.01 | 0.05 | 0.10. Lower = fewer detections.",
-            "significance_level": 0.05,
-            "_comment_acf_dependence_limit": "If ACF lag-1 exceeds this, critical value is scaled by sigmaStar to correct for autocorrelation.",
+            "significance_level": 0.01,
             "acf_dependence_limit": 0.2
         },
-
-        "_comment_apply_adjustment": "If false, change points are detected but series is not modified.",
         "apply_adjustment": true
     }
 }
