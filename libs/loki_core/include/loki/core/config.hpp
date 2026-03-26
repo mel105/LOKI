@@ -162,20 +162,38 @@ struct OutlierConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  PlotOptionsConfig
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Fine-grained options for individual plot types.
+ *
+ * These are optional overrides; sensible defaults are applied when absent
+ * from the JSON config. The defaults adapt to the series size at runtime
+ * (e.g. acfMaxLag = 0 means auto: min(N/10, 200)).
+ */
+struct PlotOptionsConfig {
+    /// Maximum lag for ACF plot. 0 = auto: min(N/10, 200).
+    int acfMaxLag{0};
+
+    /// Number of bins for histogram. 0 = auto: Sturges rule ceil(log2(N)+1).
+    int histogramBins{0};
+};
+
+// -----------------------------------------------------------------------------
 //  PlotConfig
 // -----------------------------------------------------------------------------
 
 /**
  * @brief Configuration for plot output.
- *
- * Generic plots are shared by all apps.
- * Homogeneity-specific and outlier-specific plots are gated by their own flags.
  */
 struct PlotConfig {
     std::string outputFormat{"png"};
     std::string timeFormat{""};
 
-    // -- Generic plots (loki_core/plot) ---------------------------------------
+    PlotOptionsConfig options{};
+
+    // -- Generic plots --------------------------------------------------------
     bool timeSeries {true};
     bool comparison {false};
     bool histogram  {true};
@@ -184,13 +202,13 @@ struct PlotConfig {
     bool boxplot    {false};
 
     // -- Outlier pipeline plots -----------------------------------------------
-    bool originalSeries      {true};   ///< Original series + outlier markers
-    bool adjustedSeries      {true};   ///< Cleaned series line plot
-    bool homogComparison     {true};   ///< Original vs cleaned overlay
-    bool deseasonalized      {true};   ///< Residuals + outlier markers
-    bool seasonalOverlay     {true};   ///< Original + seasonal model overlay
-    bool residualsWithBounds {true};   ///< Residuals + detection bound lines
-    bool outlierOverlay      {false};  ///< Pre + post outlier on one plot (homogeneity only)
+    bool originalSeries      {true};
+    bool adjustedSeries      {true};
+    bool homogComparison     {true};
+    bool deseasonalized      {true};
+    bool seasonalOverlay     {true};
+    bool residualsWithBounds {true};
+    bool outlierOverlay      {false};
 
     // -- Homogeneity pipeline plots -------------------------------------------
     bool changePoints     {true};
@@ -212,19 +230,6 @@ struct StatsConfig {
 //  AppConfig
 // -----------------------------------------------------------------------------
 
-/**
- * @brief Top-level application configuration.
- *
- * Expected directory layout under workspace:
- * @code
- *   <workspace>/
- *   +-- INPUT/
- *   +-- OUTPUT/
- *       +-- LOG/
- *       +-- CSV/
- *       +-- IMG/
- * @endcode
- */
 struct AppConfig {
     std::filesystem::path workspace;
 

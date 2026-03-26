@@ -14,22 +14,14 @@ namespace loki {
 
 using json = nlohmann::json;
 
-// -----------------------------------------------------------------------------
-//  Helpers
-// -----------------------------------------------------------------------------
-
 namespace {
 
 template<typename T>
-T getOrDefault(const json&        j,
-               const std::string& key,
-               const T&           defaultVal,
-               bool               warnIfMissing = true)
+T getOrDefault(const json& j, const std::string& key, const T& defaultVal,
+               bool warnIfMissing = true)
 {
     if (!j.contains(key)) {
-        if (warnIfMissing) {
-            LOKI_WARNING("Config key '" + key + "' not found -- using default.");
-        }
+        if (warnIfMissing) LOKI_WARNING("Config key '" + key + "' not found -- using default.");
         return defaultVal;
     }
     return j.at(key).get<T>();
@@ -55,9 +47,8 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     }
 
     json j;
-    try {
-        ifs >> j;
-    } catch (const json::parse_error& e) {
+    try { ifs >> j; }
+    catch (const json::parse_error& e) {
         throw ParseException(
             std::string("ConfigLoader: JSON parse error in '")
             + jsonPath.string() + "': " + e.what());
@@ -114,9 +105,8 @@ InputConfig ConfigLoader::_parseInput(const nlohmann::json& j,
         cfg.file = _resolvePath(j.at("file").get<std::string>(), inputDir);
     } else if (hasList) {
         cfg.mode = InputMode::FILE_LIST;
-        for (const auto& f : j.at("files")) {
+        for (const auto& f : j.at("files"))
             cfg.files.push_back(_resolvePath(f.get<std::string>(), inputDir));
-        }
     } else if (hasScan) {
         cfg.mode    = InputMode::SCAN_DIRECTORY;
         cfg.scanDir = inputDir;
@@ -127,31 +117,26 @@ InputConfig ConfigLoader::_parseInput(const nlohmann::json& j,
         cfg.scanDir = inputDir;
     }
 
-    const std::string tfStr = getOrDefault<std::string>(j, "time_format", "gpst_seconds");
-    cfg.timeFormat = _parseTimeFormat(tfStr);
-
-    const std::string delimStr = getOrDefault<std::string>(j, "delimiter", ";");
-    cfg.delimiter = delimStr.empty() ? ';' : delimStr.front();
-
+    cfg.timeFormat  = _parseTimeFormat(getOrDefault<std::string>(j, "time_format", "gpst_seconds"));
+    const std::string delimStr   = getOrDefault<std::string>(j, "delimiter",    ";");
     const std::string commentStr = getOrDefault<std::string>(j, "comment_char", "%");
+    cfg.delimiter   = delimStr.empty()   ? ';' : delimStr.front();
     cfg.commentChar = commentStr.empty() ? '%' : commentStr.front();
 
     if (j.contains("columns")) {
         cfg.columns = j.at("columns").get<std::vector<int>>();
         cfg.columns.erase(
             std::remove_if(cfg.columns.begin(), cfg.columns.end(),
-                        [](int c) { return c <= 1; }),
+                           [](int c) { return c <= 1; }),
             cfg.columns.end());
     } else {
         LOKI_WARNING("Config 'input.columns' not specified -- all value columns will be loaded.");
     }
 
-    if (j.contains("time_columns")) {
+    if (j.contains("time_columns"))
         cfg.timeColumns = j.at("time_columns").get<std::vector<int>>();
-    }
 
-    const std::string mergeStr = getOrDefault<std::string>(j, "merge_strategy", "separate");
-    cfg.mergeStrategy = _parseMergeStrategy(mergeStr);
+    cfg.mergeStrategy = _parseMergeStrategy(getOrDefault<std::string>(j, "merge_strategy", "separate"));
 
     return cfg;
 }
@@ -214,9 +199,8 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 
     if (j.contains("pre_outlier")) {
         cfg.preOutlier = _parseOutlierFilter(j.at("pre_outlier"), 5.0);
-        if (cfg.preOutlier.enabled) {
+        if (cfg.preOutlier.enabled)
             LOKI_INFO("Config: homogeneity.pre_outlier enabled (method=" + cfg.preOutlier.method + ").");
-        }
     }
 
     if (j.contains("deseasonalization")) {
@@ -228,9 +212,8 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 
     if (j.contains("post_outlier")) {
         cfg.postOutlier = _parseOutlierFilter(j.at("post_outlier"), 3.0);
-        if (cfg.postOutlier.enabled) {
+        if (cfg.postOutlier.enabled)
             LOKI_INFO("Config: homogeneity.post_outlier enabled (method=" + cfg.postOutlier.method + ").");
-        }
     }
 
     if (j.contains("detection")) {
@@ -289,10 +272,17 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("output_format")) cfg.outputFormat = j["output_format"].get<std::string>();
     if (j.contains("time_format"))   cfg.timeFormat   = j["time_format"].get<std::string>();
 
+    // plot_options section
+    if (j.contains("plot_options")) {
+        const auto& po = j["plot_options"];
+        if (po.contains("acf_max_lag"))      cfg.options.acfMaxLag      = po["acf_max_lag"].get<int>();
+        if (po.contains("histogram_bins"))   cfg.options.histogramBins  = po["histogram_bins"].get<int>();
+    }
+
     if (j.contains("enabled")) {
         const auto& e = j["enabled"];
 
-        // Generic plots
+        // Generic
         if (e.contains("time_series"))  cfg.timeSeries  = e["time_series"].get<bool>();
         if (e.contains("comparison"))   cfg.comparison  = e["comparison"].get<bool>();
         if (e.contains("histogram"))    cfg.histogram   = e["histogram"].get<bool>();
@@ -300,7 +290,7 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("qq_plot"))      cfg.qqPlot      = e["qq_plot"].get<bool>();
         if (e.contains("boxplot"))      cfg.boxplot     = e["boxplot"].get<bool>();
 
-        // Outlier pipeline plots
+        // Outlier pipeline
         if (e.contains("original_series"))       cfg.originalSeries      = e["original_series"].get<bool>();
         if (e.contains("adjusted_series"))       cfg.adjustedSeries      = e["adjusted_series"].get<bool>();
         if (e.contains("homog_comparison"))      cfg.homogComparison     = e["homog_comparison"].get<bool>();
@@ -309,7 +299,7 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("residuals_with_bounds")) cfg.residualsWithBounds = e["residuals_with_bounds"].get<bool>();
         if (e.contains("outlier_overlay"))       cfg.outlierOverlay      = e["outlier_overlay"].get<bool>();
 
-        // Homogeneity pipeline plots
+        // Homogeneity pipeline
         if (e.contains("change_points"))    cfg.changePoints    = e["change_points"].get<bool>();
         if (e.contains("shift_magnitudes")) cfg.shiftMagnitudes = e["shift_magnitudes"].get<bool>();
         if (e.contains("correction_curve")) cfg.correctionCurve = e["correction_curve"].get<bool>();
@@ -325,11 +315,9 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
 StatsConfig ConfigLoader::_parseStats(const nlohmann::json& j)
 {
     StatsConfig cfg;
-
     if (!j.contains("stats")) return cfg;
 
     const auto& s = j.at("stats");
-
     if (s.contains("enabled")) cfg.enabled = s.at("enabled").get<bool>();
     if (s.contains("hurst"))   cfg.hurst   = s.at("hurst").get<bool>();
 
@@ -344,7 +332,6 @@ StatsConfig ConfigLoader::_parseStats(const nlohmann::json& j)
                 "'. Expected: skip | throw | propagate.");
         }
     }
-
     return cfg;
 }
 
@@ -372,11 +359,7 @@ MergeStrategy ConfigLoader::_parseMergeStrategy(const std::string& s)
     return MergeStrategy::SEPARATE;
 }
 
-// -----------------------------------------------------------------------------
-//  Private: path resolution
-// -----------------------------------------------------------------------------
-
-std::filesystem::path ConfigLoader::_resolvePath(const std::string&           raw,
+std::filesystem::path ConfigLoader::_resolvePath(const std::string& raw,
                                                   const std::filesystem::path& baseDir)
 {
     const std::filesystem::path p(raw);
