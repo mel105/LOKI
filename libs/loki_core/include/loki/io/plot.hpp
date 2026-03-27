@@ -11,6 +11,16 @@
 namespace loki {
 
 /**
+ * @brief Distribution type selector for cdfPlot().
+ */
+enum class DistributionType {
+    NORMAL,  ///< Normal distribution N(mu, sigma^2). Params: {} -> auto-fit from data.
+    T,       ///< Student's t-distribution. Params: {df}.
+    CHI2,    ///< Chi-squared distribution. Params: {df}.
+    F        ///< F-distribution. Params: {df1, df2}.
+};
+
+/**
  * @brief High-level plotting interface using gnuplot as the rendering backend.
  *
  * Plot wraps the low-level Gnuplot pipe and provides ready-made plot types
@@ -225,6 +235,79 @@ public:
      */
     void boxplot(const std::vector<double>& values, const std::string& title = "boxplot");
 
+    // ── Statistical diagnostic plots ──────────────────────────────────────────
+
+    /**
+     * @brief Empirical CDF overlaid with a theoretical CDF curve.
+     *
+     * The step function is the empirical CDF (ECDF) of the data.
+     * The smooth curve is the theoretical CDF selected by dist.
+     * A vertical dashed line marks the point of maximum deviation D
+     * (the Kolmogorov-Smirnov statistic).
+     *
+     * Distribution parameters (params):
+     *   NORMAL: {}          -> mean and sigma fitted from data automatically.
+     *           {mu, sigma} -> use supplied parameters.
+     *   T:      {df}
+     *   CHI2:   {df}
+     *   F:      {df1, df2}
+     *
+     * Output file: imgDir/<title>.png
+     *
+     * @param values Vector of data values (NaN values are skipped).
+     * @param dist   Distribution type to compare against.
+     * @param params Distribution parameters (see above).
+     * @param title  Output filename stem and plot title prefix.
+     * @throws DataException      if fewer than 5 valid values are present.
+     * @throws AlgorithmException if params are inconsistent with dist.
+     * @throws IoException        on gnuplot or file I/O failure.
+     */
+    void cdfPlot(const std::vector<double>& values,
+                 DistributionType           dist   = DistributionType::NORMAL,
+                 const std::vector<double>& params = {},
+                 const std::string&         title  = "cdf");
+
+    /**
+     * @brief QQ-plot against the standard normal with 95% confidence bands.
+     *
+     * The confidence bands are based on the Kolmogorov-Smirnov 95% critical
+     * value applied pointwise to the normal quantile scale, giving an
+     * approximate simultaneous envelope.
+     *
+     * Output file: imgDir/<title>.png
+     *
+     * @param values Vector of data values (NaN values are skipped).
+     * @param title  Output filename stem.
+     * @throws DataException if fewer than 3 valid values are present.
+     * @throws IoException   on gnuplot or file I/O failure.
+     */
+    void qqPlotWithBands(const std::vector<double>& values,
+                         const std::string&          title = "qqplot_bands");
+
+    /**
+     * @brief Four-panel residual diagnostics plot.
+     *
+     * Panel 1 (top-left):  Residuals vs. fitted values (or index if
+     *                       fittedValues is empty). A horizontal zero line
+     *                       is drawn. Useful for detecting heteroscedasticity.
+     * Panel 2 (top-right): QQ-plot with 95% confidence bands (calls
+     *                       the same logic as qqPlotWithBands).
+     * Panel 3 (bottom-left): Histogram of residuals with normal fit overlay.
+     * Panel 4 (bottom-right): ACF of residuals with 95% confidence band.
+     *
+     * Output file: imgDir/<title>.png
+     *
+     * @param residuals   Regression or filter residuals (NaN values are skipped).
+     * @param fittedValues Fitted/predicted values for x-axis of panel 1.
+     *                     If empty, sequential index is used.
+     * @param title       Output filename stem.
+     * @throws DataException if fewer than 5 valid residuals are present.
+     * @throws IoException   on gnuplot or file I/O failure.
+     */
+    void residualDiagnostics(const std::vector<double>& residuals,
+                             const std::vector<double>& fittedValues = {},
+                             const std::string&          title        = "diagnostics");
+
 private:
 
     AppConfig m_config;  ///< Full application configuration (copied).
@@ -233,31 +316,16 @@ private:
 
     /**
      * @brief Returns the time format to use for x-axis labelling.
-     *
-     * If PlotConfig::timeFormat is non-empty it takes precedence; otherwise
-     * InputConfig::timeFormat is used. Guaranteed to never return an empty string.
      */
     [[nodiscard]] TimeFormat effectiveTimeFormat() const noexcept;
 
     /**
      * @brief Builds the absolute output path for a plot file.
-     *
-     * @param stem Base filename without extension (e.g. "timeSeries_GRAZ_dN").
-     * @return Absolute path: imgDir / (stem + "." + outputFormat).
      */
     [[nodiscard]] std::filesystem::path outputPath(const std::string& stem) const;
 
     /**
      * @brief Writes a two-column (x, y) data table to a temporary file.
-     *
-     * The temporary file is placed in imgDir with a leading dot so it is
-     * visually separated from output images. The caller is responsible for
-     * deleting it after use (see removeTempFile()).
-     *
-     * @param stem Temporary filename stem (e.g. ".tmp_timeseries").
-     * @param data Column pairs: first = x, second = y.
-     * @return Absolute path to the written file.
-     * @throws IoException if the file cannot be opened for writing.
      */
     [[nodiscard]] std::filesystem::path writeTempData(
         const std::string& stem,
@@ -265,13 +333,6 @@ private:
 
     /**
      * @brief Writes a multi-column data table to a temporary file.
-     *
-     * Each inner vector is one column. All columns must have the same size.
-     *
-     * @param stem    Temporary filename stem.
-     * @param columns Data columns (first column is typically x / index).
-     * @return Absolute path to the written file.
-     * @throws IoException if the file cannot be opened or column sizes differ.
      */
     [[nodiscard]] std::filesystem::path writeTempDataMulti(
         const std::string& stem,
@@ -279,56 +340,33 @@ private:
 
     /**
      * @brief Deletes a temporary data file, ignoring any errors.
-     *
-     * @param path Path to the file to remove.
      */
     static void removeTempFile(const std::filesystem::path& path) noexcept;
 
     /**
-     * @brief Extracts valid (non-NaN) values from a TimeSeries as a vector.
-     *
-     * @param ts Source time series.
-     * @return Vector of (x, y) pairs where x is chosen by effectiveTimeFormat().
-     * @throws DataException if ts is empty.
+     * @brief Extracts valid (non-NaN) values from a TimeSeries as (x, y) pairs.
      */
     [[nodiscard]] std::vector<std::pair<double, double>>
     toXY(const TimeSeries& ts) const;
 
     /**
      * @brief Formats a gnuplot terminal line for the configured output format.
-     *
-     * @param widthPx  Image width in pixels.
-     * @param heightPx Image height in pixels.
-     * @return Full gnuplot "set terminal ..." command string.
      */
     [[nodiscard]] std::string terminalCmd(int widthPx = 1200, int heightPx = 600) const;
 
     /**
      * @brief Returns a gnuplot x-axis time format string if UTC display is active.
-     *
-     * Returns an empty string for non-time x-axes (INDEX, MJD, etc.).
      */
     [[nodiscard]] std::string gnuplotTimeFmt() const;
 
     /**
      * @brief Computes ACF values up to maxLag from a vector of values.
-     *
-     * Missing (NaN) values are skipped.
-     *
-     * @param values Input data.
-     * @param maxLag Maximum lag.
-     * @return Vector of (lag, acf) pairs.
-     * @throws DataException if values is too short.
      */
     [[nodiscard]] static std::vector<std::pair<double, double>>
     computeAcf(const std::vector<double>& values, int maxLag);
 
     /**
      * @brief Computes theoretical normal quantiles for a QQ-plot.
-     *
-     * @param values Input data (NaN values are ignored).
-     * @return Vector of (theoretical_quantile, sample_quantile) pairs, sorted.
-     * @throws DataException if fewer than 3 valid values are present.
      */
     [[nodiscard]] static std::vector<std::pair<double, double>>
     computeQQ(const std::vector<double>& values);

@@ -70,9 +70,10 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
                      + cfg.workspace.string() + "' -- it will be created when needed.");
     }
 
-    cfg.logDir = cfg.workspace / "OUTPUT" / "LOG";
-    cfg.csvDir = cfg.workspace / "OUTPUT" / "CSV";
-    cfg.imgDir = cfg.workspace / "OUTPUT" / "IMG";
+    cfg.logDir       = cfg.workspace / "OUTPUT" / "LOG";
+    cfg.csvDir       = cfg.workspace / "OUTPUT" / "CSV";
+    cfg.imgDir       = cfg.workspace / "OUTPUT" / "IMG";
+    cfg.protocolsDir = cfg.workspace / "OUTPUT" / "PROTOCOLS";
 
     const std::filesystem::path inputDir = cfg.workspace / "INPUT";
 
@@ -81,6 +82,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.homogeneity = _parseHomogeneity(j.value("homogeneity", json::object()));
     cfg.outlier     = _parseOutlier    (j.value("outlier",     json::object()));
     cfg.filter      = _parseFilter     (j.value("filter",      json::object()));
+    cfg.regression  = _parseRegression (j.value("regression",  json::object()));
     cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
     cfg.stats       = _parseStats      (j);
 
@@ -187,44 +189,37 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 {
     HomogeneityConfig cfg;
 
-    cfg.applyGapFilling = getOrDefault<bool>(j, "apply_gap_filling", true,  false);
-    cfg.applyAdjustment = getOrDefault<bool>(j, "apply_adjustment",  true,  false);
+    cfg.applyGapFilling  = getOrDefault<bool>(j, "apply_gap_filling",  true,  false);
+    cfg.applyAdjustment  = getOrDefault<bool>(j, "apply_adjustment",   true,  false);
 
     if (j.contains("gap_filling")) {
         const auto& gf = j.at("gap_filling");
-        cfg.gapFilling.strategy           = getOrDefault<std::string>(gf, "strategy",            "linear", false);
+        cfg.gapFilling.strategy           = getOrDefault<std::string>(gf, "strategy",             "linear", false);
         cfg.gapFilling.maxFillLength      = getOrDefault<int>        (gf, "max_fill_length",      0,        false);
         cfg.gapFilling.gapThresholdFactor = getOrDefault<double>     (gf, "gap_threshold_factor", 1.5,      false);
         cfg.gapFilling.minSeriesYears     = getOrDefault<int>        (gf, "min_series_years",     10,       false);
     }
 
-    if (j.contains("pre_outlier")) {
+    if (j.contains("pre_outlier"))
         cfg.preOutlier = _parseOutlierFilter(j.at("pre_outlier"), 5.0);
-        if (cfg.preOutlier.enabled)
-            LOKI_INFO("Config: homogeneity.pre_outlier enabled (method=" + cfg.preOutlier.method + ").");
-    }
 
     if (j.contains("deseasonalization")) {
         const auto& ds = j.at("deseasonalization");
-        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",             "median_year", false);
-        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        365,           false);
-        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,             false);
+        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",              "median_year", false);
+        cfg.deseasonalization.maWindowSize        = getOrDefault<int>        (ds, "ma_window_size",        365,           false);
+        cfg.deseasonalization.medianYearMinYears  = getOrDefault<int>        (ds, "median_year_min_years", 5,             false);
     }
 
-    if (j.contains("post_outlier")) {
+    if (j.contains("post_outlier"))
         cfg.postOutlier = _parseOutlierFilter(j.at("post_outlier"), 3.0);
-        if (cfg.postOutlier.enabled)
-            LOKI_INFO("Config: homogeneity.post_outlier enabled (method=" + cfg.postOutlier.method + ").");
-    }
 
     if (j.contains("detection")) {
-        const auto& det = j.at("detection");
-        cfg.detection.minSegmentPoints     = getOrDefault<int>        (det, "min_segment_points",    60,    false);
-        cfg.detection.minSegmentSeconds    = getOrDefault<double>     (det, "min_segment_seconds",   0.0,   false);
-        cfg.detection.minSegmentDuration   = getOrDefault<std::string>(det, "min_segment_duration",  "",    false);
-        cfg.detection.significanceLevel    = getOrDefault<double>     (det, "significance_level",    0.05,  false);
-        cfg.detection.acfDependenceLimit   = getOrDefault<double>     (det, "acf_dependence_limit",  0.2,   false);
-        cfg.detection.correctForDependence = getOrDefault<bool>       (det, "correct_for_dependence", true, false);
+        const auto& d = j.at("detection");
+        cfg.detection.significanceLevel  = getOrDefault<double>     (d, "significance_level",   0.05,  false);
+        cfg.detection.acfDependenceLimit = getOrDefault<double>     (d, "acf_dependence_limit", 0.2,   false);
+        cfg.detection.correctForDependence = getOrDefault<bool>     (d, "correct_for_dependence", true, false);
+        cfg.detection.minSegmentPoints   = getOrDefault<int>        (d, "min_segment_points",   60,    false);
+        cfg.detection.minSegmentDuration = getOrDefault<std::string>(d, "min_segment_duration", "",    false);
     }
 
     return cfg;
@@ -240,23 +235,23 @@ OutlierConfig ConfigLoader::_parseOutlier(const nlohmann::json& j)
 
     if (j.contains("deseasonalization")) {
         const auto& ds = j.at("deseasonalization");
-        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",             "none", false);
+        cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "none", false);
         cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        365,    false);
         cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,      false);
     }
 
     if (j.contains("detection")) {
-        const auto& det = j.at("detection");
-        cfg.detection.method          = getOrDefault<std::string>(det, "method",           "mad", false);
-        cfg.detection.iqrMultiplier   = getOrDefault<double>     (det, "iqr_multiplier",   1.5,   false);
-        cfg.detection.madMultiplier   = getOrDefault<double>     (det, "mad_multiplier",   3.0,   false);
-        cfg.detection.zscoreThreshold = getOrDefault<double>     (det, "zscore_threshold", 3.0,   false);
+        const auto& d = j.at("detection");
+        cfg.detection.method           = getOrDefault<std::string>(d, "method",            "mad", false);
+        cfg.detection.iqrMultiplier    = getOrDefault<double>     (d, "iqr_multiplier",    1.5,   false);
+        cfg.detection.madMultiplier    = getOrDefault<double>     (d, "mad_multiplier",    3.0,   false);
+        cfg.detection.zscoreThreshold  = getOrDefault<double>     (d, "zscore_threshold",  3.0,   false);
     }
 
     if (j.contains("replacement")) {
-        const auto& rep = j.at("replacement");
-        cfg.replacement.strategy      = getOrDefault<std::string>(rep, "strategy",        "linear", false);
-        cfg.replacement.maxFillLength = getOrDefault<int>        (rep, "max_fill_length",  0,        false);
+        const auto& r = j.at("replacement");
+        cfg.replacement.strategy      = getOrDefault<std::string>(r, "strategy",        "linear", false);
+        cfg.replacement.maxFillLength = getOrDefault<int>        (r, "max_fill_length", 0,        false);
     }
 
     return cfg;
@@ -272,32 +267,29 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
 
     if (j.contains("gap_filling")) {
         const auto& gf = j.at("gap_filling");
-        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",       "linear", false);
+        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",        "linear", false);
         cfg.gapFilling.maxFillLength = getOrDefault<int>        (gf, "max_fill_length", 0,        false);
     }
 
-    // -- method ---------------------------------------------------------------
-    const std::string methodStr = getOrDefault<std::string>(j, "method", "kernel", false);
-    if      (methodStr == "moving_average") cfg.method = FilterMethodEnum::MOVING_AVERAGE;
-    else if (methodStr == "ema")            cfg.method = FilterMethodEnum::EMA;
-    else if (methodStr == "weighted_ma")    cfg.method = FilterMethodEnum::WEIGHTED_MA;
-    else if (methodStr == "kernel")         cfg.method = FilterMethodEnum::KERNEL;
-    else if (methodStr == "loess")          cfg.method = FilterMethodEnum::LOESS;
-    else if (methodStr == "savitzky_golay") cfg.method = FilterMethodEnum::SAVITZKY_GOLAY;
+    const std::string method = getOrDefault<std::string>(j, "method", "kernel", false);
+    if      (method == "moving_average")  cfg.method = FilterMethodEnum::MOVING_AVERAGE;
+    else if (method == "ema")             cfg.method = FilterMethodEnum::EMA;
+    else if (method == "weighted_ma")     cfg.method = FilterMethodEnum::WEIGHTED_MA;
+    else if (method == "kernel")          cfg.method = FilterMethodEnum::KERNEL;
+    else if (method == "loess")           cfg.method = FilterMethodEnum::LOESS;
+    else if (method == "savitzky_golay")  cfg.method = FilterMethodEnum::SAVITZKY_GOLAY;
     else {
-        LOKI_WARNING("Config 'filter.method' unknown value '" + methodStr + "' -- using 'kernel'.");
+        LOKI_WARNING("Config 'filter.method' unknown value '" + method + "' -- using 'kernel'.");
         cfg.method = FilterMethodEnum::KERNEL;
     }
 
     cfg.autoWindowMethod = getOrDefault<std::string>(j, "auto_window_method", "silverman_mad", false);
 
-    // -- moving_average -------------------------------------------------------
     if (j.contains("moving_average")) {
         const auto& ma = j.at("moving_average");
         cfg.movingAverage.window = getOrDefault<int>(ma, "window", 365, false);
     }
 
-    // -- ema ------------------------------------------------------------------
     if (j.contains("ema")) {
         const auto& ema = j.at("ema");
         cfg.ema.alpha = getOrDefault<double>(ema, "alpha", 0.1, false);
@@ -308,7 +300,6 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
         }
     }
 
-    // -- weighted_ma ----------------------------------------------------------
     if (j.contains("weighted_ma")) {
         const auto& wma = j.at("weighted_ma");
         if (wma.contains("weights")) {
@@ -320,7 +311,6 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
         }
     }
 
-    // -- kernel ---------------------------------------------------------------
     if (j.contains("kernel")) {
         const auto& k = j.at("kernel");
         cfg.kernel.bandwidth      = getOrDefault<double>     (k, "bandwidth",       0.1,            false);
@@ -328,7 +318,6 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
         cfg.kernel.gaussianCutoff = getOrDefault<double>     (k, "gaussian_cutoff", 3.0,            false);
     }
 
-    // -- loess ----------------------------------------------------------------
     if (j.contains("loess")) {
         const auto& lo = j.at("loess");
         cfg.loess.bandwidth        = getOrDefault<double>     (lo, "bandwidth",         0.25,      false);
@@ -343,11 +332,67 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
         }
     }
 
-    // -- savitzky_golay -------------------------------------------------------
     if (j.contains("savitzky_golay")) {
         const auto& sg = j.at("savitzky_golay");
         cfg.savitzkyGolay.window = getOrDefault<int>(sg, "window", 11, false);
         cfg.savitzkyGolay.degree = getOrDefault<int>(sg, "degree",  2, false);
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseRegression
+// -----------------------------------------------------------------------------
+
+RegressionConfig ConfigLoader::_parseRegression(const nlohmann::json& j)
+{
+    RegressionConfig cfg;
+
+    const std::string method = getOrDefault<std::string>(j, "method", "linear", false);
+    if      (method == "linear")      cfg.method = RegressionMethodEnum::LINEAR;
+    else if (method == "polynomial")  cfg.method = RegressionMethodEnum::POLYNOMIAL;
+    else if (method == "harmonic")    cfg.method = RegressionMethodEnum::HARMONIC;
+    else if (method == "trend")       cfg.method = RegressionMethodEnum::TREND;
+    else if (method == "robust")      cfg.method = RegressionMethodEnum::ROBUST;
+    else if (method == "calibration") cfg.method = RegressionMethodEnum::CALIBRATION;
+    else {
+        LOKI_WARNING("Config 'regression.method' unknown value '" + method + "' -- using 'linear'.");
+        cfg.method = RegressionMethodEnum::LINEAR;
+    }
+
+    cfg.polynomialDegree  = getOrDefault<int>        (j, "polynomial_degree",  1,          false);
+    cfg.harmonicTerms     = getOrDefault<int>        (j, "harmonic_terms",     2,          false);
+    cfg.period            = getOrDefault<double>     (j, "period",             365.25,     false);
+    cfg.robust            = getOrDefault<bool>       (j, "robust",             false,      false);
+    cfg.robustIterations  = getOrDefault<int>        (j, "robust_iterations",  10,         false);
+    cfg.robustWeightFn    = getOrDefault<std::string>(j, "robust_weight_fn",   "bisquare", false);
+    cfg.computePrediction = getOrDefault<bool>       (j, "compute_prediction", false,      false);
+    cfg.predictionHorizon = getOrDefault<double>     (j, "prediction_horizon", 0.0,        false);
+    cfg.confidenceLevel   = getOrDefault<double>     (j, "confidence_level",   0.95,       false);
+    cfg.significanceLevel = getOrDefault<double>     (j, "significance_level", 0.05,       false);
+    cfg.cvFolds           = getOrDefault<int>        (j, "cv_folds",           10,         false);
+
+    if (j.contains("gap_filling")) {
+        const auto& gf = j.at("gap_filling");
+        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",        "linear", false);
+        cfg.gapFilling.maxFillLength = getOrDefault<int>        (gf, "max_fill_length", 0,        false);
+    }
+
+    if (cfg.polynomialDegree < 1) {
+        throw ConfigException(
+            "ConfigLoader: regression.polynomial_degree must be >= 1, got "
+            + std::to_string(cfg.polynomialDegree) + ".");
+    }
+    if (cfg.harmonicTerms < 1) {
+        throw ConfigException(
+            "ConfigLoader: regression.harmonic_terms must be >= 1, got "
+            + std::to_string(cfg.harmonicTerms) + ".");
+    }
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: regression.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
     }
 
     return cfg;
@@ -402,6 +447,12 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("filter_residuals_acf"))      cfg.filterResidualsAcf     = e["filter_residuals_acf"].get<bool>();
         if (e.contains("residuals_histogram"))       cfg.residualsHistogram     = e["residuals_histogram"].get<bool>();
         if (e.contains("residuals_qq"))              cfg.residualsQq            = e["residuals_qq"].get<bool>();
+
+        // Regression pipeline
+        if (e.contains("regression_overlay"))    cfg.regressionOverlay    = e["regression_overlay"].get<bool>();
+        if (e.contains("regression_residuals"))  cfg.regressionResiduals  = e["regression_residuals"].get<bool>();
+        if (e.contains("regression_cdf_plot"))   cfg.regressionCdfPlot    = e["regression_cdf_plot"].get<bool>();
+        if (e.contains("regression_qq_bands"))   cfg.regressionQqBands    = e["regression_qq_bands"].get<bool>();
     }
 
     return cfg;

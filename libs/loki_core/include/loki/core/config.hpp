@@ -230,6 +230,47 @@ struct FilterConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  RegressionMethod
+// -----------------------------------------------------------------------------
+
+enum class RegressionMethodEnum {
+    LINEAR,
+    POLYNOMIAL,
+    HARMONIC,
+    TREND,
+    ROBUST,
+    CALIBRATION
+};
+
+// -----------------------------------------------------------------------------
+//  RegressionConfig  (sub-configs defined outside to avoid GCC 13 aggregate init bug)
+// -----------------------------------------------------------------------------
+
+struct RegressionGapFillingConfig {
+    std::string strategy{"linear"};
+    int         maxFillLength{0};
+};
+
+/**
+ * @brief Top-level configuration for the loki_regression pipeline.
+ */
+struct RegressionConfig {
+    RegressionGapFillingConfig gapFilling{};
+    RegressionMethodEnum       method{RegressionMethodEnum::LINEAR};
+    int                        polynomialDegree{1};
+    int                        harmonicTerms{2};
+    double                     period{365.25};       ///< Days; for harmonic regression.
+    bool                       robust{false};
+    int                        robustIterations{10};
+    std::string                robustWeightFn{"bisquare"};  ///< huber | bisquare
+    bool                       computePrediction{false};
+    double                     predictionHorizon{0.0};  ///< Days ahead to predict.
+    double                     confidenceLevel{0.95};   ///< For confidence/prediction intervals.
+    double                     significanceLevel{0.05}; ///< For hypothesis tests in protocol.
+    int                        cvFolds{10};             ///< K-fold CV folds [2, 100].
+};
+
+// -----------------------------------------------------------------------------
 //  PlotOptionsConfig
 // -----------------------------------------------------------------------------
 
@@ -286,6 +327,12 @@ struct PlotConfig {
     bool filterResidualsAcf      {false};
     bool residualsHistogram      {false};
     bool residualsQq             {false};
+
+    // -- Regression pipeline plots --------------------------------------------
+    bool regressionOverlay       {true};   ///< Fitted curve over raw data.
+    bool regressionResiduals     {true};   ///< Residual diagnostics (4-panel).
+    bool regressionCdfPlot       {false};  ///< ECDF vs theoretical CDF.
+    bool regressionQqBands       {true};   ///< QQ plot with confidence bands.
 };
 
 // -----------------------------------------------------------------------------
@@ -312,10 +359,12 @@ struct AppConfig {
     StatsConfig       stats;
     OutlierConfig     outlier;
     FilterConfig      filter;
+    RegressionConfig  regression;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
     std::filesystem::path imgDir;
+    std::filesystem::path protocolsDir;  ///< OUTPUT/PROTOCOLS/
 };
 
 } // namespace loki

@@ -1,5 +1,6 @@
 #include "loki/io/plot.hpp"
 #include "loki/io/gnuplot.hpp"
+#include "loki/stats/distributions.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -685,4 +686,395 @@ std::vector<double> Plot::validValues(const std::vector<double>& values)
     out.reserve(values.size());
     for (const double v : values) if (v == v) out.push_back(v);
     return out;
+}
+
+// ── Statistical diagnostic plots ─────────────────────────────────────────────
+// Append these methods to the existing plot.cpp, after the boxplot() method.
+// Add the following include at the top of plot.cpp (after existing includes):
+//   #include <loki/stats/distributions.hpp>
+
+void Plot::cdfPlot(const std::vector<double>& values,
+                   DistributionType            dist,
+                   const std::vector<double>&  params,
+                   const std::string&          title)
+{
+    const auto valid = validValues(values);
+    if (valid.size() < 5)
+        throw DataException("Plot::cdfPlot(): need at least 5 valid values, got "
+                            + std::to_string(valid.size()) + ".");
+
+    // Validate params for chosen distribution.
+    if (dist == DistributionType::T    && params.size() < 1)
+        throw AlgorithmException("Plot::cdfPlot(): T distribution requires params={df}.");
+    if (dist == DistributionType::CHI2 && params.size() < 1)
+        throw AlgorithmException("Plot::cdfPlot(): CHI2 distribution requires params={df}.");
+    if (dist == DistributionType::F    && params.size() < 2)
+        throw AlgorithmException("Plot::cdfPlot(): F distribution requires params={df1, df2}.");
+
+    const std::size_t n = valid.size();
+    const double nd = static_cast<double>(n);
+
+    // Fit normal parameters from data if not supplied.
+    double mu    = 0.0;
+    double sigma = 1.0;
+    if (dist == DistributionType::NORMAL) {
+        if (params.size() >= 2) {
+            mu = params[0]; sigma = params[1];
+        } else {
+            for (double v : valid) mu += v;
+            mu /= nd;
+            double ss = 0.0;
+            for (double v : valid) { const double d = v - mu; ss += d * d; }
+            sigma = std::sqrt(ss / (nd - 1.0));
+        }
+        if (sigma < 1e-12)
+            throw AlgorithmException("Plot::cdfPlot(): data has near-zero variance.");
+    }
+
+    // Sort for ECDF.
+    auto sorted = valid;
+    std::sort(sorted.begin(), sorted.end());
+
+    // Build ECDF data: (x, ecdf) -- step at each observation.
+    // We write two points per observation for a proper step function.
+    std::vector<std::pair<double, double>> ecdfData;
+    ecdfData.reserve(2 * n + 2);
+    ecdfData.emplace_back(sorted.front(), 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double p = static_cast<double>(i + 1) / nd;
+        ecdfData.emplace_back(sorted[i], p);
+        if (i + 1 < n) ecdfData.emplace_back(sorted[i + 1], p);
+    }
+    ecdfData.emplace_back(sorted.back(), 1.0);
+
+    // Build theoretical CDF curve over [min, max] with 200 points.
+    const double xMin = sorted.front();
+    const double xMax = sorted.back();
+    const double step = (xMax - xMin) / 199.0;
+
+    std::vector<std::pair<double, double>> cdfData;
+    cdfData.reserve(200);
+    for (int i = 0; i < 200; ++i) {
+        const double x = xMin + static_cast<double>(i) * step;
+        double cdfVal  = 0.0;
+        switch (dist) {
+            case DistributionType::NORMAL:
+                cdfVal = loki::stats::normalCdf((x - mu) / sigma); break;
+            case DistributionType::T:
+                cdfVal = loki::stats::tCdf(x, params[0]); break;
+            case DistributionType::CHI2:
+                cdfVal = loki::stats::chi2Cdf(x, params[0]); break;
+            case DistributionType::F:
+                cdfVal = loki::stats::fCdf(x, params[0], params[1]); break;
+        }
+        cdfData.emplace_back(x, cdfVal);
+    }
+
+    // Find KS statistic D and its x-location for the vertical marker.
+    double D    = 0.0;
+    double xKS  = sorted.front();
+    for (std::size_t i = 0; i < n; ++i) {
+        double theorCdf = 0.0;
+        switch (dist) {
+            case DistributionType::NORMAL:
+                theorCdf = loki::stats::normalCdf((sorted[i] - mu) / sigma); break;
+            case DistributionType::T:
+                theorCdf = loki::stats::tCdf(sorted[i], params[0]); break;
+            case DistributionType::CHI2:
+                theorCdf = loki::stats::chi2Cdf(sorted[i], params[0]); break;
+            case DistributionType::F:
+                theorCdf = loki::stats::fCdf(sorted[i], params[0], params[1]); break;
+        }
+        const double ecdf    = static_cast<double>(i + 1) / nd;
+        const double ecdfPre = static_cast<double>(i) / nd;
+        const double diff    = std::max(std::fabs(ecdf - theorCdf),
+                                        std::fabs(ecdfPre - theorCdf));
+        if (diff > D) { D = diff; xKS = sorted[i]; }
+    }
+
+    // Write temp files.
+    const auto ecdfFile = writeTempData(".tmp_" + title + "_ecdf", ecdfData);
+    const auto cdfFile  = writeTempData(".tmp_" + title + "_cdf",  cdfData);
+
+    // Build distribution label for title.
+    std::string distLabel;
+    std::ostringstream ps;
+    ps << std::fixed;
+    ps.precision(2);
+    switch (dist) {
+        case DistributionType::NORMAL:
+            ps << "N(" << mu << ", " << sigma << ")"; distLabel = ps.str(); break;
+        case DistributionType::T:
+            ps << "t(" << params[0] << ")";           distLabel = ps.str(); break;
+        case DistributionType::CHI2:
+            ps << "chi2(" << params[0] << ")";        distLabel = ps.str(); break;
+        case DistributionType::F:
+            ps << "F(" << params[0] << ", " << params[1] << ")"; distLabel = ps.str(); break;
+    }
+
+    auto fmt = [](double v, int prec = 4) -> std::string {
+        std::ostringstream ss; ss.precision(prec); ss << std::fixed << v; return ss.str();
+    };
+
+    try {
+        Gnuplot gp;
+        gp(terminalCmd(DEFAULT_WIDTH_PX, DEFAULT_HEIGHT_PX));
+        gp("set output '" + outputPath(title).string() + "'");
+        gp("set title 'ECDF vs " + distLabel + "  (D = " + fmt(D, 4) + ")'");
+        gp("set xlabel 'Value'");
+        gp("set ylabel 'Cumulative probability'");
+        gp("set yrange [0:1]");
+        gp("set key top left");
+        gp("set grid");
+        // Vertical dashed line at KS maximum.
+        gp("set arrow 1 from " + fmt(xKS, 8) + ",0 to " + fmt(xKS, 8) +
+           ",1 nohead lc rgb '#999999' lw 1.5 dt 2");
+        gp("plot '" + ecdfFile.string() + "' u 1:2 t 'ECDF' w l lc rgb '#2166ac' lw 2, "
+           "'"      + cdfFile.string()  + "' u 1:2 t '" + distLabel +
+           "' w l lc rgb '#d73027' lw 2");
+    } catch (...) {
+        removeTempFile(ecdfFile);
+        removeTempFile(cdfFile);
+        throw;
+    }
+    removeTempFile(ecdfFile);
+    removeTempFile(cdfFile);
+}
+
+void Plot::qqPlotWithBands(const std::vector<double>& values, const std::string& title)
+{
+    const auto qqData = computeQQ(values);
+    const std::size_t n = qqData.size();
+
+    // 95% KS-based simultaneous confidence band half-width in probability scale.
+    // Critical value c_alpha for alpha=0.05: 1.3581 / sqrt(n).
+    const double cAlpha   = 1.3581 / std::sqrt(static_cast<double>(n));
+
+    // For each point (z_i, y_i), the band in sample-quantile space:
+    //   lower: normal quantile of max(0, F_n(i) - c_alpha)
+    //   upper: normal quantile of min(1, F_n(i) + c_alpha)
+    // where F_n(i) = (i + 1 - 0.375) / (n + 0.25)  (same as computeQQ).
+    std::vector<std::vector<double>> cols(4); // z, y, lower, upper
+    for (std::size_t i = 0; i < n; ++i) {
+        const double p     = (static_cast<double>(i) + 1.0 - 0.375) /
+                             (static_cast<double>(n) + 0.25);
+        const double pLow  = std::max(1e-6, p - cAlpha);
+        const double pHigh = std::min(1.0 - 1e-6, p + cAlpha);
+
+        cols[0].push_back(qqData[i].first);              // theoretical z
+        cols[1].push_back(qqData[i].second);             // sample quantile
+        cols[2].push_back(loki::stats::normalQuantile(pLow)  *
+                          // scale bands to sample space via Q1-Q3 line
+                          // (same slope/intercept as in qqPlot)
+                          1.0);  // placeholder -- corrected below
+        cols[3].push_back(loki::stats::normalQuantile(pHigh) * 1.0);
+    }
+
+    // Compute Q1-Q3 reference line (slope + intercept) for scaling bands.
+    const std::size_t i1 = n / 4;
+    const std::size_t i3 = 3 * n / 4;
+    const double x1 = qqData[i1].first,  y1 = qqData[i1].second;
+    const double x3 = qqData[i3].first,  y3 = qqData[i3].second;
+    const double slope     = (y3 - y1) / (x3 - x1 + 1e-12);
+    const double intercept = y1 - slope * x1;
+
+    // Re-compute bands in sample-quantile space using the reference line.
+    for (std::size_t i = 0; i < n; ++i) {
+        const double p     = (static_cast<double>(i) + 1.0 - 0.375) /
+                             (static_cast<double>(n) + 0.25);
+        const double pLow  = std::max(1e-6, p - cAlpha);
+        const double pHigh = std::min(1.0 - 1e-6, p + cAlpha);
+        const double zLow  = loki::stats::normalQuantile(pLow);
+        const double zHigh = loki::stats::normalQuantile(pHigh);
+        cols[2][i] = slope * zLow  + intercept;
+        cols[3][i] = slope * zHigh + intercept;
+    }
+
+    const auto dataFile = writeTempDataMulti(".tmp_" + title, cols);
+
+    // Reference line endpoints.
+    const double xMin  = qqData.front().first;
+    const double xMax  = qqData.back().first;
+    const double yMin  = slope * xMin + intercept;
+    const double yMax  = slope * xMax + intercept;
+
+    auto fmt = [](double v, int prec = 8) -> std::string {
+        std::ostringstream ss; ss.precision(prec); ss << std::fixed << v; return ss.str();
+    };
+
+    try {
+        Gnuplot gp;
+        gp(terminalCmd(DEFAULT_WIDTH_PX, DEFAULT_HEIGHT_PX));
+        gp("set output '" + outputPath(title).string() + "'");
+        gp("set title 'Normal Q-Q Plot with 95% Confidence Bands'");
+        gp("set xlabel 'Theoretical Quantiles'");
+        gp("set ylabel 'Sample Quantiles'");
+        gp("set key top left");
+        gp("set grid");
+        // Reference line through Q1-Q3.
+        gp("set arrow 1 from " + fmt(xMin) + "," + fmt(yMin) +
+           " to " + fmt(xMax) + "," + fmt(yMax) +
+           " nohead lc rgb '#d73027' lw 2");
+        // Band as filled region: plot lower then upper with filledcurves.
+        gp("plot '" + dataFile.string() + "' u 1:3:4 t '95% band' "
+           "w filledcurves lc rgb '#a6cee3' fs transparent solid 0.4, "
+           "'' u 1:3 notitle w l lc rgb '#7fbbda' lw 1 dt 2, "
+           "'' u 1:4 notitle w l lc rgb '#7fbbda' lw 1 dt 2, "
+           "'' u 1:2 t 'Data' w p pt 7 ps 0.4 lc rgb '#2166ac'");
+    } catch (...) { removeTempFile(dataFile); throw; }
+    removeTempFile(dataFile);
+}
+
+void Plot::residualDiagnostics(const std::vector<double>& residuals,
+                               const std::vector<double>& fittedValues,
+                               const std::string&          title)
+{
+    const auto valid = validValues(residuals);
+    if (valid.size() < 5)
+        throw DataException("Plot::residualDiagnostics(): need at least 5 valid residuals, got "
+                            + std::to_string(valid.size()) + ".");
+
+    const std::size_t n = valid.size();
+    const double nd     = static_cast<double>(n);
+
+    // Panel 1: residuals vs fitted (or index).
+    const bool hasFitted = !fittedValues.empty();
+    std::vector<std::pair<double, double>> resFit;
+    resFit.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double x = hasFitted ? fittedValues[std::min(i, fittedValues.size() - 1)]
+                                   : static_cast<double>(i);
+        resFit.emplace_back(x, valid[i]);
+    }
+
+    // Panel 2: QQ data with bands (reuse computeQQ).
+    const auto qqData   = computeQQ(valid);
+    const std::size_t nqq = qqData.size();
+    const double cAlpha = 1.3581 / std::sqrt(nd);
+
+    const std::size_t i1 = nqq / 4;
+    const std::size_t i3 = 3 * nqq / 4;
+    const double x1qq    = qqData[i1].first, y1qq = qqData[i1].second;
+    const double x3qq    = qqData[i3].first, y3qq = qqData[i3].second;
+    const double slope   = (y3qq - y1qq) / (x3qq - x1qq + 1e-12);
+    const double intcpt  = y1qq - slope * x1qq;
+
+    std::vector<std::vector<double>> qqCols(4);
+    for (std::size_t i = 0; i < nqq; ++i) {
+        const double p     = (static_cast<double>(i) + 1.0 - 0.375) /
+                             (static_cast<double>(nqq) + 0.25);
+        const double pLow  = std::max(1e-6, p - cAlpha);
+        const double pHigh = std::min(1.0 - 1e-6, p + cAlpha);
+        qqCols[0].push_back(qqData[i].first);
+        qqCols[1].push_back(qqData[i].second);
+        qqCols[2].push_back(slope * loki::stats::normalQuantile(pLow)  + intcpt);
+        qqCols[3].push_back(slope * loki::stats::normalQuantile(pHigh) + intcpt);
+    }
+
+    // Panel 3: histogram of residuals.
+    double mean = 0.0;
+    for (double v : valid) mean += v;
+    mean /= nd;
+    double ss = 0.0;
+    for (double v : valid) { const double d = v - mean; ss += d * d; }
+    const double sigma = std::sqrt(ss / (nd - 1.0));
+
+    const int bins = effectiveHistBins(0, n);
+    const double minR = *std::min_element(valid.begin(), valid.end());
+    const double maxR = *std::max_element(valid.begin(), valid.end());
+
+    std::vector<std::pair<double, double>> histRaw;
+    histRaw.reserve(n);
+    for (double v : valid) histRaw.emplace_back(v, 0.0);
+
+    // Panel 4: ACF of residuals.
+    const int acfLag        = effectiveAcfLag(0, n);
+    const auto acfData      = computeAcf(valid, acfLag);
+    const double acfConf    = CONF_95_COEFF / std::sqrt(nd);
+
+    // Write temp files.
+    const auto resFitFile = writeTempData(".tmp_" + title + "_resfit", resFit);
+    const auto qqFile     = writeTempDataMulti(".tmp_" + title + "_qq", qqCols);
+    const auto histFile   = writeTempData(".tmp_" + title + "_hist", histRaw);
+    const auto acfFile    = writeTempData(".tmp_" + title + "_acf",  acfData);
+
+    auto fmt = [](double v, int prec = 8) -> std::string {
+        std::ostringstream ss; ss.precision(prec); ss << std::fixed << v; return ss.str();
+    };
+
+    try {
+        Gnuplot gp;
+        gp(terminalCmd(DEFAULT_WIDTH_PX * 2, DEFAULT_HEIGHT_PX * 2));
+        gp("set output '" + outputPath(title).string() + "'");
+        gp("set multiplot layout 2,2 title 'Residual Diagnostics'");
+
+        // ── Panel 1: Residuals vs Fitted ──────────────────────────────────────
+        gp("set title 'Residuals vs " + std::string(hasFitted ? "Fitted" : "Index") + "'");
+        gp("set xlabel '" + std::string(hasFitted ? "Fitted values" : "Index") + "'");
+        gp("set ylabel 'Residuals'");
+        gp("set key off"); gp("set grid");
+        gp("set arrow 1 from graph 0, first 0 to graph 1, first 0 "
+           "nohead lc rgb '#999999' lw 1.5 dt 2");
+        gp("plot '" + resFitFile.string() + "' u 1:2 notitle "
+           "w p pt 7 ps 0.3 lc rgb '#2166ac'");
+        gp("unset arrow 1");
+
+        // ── Panel 2: QQ with bands ────────────────────────────────────────────
+        gp("set title 'Normal Q-Q Plot'");
+        gp("set xlabel 'Theoretical Quantiles'");
+        gp("set ylabel 'Sample Quantiles'");
+        gp("set key top left");
+        const double xMinQQ = qqData.front().first;
+        const double xMaxQQ = qqData.back().first;
+        gp("set arrow 2 from " + fmt(xMinQQ) + "," + fmt(slope * xMinQQ + intcpt) +
+           " to "  + fmt(xMaxQQ) + "," + fmt(slope * xMaxQQ + intcpt) +
+           " nohead lc rgb '#d73027' lw 2");
+        gp("plot '" + qqFile.string() + "' u 1:3:4 t '95% band' "
+           "w filledcurves lc rgb '#a6cee3' fs transparent solid 0.4, "
+           "'' u 1:3 notitle w l lc rgb '#7fbbda' lw 1 dt 2, "
+           "'' u 1:4 notitle w l lc rgb '#7fbbda' lw 1 dt 2, "
+           "'' u 1:2 t 'Data' w p pt 7 ps 0.4 lc rgb '#2166ac'");
+        gp("unset arrow 2");
+
+        // ── Panel 3: Histogram of residuals ───────────────────────────────────
+        gp("set title 'Histogram of Residuals'");
+        gp("set xlabel 'Residual'"); gp("set ylabel 'Count'");
+        gp("set key top right");
+        gp("n_bins = " + std::to_string(bins));
+        gp("min_r = " + fmt(minR)); gp("max_r = " + fmt(maxR));
+        gp("width_r = (max_r - min_r) / n_bins");
+        gp("hist_r(x, w) = w * floor(x / w) + w / 2.0");
+        gp("set boxwidth width_r * 0.9");
+        gp("set style fill solid 0.6 border -1");
+        gp("gauss_r(x) = (" + std::to_string(n) + " * width_r) * "
+           "exp(-0.5 * ((x - " + fmt(mean) + ") / " + fmt(sigma) + ")**2) / "
+           "(" + fmt(sigma) + " * sqrt(2.0 * pi))");
+        gp("plot '" + histFile.string() + "' u (hist_r($1, width_r)):(1.0) smooth freq "
+           "w boxes lc rgb '#2166ac' t 'Residuals', "
+           "gauss_r(x) w l lc rgb '#d73027' lw 2 t 'Normal fit'");
+        gp("unset style");
+
+        // ── Panel 4: ACF of residuals ─────────────────────────────────────────
+        gp("set title 'ACF of Residuals'");
+        gp("set xlabel 'Lag'"); gp("set ylabel 'ACF'");
+        gp("set yrange [-1:1]"); gp("set ytics 0.2");
+        gp("set key off");
+        gp("set arrow 3 from graph 0, first  " + fmt(acfConf) +
+           " to graph 1, first  " + fmt(acfConf) + " nohead lc rgb '#999999' lt 2");
+        gp("set arrow 4 from graph 0, first -" + fmt(acfConf) +
+           " to graph 1, first -" + fmt(acfConf) + " nohead lc rgb '#999999' lt 2");
+        gp("plot '" + acfFile.string() + "' u 1:2 notitle w impulses lc rgb '#2166ac' lw 2");
+
+        gp("unset multiplot");
+    } catch (...) {
+        removeTempFile(resFitFile);
+        removeTempFile(qqFile);
+        removeTempFile(histFile);
+        removeTempFile(acfFile);
+        throw;
+    }
+    removeTempFile(resFitFile);
+    removeTempFile(qqFile);
+    removeTempFile(histFile);
+    removeTempFile(acfFile);
 }

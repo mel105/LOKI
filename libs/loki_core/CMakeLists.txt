@@ -18,6 +18,8 @@ target_sources(loki_core
         src/io/plot.cpp
         src/stats/descriptive.cpp
         src/stats/filter.cpp
+        src/stats/distributions.cpp
+        src/stats/hypothesis.coo
         src/math/lsq.cpp
         src/math/designMatrix.cpp
 )
