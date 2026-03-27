@@ -50,6 +50,7 @@ private:
     static OutputConfig       _parseOutput       (const nlohmann::json& j);
     static HomogeneityConfig  _parseHomogeneity  (const nlohmann::json& j);
     static OutlierConfig      _parseOutlier      (const nlohmann::json& j);
+    static FilterConfig       _parseFilter       (const nlohmann::json& j);
     static PlotConfig         _parsePlots        (const nlohmann::json& j);
     static StatsConfig        _parseStats        (const nlohmann::json& j);
     static TimeFormat         _parseTimeFormat   (const std::string& s);

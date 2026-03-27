@@ -18,6 +18,8 @@ target_sources(loki_core
         src/io/plot.cpp
         src/stats/descriptive.cpp
         src/stats/filter.cpp
+        src/math/lsq.cpp
+        src/math/designMatrix.cpp
 )
 
 target_include_directories(loki_core
@@ -27,10 +29,16 @@ target_include_directories(loki_core
         $<INSTALL_INTERFACE:include>
 )
 
+# Eigen and nlohmann_json are marked SYSTEM so that their headers are excluded
+# from -Wall / -Werror diagnostics. LOKI source files are not affected.
 target_link_libraries(loki_core
-    PUBLIC  Eigen3::Eigen
     PUBLIC  nlohmann_json::nlohmann_json
     PRIVATE loki_compiler_options
+)
+
+target_include_directories(loki_core SYSTEM
+    PUBLIC
+        $<TARGET_PROPERTY:Eigen3::Eigen,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 add_library(loki::core ALIAS loki_core)

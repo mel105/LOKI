@@ -80,6 +80,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.output      = _parseOutput     (j.value("output",      json::object()));
     cfg.homogeneity = _parseHomogeneity(j.value("homogeneity", json::object()));
     cfg.outlier     = _parseOutlier    (j.value("outlier",     json::object()));
+    cfg.filter      = _parseFilter     (j.value("filter",      json::object()));
     cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
     cfg.stats       = _parseStats      (j);
 
@@ -262,6 +263,97 @@ OutlierConfig ConfigLoader::_parseOutlier(const nlohmann::json& j)
 }
 
 // -----------------------------------------------------------------------------
+//  Private: _parseFilter
+// -----------------------------------------------------------------------------
+
+FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
+{
+    FilterConfig cfg;
+
+    if (j.contains("gap_filling")) {
+        const auto& gf = j.at("gap_filling");
+        cfg.gapFilling.strategy      = getOrDefault<std::string>(gf, "strategy",       "linear", false);
+        cfg.gapFilling.maxFillLength = getOrDefault<int>        (gf, "max_fill_length", 0,        false);
+    }
+
+    // -- method ---------------------------------------------------------------
+    const std::string methodStr = getOrDefault<std::string>(j, "method", "kernel", false);
+    if      (methodStr == "moving_average") cfg.method = FilterMethodEnum::MOVING_AVERAGE;
+    else if (methodStr == "ema")            cfg.method = FilterMethodEnum::EMA;
+    else if (methodStr == "weighted_ma")    cfg.method = FilterMethodEnum::WEIGHTED_MA;
+    else if (methodStr == "kernel")         cfg.method = FilterMethodEnum::KERNEL;
+    else if (methodStr == "loess")          cfg.method = FilterMethodEnum::LOESS;
+    else if (methodStr == "savitzky_golay") cfg.method = FilterMethodEnum::SAVITZKY_GOLAY;
+    else {
+        LOKI_WARNING("Config 'filter.method' unknown value '" + methodStr + "' -- using 'kernel'.");
+        cfg.method = FilterMethodEnum::KERNEL;
+    }
+
+    cfg.autoWindowMethod = getOrDefault<std::string>(j, "auto_window_method", "silverman_mad", false);
+
+    // -- moving_average -------------------------------------------------------
+    if (j.contains("moving_average")) {
+        const auto& ma = j.at("moving_average");
+        cfg.movingAverage.window = getOrDefault<int>(ma, "window", 365, false);
+    }
+
+    // -- ema ------------------------------------------------------------------
+    if (j.contains("ema")) {
+        const auto& ema = j.at("ema");
+        cfg.ema.alpha = getOrDefault<double>(ema, "alpha", 0.1, false);
+        if (cfg.ema.alpha <= 0.0 || cfg.ema.alpha > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: filter.ema.alpha must be in (0, 1], got "
+                + std::to_string(cfg.ema.alpha) + ".");
+        }
+    }
+
+    // -- weighted_ma ----------------------------------------------------------
+    if (j.contains("weighted_ma")) {
+        const auto& wma = j.at("weighted_ma");
+        if (wma.contains("weights")) {
+            cfg.weightedMa.weights = wma.at("weights").get<std::vector<double>>();
+            if (cfg.weightedMa.weights.empty()) {
+                throw ConfigException(
+                    "ConfigLoader: filter.weighted_ma.weights must not be empty.");
+            }
+        }
+    }
+
+    // -- kernel ---------------------------------------------------------------
+    if (j.contains("kernel")) {
+        const auto& k = j.at("kernel");
+        cfg.kernel.bandwidth      = getOrDefault<double>     (k, "bandwidth",       0.1,            false);
+        cfg.kernel.kernelType     = getOrDefault<std::string>(k, "kernel_type",     "epanechnikov", false);
+        cfg.kernel.gaussianCutoff = getOrDefault<double>     (k, "gaussian_cutoff", 3.0,            false);
+    }
+
+    // -- loess ----------------------------------------------------------------
+    if (j.contains("loess")) {
+        const auto& lo = j.at("loess");
+        cfg.loess.bandwidth        = getOrDefault<double>     (lo, "bandwidth",         0.25,      false);
+        cfg.loess.degree           = getOrDefault<int>        (lo, "degree",            1,         false);
+        cfg.loess.kernelType       = getOrDefault<std::string>(lo, "kernel_type",       "tricube", false);
+        cfg.loess.robust           = getOrDefault<bool>       (lo, "robust",            false,     false);
+        cfg.loess.robustIterations = getOrDefault<int>        (lo, "robust_iterations", 3,         false);
+        if (cfg.loess.degree != 1 && cfg.loess.degree != 2) {
+            throw ConfigException(
+                "ConfigLoader: filter.loess.degree must be 1 or 2, got "
+                + std::to_string(cfg.loess.degree) + ".");
+        }
+    }
+
+    // -- savitzky_golay -------------------------------------------------------
+    if (j.contains("savitzky_golay")) {
+        const auto& sg = j.at("savitzky_golay");
+        cfg.savitzkyGolay.window = getOrDefault<int>(sg, "window", 11, false);
+        cfg.savitzkyGolay.degree = getOrDefault<int>(sg, "degree",  2, false);
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
 //  Private: _parsePlots
 // -----------------------------------------------------------------------------
 
@@ -272,11 +364,10 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("output_format")) cfg.outputFormat = j["output_format"].get<std::string>();
     if (j.contains("time_format"))   cfg.timeFormat   = j["time_format"].get<std::string>();
 
-    // plot_options section
     if (j.contains("plot_options")) {
         const auto& po = j["plot_options"];
-        if (po.contains("acf_max_lag"))      cfg.options.acfMaxLag      = po["acf_max_lag"].get<int>();
-        if (po.contains("histogram_bins"))   cfg.options.histogramBins  = po["histogram_bins"].get<int>();
+        if (po.contains("acf_max_lag"))    cfg.options.acfMaxLag     = po["acf_max_lag"].get<int>();
+        if (po.contains("histogram_bins")) cfg.options.histogramBins = po["histogram_bins"].get<int>();
     }
 
     if (j.contains("enabled")) {
@@ -303,6 +394,14 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("change_points"))    cfg.changePoints    = e["change_points"].get<bool>();
         if (e.contains("shift_magnitudes")) cfg.shiftMagnitudes = e["shift_magnitudes"].get<bool>();
         if (e.contains("correction_curve")) cfg.correctionCurve = e["correction_curve"].get<bool>();
+
+        // Filter pipeline
+        if (e.contains("filter_overlay"))            cfg.filterOverlay          = e["filter_overlay"].get<bool>();
+        if (e.contains("filter_overlay_residuals"))  cfg.filterOverlayResiduals = e["filter_overlay_residuals"].get<bool>();
+        if (e.contains("filter_residuals"))          cfg.filterResiduals        = e["filter_residuals"].get<bool>();
+        if (e.contains("filter_residuals_acf"))      cfg.filterResidualsAcf     = e["filter_residuals_acf"].get<bool>();
+        if (e.contains("residuals_histogram"))       cfg.residualsHistogram     = e["residuals_histogram"].get<bool>();
+        if (e.contains("residuals_qq"))              cfg.residualsQq            = e["residuals_qq"].get<bool>();
     }
 
     return cfg;

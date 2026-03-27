@@ -1,0 +1,76 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png",
+        "time_format": "utc",
+        "enabled": {
+            "time_series":               true,
+            "histogram":                 true,
+            "acf":                       false,
+            "qq_plot":                   false,
+            "boxplot":                   false,
+
+            "filter_overlay":            true,
+            "filter_overlay_residuals":  true,
+            "filter_residuals":          false,
+            "filter_residuals_acf":      true,
+            "residuals_histogram":       true,
+            "residuals_qq":              true
+        }
+    },
+
+    "stats": {
+        "enabled": true,
+        "nan_policy": "skip",
+        "hurst": false
+    },
+
+    "filter": {
+        "gap_filling": {
+            "strategy": "linear",
+            "max_fill_length": 0
+        },
+        "method": "moving_average",
+        "auto_window_method": "silverman_mad",
+        "moving_average": {
+            "window": 10
+        },
+        "ema": {
+            "alpha": 0.1
+        },
+        "weighted_ma": {
+            "weights": [1.0, 2.0, 3.0, 2.0, 1.0]
+        },
+        "kernel": {
+            "bandwidth": 0.01,
+            "kernel_type": "epanechnikov",
+            "gaussian_cutoff": 3.0
+        },
+        "loess": {
+            "bandwidth": 0.01,
+            "degree": 1,
+            "kernel_type": "tricube",
+            "robust": false,
+            "robust_iterations": 3
+        },
+        "savitzky_golay": {
+            "window": 101,
+            "degree": 2
+        }
+    }
+}

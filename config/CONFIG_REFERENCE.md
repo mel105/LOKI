@@ -17,6 +17,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 4. [Common: stats](#4-common-stats)
 5. [loki_outlier](#5-loki_outlier)
 6. [loki_homogeneity](#6-loki_homogeneity)
+7. [loki_filter](#7-loki_filter)
 
 ---
 
@@ -400,3 +401,216 @@ Controls the change point detector (SNHT-based).
     "apply_adjustment": true
 }
 ```
+
+---
+
+## 7. loki_filter
+
+Default config: `config/filter.json`
+
+The filter pipeline runs the following steps in order:
+
+```
+1. GapFiller                    -- fill NaN / missing values
+2. (optional) FilterWindowAdvisor -- auto-estimate window or bandwidth
+3. Filter::apply()              -- smooth the series
+4. CSV export + plots
+```
+
+### 7.1 filter.gap_filling
+
+Controls NaN and gap handling before the filter is applied.
+Filters require clean (NaN-free) input -- all gaps must be resolved here.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `linear` | Fill strategy. See options below. |
+| `max_fill_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+
+### strategy options
+
+| Value | Description |
+|---|---|
+| `linear` | Linear interpolation between nearest valid neighbours. |
+| `forward_fill` | Copy last valid value forward. |
+| `mean` | Replace with series mean. |
+| `none` | No filling -- gaps remain as NaN (filter will throw). |
+
+---
+
+### 7.2 filter.method
+
+Selects the smoothing algorithm.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `kernel` | Filter algorithm. See options below. |
+| `auto_window_method` | string | `silverman_mad` | Advisor method used when window/bandwidth is `0`. See options below. |
+
+### method options
+
+| Value | Class | Best for |
+|---|---|---|
+| `moving_average` | `MovingAverageFilter` | Any data, fast, symmetric smoothing |
+| `ema` | `EmaFilter` | Streaming or ms-resolution data, causal |
+| `weighted_ma` | `WeightedMovingAverageFilter` | Custom kernel weights, any data |
+| `kernel` | `KernelSmoother` | Climatological and GNSS data |
+| `loess` | `LoessFilter` | Climatological data, locally adaptive |
+| `savitzky_golay` | `SavitzkyGolayFilter` | ms / high-frequency data, peak preservation |
+
+### auto_window_method options
+
+Used only when the relevant window or bandwidth parameter is `0`.
+
+| Value | Description |
+|---|---|
+| `silverman_mad` | Robust bandwidth: `sigma = MAD/0.6745`, `bw = sigma * (4/(3n))^0.2`. Recommended default. |
+| `silverman` | Classic Silverman rule: `bw = 0.9 * min(std, IQR/1.34) * n^(-0.2)`. |
+| `acf_peak` | Detects first local maximum in ACF as estimated period, derives window from it. |
+
+---
+
+### 7.3 filter.moving_average
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `window` | int | `365` | Symmetric window length in samples (must be odd). `0` = auto via advisor. |
+
+---
+
+### 7.4 filter.ema
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `alpha` | float | `0.1` | Smoothing factor in (0, 1]. Smaller = smoother. No auto-window applies. |
+
+> **Note**: EMA is causal -- it only looks backward. No edge NaN is produced.
+> `auto_window_method` is ignored for EMA.
+
+---
+
+### 7.5 filter.weighted_ma
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `weights` | float[] | `[1,2,3,2,1]` | Symmetric weight vector. Length determines window size. Must be non-empty. |
+
+> **Note**: Window size = `weights.length`. No auto-window applies -- weights
+> are always specified explicitly.
+
+---
+
+### 7.6 filter.kernel
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `bandwidth` | float | `0.1` | Fraction of series length used as kernel half-width: `k = ceil(bw * n)`. Range: `(0, 1]`. `0` = auto via advisor. |
+| `kernel_type` | string | `epanechnikov` | Kernel shape. See options below. |
+| `gaussian_cutoff` | float | `3.0` | Truncation limit for Gaussian kernel in units of `h` (standard deviations). Ignored for other kernels. |
+
+### kernel_type options
+
+| Value | Description |
+|---|---|
+| `epanechnikov` | Parabolic kernel. Optimal MSE, recommended default. |
+| `gaussian` | Gaussian (normal) kernel, truncated at `gaussian_cutoff * h`. |
+| `uniform` | Rectangular kernel (simple moving average with fractional bandwidth). |
+| `triangular` | Triangular kernel. Intermediate between uniform and Epanechnikov. |
+
+---
+
+### 7.7 filter.loess
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `bandwidth` | float | `0.25` | Fraction of series length used as k-nearest-neighbour span. Range: `(0, 1]`. `0` = auto via advisor. |
+| `degree` | int | `1` | Polynomial degree for local regression. `1` = linear, `2` = quadratic. |
+| `kernel_type` | string | `tricube` | Weighting kernel for local regression. See options below. |
+| `robust` | bool | `false` | Enable IRLS robust fitting (downweights outliers). Recommended when residuals contain outliers. |
+| `robust_iterations` | int | `3` | Number of IRLS re-weighting iterations. Only used when `robust: true`. |
+
+### kernel_type options (LOESS)
+
+| Value | Description |
+|---|---|
+| `tricube` | Classic LOESS kernel. Recommended default. |
+| `epanechnikov` | Parabolic kernel. Slightly faster than tricube. |
+| `gaussian` | Gaussian weighting. Softer tails than tricube. |
+
+> **Note**: LOESS uses k-nearest-neighbours, so no edge NaN is produced --
+> the neighbourhood shifts at series boundaries. Complexity is O(n * k * p^2);
+> not recommended for ms-resolution data.
+
+---
+
+### 7.8 filter.savitzky_golay
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `window` | int | `11` | Convolution window length in samples (must be odd and >= `degree + 2`). `0` = auto via advisor. |
+| `degree` | int | `2` | Polynomial degree for local fitting. Must satisfy `degree < window`. |
+
+> **Note**: Edge coefficients are precomputed -- no edge NaN is produced.
+> Fast O(n * w) convolution; recommended for ms / high-frequency data.
+
+---
+
+### 7.9 Plots (filter pipeline)
+
+In addition to the generic plots (see [Section 3](#3-common-plots)), loki_filter
+produces the following pipeline-specific plots:
+
+| Flag | Default | Description |
+|---|---|---|
+| `filter_overlay` | `true` | Original + filtered series on one plot, two coloured lines. |
+| `filter_overlay_residuals` | `true` | Two-panel plot: upper = original + filtered overlay, lower = residuals (original - filtered). Main diagnostic plot. |
+| `filter_residuals` | `false` | Standalone residuals line plot. |
+| `filter_residuals_acf` | `false` | ACF of residuals with 95% confidence band. Useful for verifying that filter removed the target frequency component. |
+| `residuals_histogram` | `false` | Histogram of residuals. |
+| `residuals_qq` | `false` | Q-Q plot of residuals against normal distribution. |
+
+---
+
+### Example
+
+```json
+"filter": {
+    "gap_filling": {
+        "strategy": "linear",
+        "max_fill_length": 0
+    },
+    "method": "kernel",
+    "auto_window_method": "silverman_mad",
+    "moving_average": {
+        "window": 365
+    },
+    "ema": {
+        "alpha": 0.1
+    },
+    "weighted_ma": {
+        "weights": [1.0, 2.0, 3.0, 2.0, 1.0]
+    },
+    "kernel": {
+        "bandwidth": 0.1,
+        "kernel_type": "epanechnikov",
+        "gaussian_cutoff": 3.0
+    },
+    "loess": {
+        "bandwidth": 0.25,
+        "degree": 1,
+        "kernel_type": "tricube",
+        "robust": false,
+        "robust_iterations": 3
+    },
+    "savitzky_golay": {
+        "window": 11,
+        "degree": 2
+    }
+}
+```
+
+> **Auto-window rule**: If the relevant `window` or `bandwidth` key is `0`
+> (or omitted), `FilterWindowAdvisor` is called automatically using the
+> method specified in `auto_window_method`. The advisor result is logged at
+> `INFO` level so the effective value is always visible in the log.
+> Set `window`/`bandwidth` to a positive value to disable auto-estimation.

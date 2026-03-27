@@ -27,11 +27,13 @@ option(LOKI_BUILD_TESTS "Build unit and integration tests" ON)
 add_subdirectory(libs/loki_core)
 add_subdirectory(libs/loki_homogeneity)
 add_subdirectory(libs/loki_outlier)
+add_subdirectory(libs/loki_filter)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
 add_subdirectory(apps/loki_homogeneity)
 add_subdirectory(apps/loki_outlier)
+add_subdirectory(apps/loki_filter)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

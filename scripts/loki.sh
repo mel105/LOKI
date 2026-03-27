@@ -14,6 +14,7 @@
 #   loki             apps/loki/loki.exe
 #   homogenization   apps/loki_homogeneity/homogenization.exe
 #   outlier          apps/loki_outlier/loki_outlier.exe
+#   filter           apps/loki_filter/loki_filter.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -66,11 +67,13 @@ declare -A APP_EXE=(
     [loki]="apps/loki/loki.exe"
     [homogenization]="apps/loki_homogeneity/homogenization.exe"
     [outlier]="apps/loki_outlier/loki_outlier.exe"
+    [filter]="apps/loki_filter/loki_filter.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
     [homogenization]="config/homogenization.json"
     [outlier]="config/outlier.json"
+    [filter]="config/filter.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -98,7 +101,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|all)
+        loki|homogenization|outlier|filter|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;

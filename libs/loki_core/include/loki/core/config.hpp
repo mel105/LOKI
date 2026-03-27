@@ -162,15 +162,79 @@ struct OutlierConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  FilterMethod
+// -----------------------------------------------------------------------------
+
+enum class FilterMethodEnum {
+    MOVING_AVERAGE,
+    EMA,
+    WEIGHTED_MA,
+    KERNEL,
+    LOESS,
+    SAVITZKY_GOLAY
+};
+
+// -----------------------------------------------------------------------------
+//  FilterConfig  (sub-configs defined outside to avoid GCC 13 aggregate init bug)
+// -----------------------------------------------------------------------------
+
+struct FilterGapFillingConfig {
+    std::string strategy{"linear"};
+    int         maxFillLength{0};
+};
+
+struct MovingAverageFilterConfig {
+    int window{365};
+};
+
+struct EmaFilterConfig {
+    double alpha{0.1};
+};
+
+struct WeightedMaFilterConfig {
+    std::vector<double> weights{1.0, 2.0, 3.0, 2.0, 1.0};
+};
+
+struct KernelFilterConfig {
+    double      bandwidth{0.1};
+    std::string kernelType{"epanechnikov"};
+    double      gaussianCutoff{3.0};
+};
+
+struct LoessFilterConfig {
+    double      bandwidth{0.25};
+    int         degree{1};
+    std::string kernelType{"tricube"};
+    bool        robust{false};
+    int         robustIterations{3};
+};
+
+struct SavitzkyGolayFilterConfig {
+    int window{11};
+    int degree{2};
+};
+
+/**
+ * @brief Top-level configuration for the loki_filter pipeline.
+ */
+struct FilterConfig {
+    FilterGapFillingConfig    gapFilling{};
+    FilterMethodEnum          method{FilterMethodEnum::KERNEL};
+    std::string               autoWindowMethod{"silverman_mad"};
+    MovingAverageFilterConfig movingAverage{};
+    EmaFilterConfig           ema{};
+    WeightedMaFilterConfig    weightedMa{};
+    KernelFilterConfig        kernel{};
+    LoessFilterConfig         loess{};
+    SavitzkyGolayFilterConfig savitzkyGolay{};
+};
+
+// -----------------------------------------------------------------------------
 //  PlotOptionsConfig
 // -----------------------------------------------------------------------------
 
 /**
  * @brief Fine-grained options for individual plot types.
- *
- * These are optional overrides; sensible defaults are applied when absent
- * from the JSON config. The defaults adapt to the series size at runtime
- * (e.g. acfMaxLag = 0 means auto: min(N/10, 200)).
  */
 struct PlotOptionsConfig {
     /// Maximum lag for ACF plot. 0 = auto: min(N/10, 200).
@@ -214,6 +278,14 @@ struct PlotConfig {
     bool changePoints     {true};
     bool shiftMagnitudes  {true};
     bool correctionCurve  {true};
+
+    // -- Filter pipeline plots ------------------------------------------------
+    bool filterOverlay           {true};
+    bool filterOverlayResiduals  {true};
+    bool filterResiduals         {false};
+    bool filterResidualsAcf      {false};
+    bool residualsHistogram      {false};
+    bool residualsQq             {false};
 };
 
 // -----------------------------------------------------------------------------
@@ -239,6 +311,7 @@ struct AppConfig {
     HomogeneityConfig homogeneity;
     StatsConfig       stats;
     OutlierConfig     outlier;
+    FilterConfig      filter;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
