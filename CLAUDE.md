@@ -91,7 +91,6 @@ std::exception
 - All exception classes live in `namespace loki`.
 - In `.cpp` files, add `using namespace loki;` after the last `#include`.
 - In `apps/` (main), `using namespace loki;` after includes covers most types.
-  Use `loki::filter::PlotFilter` etc. for sub-namespace types.
 - `exceptions.hpp` must be included early -- it is included by `logger.hpp`.
 
 ### Where to catch
@@ -124,6 +123,7 @@ std::exception
 - [ ] Comments in English, ASCII characters only.
 - [ ] `using namespace loki;` present in `.cpp` files after the last `#include`.
 - [ ] Unused parameters marked with `/*paramName*/` syntax.
+- [ ] No `M_PI` -- use `std::numbers::pi` (C++20).
 
 ---
 
@@ -202,38 +202,47 @@ loki/
 |   |   +-- include/loki/
 |   |       +-- core/         (exceptions, version, config, configLoader, logger, nanPolicy)
 |   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer, medianYearSeries)
-|   |       +-- stats/        (descriptive, filter, distributions, hypothesis)   <- C2: distributions+hypothesis NEW
+|   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
 |   |       +-- math/         (lsqResult, lsq, designMatrix)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
-|   +-- loki_regression/             <- R1-R6: to be created
+|   +-- loki_regression/
 |       +-- CMakeLists.txt
 |       +-- include/loki/regression/
-|       |   +-- regressionResult.hpp
-|       |   +-- regressor.hpp              <- abstract base
-|       |   +-- linearRegressor.hpp        <- R1
-|       |   +-- polynomialRegressor.hpp    <- R2
-|       |   +-- harmonicRegressor.hpp      <- R3
-|       |   +-- trendEstimator.hpp         <- R3
-|       |   +-- robustRegressor.hpp        <- R4
-|       |   +-- calibrationRegressor.hpp   <- R6 (TLS)
-|       |   +-- regressionReport.hpp       <- R1+ (protocol generator)
-|       |   +-- plotRegression.hpp         <- R7
+|       |   +-- regressionResult.hpp     <- R1 (contains PredictionPoint)
+|       |   +-- regressor.hpp            <- R1 abstract base (fit, predict, name)
+|       |   +-- regressorUtils.hpp       <- R1 shared internal helpers
+|       |   +-- linearRegressor.hpp      <- R1
+|       |   +-- polynomialRegressor.hpp  <- R2 (LOO-CV + k-fold CV)
+|       |   +-- harmonicRegressor.hpp    <- R3
+|       |   +-- trendEstimator.hpp       <- R3
+|       |   +-- robustRegressor.hpp      <- R4
+|       |   +-- calibrationRegressor.hpp <- R6 (TLS, planned)
+|       |   +-- plotRegression.hpp       <- R7 (planned)
 |       +-- src/
+|           +-- regressorUtils.cpp
+|           +-- linearRegressor.cpp
+|           +-- polynomialRegressor.cpp
+|           +-- harmonicRegressor.cpp
+|           +-- trendEstimator.cpp
+|           +-- robustRegressor.cpp
 +-- tests/
 |   +-- unit/
 |   |   +-- core/
 |   |   +-- homogeneity/
 |   |   +-- filter/
-|   |   |   +-- test_filters.cpp     <- F2+F3a tests written, F3b+F4+F5 pending
-|   |   +-- regression/              <- R7: to be created
+|   |   +-- regression/
+|   |       +-- test_linearRegressor.cpp     <- R1: 11 tests
+|   |       +-- test_polynomialRegressor.cpp <- R2: 12 tests
+|   |       +-- test_harmonicRegressor.cpp   <- R3: 10 tests (harmonic + trend)
+|   |       +-- test_robustRegressor.cpp     <- R4: 9 tests
 +-- config/
 |   +-- homogenization.json
 |   +-- outlier.json
 |   +-- filter.json
-|   +-- regression.json              <- R7: to be created
+|   +-- regression.json              <- R7: prototype below
 +-- scripts/
 |   +-- loki.sh
 +-- docs/
@@ -271,7 +280,8 @@ loki/
 ### CMake target name collision
 `loki_outlier` is already the library target name. The executable target must be
 named `loki_outlier_app` with `OUTPUT_NAME "loki_outlier"` set via `set_target_properties`.
-Same pattern applies to `loki_filter` app (`loki_filter_app`) and `loki_regression` app.
+Same pattern applies to `loki_filter` app (`loki_filter_app`) and `loki_regression` app
+(`loki_regression_app`).
 
 ### Runtime DLLs (Windows)
 Three DLLs must be present next to every executable:
@@ -288,6 +298,18 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ```
 Do NOT use `PUBLIC Eigen3::Eigen` in `target_link_libraries` -- use SYSTEM include instead.
 
+### loki.sh app registration
+Every new app must be added to BOTH associative arrays in `loki.sh`:
+```bash
+APP_EXE=([regression]="apps/loki_regression/loki_regression.exe" ...)
+APP_CONFIG=([regression]="config/regression.json" ...)
+```
+AND to the `case` statement in argument parsing:
+```bash
+loki|homogenization|outlier|filter|regression|all)
+    APP="${arg}" ;;
+```
+
 ---
 
 ## Implemented Modules
@@ -297,145 +319,288 @@ Do NOT use `PUBLIC Eigen3::Eigen` in `target_link_libraries` -- use SYSTEM inclu
 - `version.hpp` -- `0.3.0`
 - `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
 - `logger.hpp / .cpp` -- Meyers singleton, file + stdout/stderr, macros
-- `config.hpp` -- all config structs including `PlotOptionsConfig`, `FilterConfig`
-- `configLoader.hpp / .cpp` -- JSON loader, path resolution, `_parseFilter()`
+- `config.hpp` -- all config structs including `PlotOptionsConfig`, `FilterConfig`,
+  `RegressionConfig` (added this thread)
+- `configLoader.hpp / .cpp` -- JSON loader, `_parseFilter()`, `_parseRegression()` (added)
 - `timeStamp.hpp / .cpp` -- MJD internal, GPS/UTC/Unix conversions
 - `timeSeries.hpp / .cpp` -- Observation, SeriesMetadata, append, slice, indexOf
 - `gapFiller.hpp / .cpp` -- LINEAR, FORWARD_FILL, MEAN, NONE, MEDIAN_YEAR strategies
 - `deseasonalizer.hpp / .cpp` -- MOVING_AVERAGE, MEDIAN_YEAR, NONE
 - `medianYearSeries.hpp / .cpp` -- median annual profile
 - `descriptive.hpp / .cpp` -- mean, median, variance, IQR, MAD, ACF, Hurst, summarize()
-- `filter.hpp / .cpp` -- movingAverage, EMA, WMA (free functions, used by Deseasonalizer)
+- `filter.hpp / .cpp` -- movingAverage, EMA, WMA (free functions)
+- `distributions.hpp / .cpp` -- normalCdf/Quantile, tCdf/Quantile, chi2Cdf/Quantile, fCdf
+- `hypothesis.hpp / .cpp` -- jarqueBera, shapiroWilk, kolmogorovSmirnov, runsTest, durbinWatson
+- `metrics.hpp / .cpp` -- computeMetrics, rmse, mae, bias (added this thread)
 - `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
 - `gnuplot.hpp / .cpp` -- RAII gnuplot pipe wrapper
-- `plot.hpp / .cpp` -- timeSeries, histogram, ACF, QQ, boxplot, comparison
+- `plot.hpp / .cpp` -- timeSeries, histogram, ACF, QQ, boxplot, comparison,
+  cdfPlot, qqPlotWithBands, residualDiagnostics (added this thread)
 
 ### loki_core/math -- complete (C1)
-- `lsqResult.hpp` -- LsqResult struct: coefficients, residuals, sigma0, vTPv, cofactorX, dof, converged
+- `lsqResult.hpp` -- LsqResult struct
 - `lsq.hpp / .cpp` -- LsqSolver: static solve(), weighted + IRLS (HUBER, BISQUARE)
 - `designMatrix.hpp / .cpp` -- DesignMatrix: polynomial(), harmonic(), identity()
 
-### loki_core/stats -- C2 pending
-- `distributions.hpp / .cpp` -- t, F, chi2, normal CDF and quantile functions  <- NEW
-- `hypothesis.hpp / .cpp` -- Shapiro-Wilk, Jarque-Bera, KS test, Runs test, Durbin-Watson  <- NEW
+### loki_core/stats -- complete (C2)
+- `distributions.hpp / .cpp` -- t, F, chi2, normal CDF and quantile functions
+- `hypothesis.hpp / .cpp` -- Shapiro-Wilk, Jarque-Bera, KS test, Runs test, Durbin-Watson
+- `metrics.hpp / .cpp` -- RMSE, MAE, bias, MAPE with NanPolicy support
 
 ### loki_outlier -- complete
 ### loki_homogeneity -- complete
 
 ### loki_filter -- F1-F6 complete
-- `filter.hpp` -- abstract base: `apply(TimeSeries) -> FilterResult`, `name() -> string`
-- `filterResult.hpp` -- `FilterResult { filtered, residuals, filterName, effectiveWindow, effectiveBandwidth }`
-- `movingAverageFilter.hpp / .cpp`
-- `emaFilter.hpp / .cpp`
-- `weightedMovingAverageFilter.hpp / .cpp`
-- `kernelSmoother.hpp / .cpp`
-- `loessFilter.hpp / .cpp`
-- `savitzkyGolayFilter.hpp / .cpp`
-- `filterWindowAdvisor.hpp / .cpp`
-- `plotFilter.hpp / .cpp`
-- `apps/loki_filter/main.cpp`
-- `config/filter.json`
+(see previous CLAUDE.md for details)
+
+### loki_regression -- R1-R4 complete
+
+#### Key design decisions
+- **X-axis convention**: `x = mjd - tRef` (days relative to first valid observation).
+  Ensures numerical stability for both ms-resolution and 6h data. `tRef` stored in
+  `RegressionResult` for use in `predict()` and protocols.
+- **`PredictionPoint`** defined in `regressionResult.hpp` (shared by all regressors).
+- **`predict()`** is pure virtual in `Regressor` base -- all regressors must implement it.
+- **`regressorUtils`** contains shared `computeGoodnessOfFit()` and `computeIntervals()`.
+  Lives in `include/loki/regression/` (not hidden in src) for cross-regressor access.
+- **Goodness of fit**: R^2, adjusted R^2, AIC/BIC (MLE sigma^2 for information criteria).
+- **CV**: analytical LOO-CV via hat matrix diagonal for OLS (O(n), exact);
+  k-fold CV for robust fits. `cvFolds` in `RegressionConfig` [2, 100], default 10.
+- **IRLS tuning constants**: Huber k=1.345, Bisquare c=4.685 (95% Gaussian efficiency).
+- **`TrendEstimator`**: joint fit of linear trend + K harmonics in single LSQ.
+  Returns `DecompositionResult` with `trend`, `seasonal`, `residuals` as `TimeSeries`.
+  Invariant: `trend + seasonal + residuals == original` (verified in tests).
+- **`RobustRegressor`**: forces `robust=true` even if config says false (with warning).
+  Exposes `weightedObservations()` for outlier diagnostics.
+- **Output directory**: `OUTPUT/PROTOCOLS/` for protocol text files (not `REPORTS`).
+  `protocolsDir` added to `AppConfig`. Created alongside LOG, CSV, IMG in `main.cpp`.
+
+#### RegressionResult fields
+```cpp
+struct PredictionPoint {
+    double x;           // mjd - tRef (days)
+    double predicted;
+    double confLow, confHigh;   // confidence interval
+    double predLow, predHigh;   // prediction interval
+};
+
+struct RegressionResult {
+    Eigen::VectorXd  coefficients;
+    Eigen::VectorXd  residuals;
+    Eigen::MatrixXd  cofactorX;
+    double           sigma0;
+    double           rSquared;
+    double           rSquaredAdj;
+    double           aic;
+    double           bic;
+    int              dof;
+    bool             converged;
+    std::string      modelName;
+    TimeSeries       fitted;
+    double           tRef;      // MJD of first observation
+};
+```
+
+#### Coefficient layouts
+- `LinearRegressor`:    `[a0, a1]`
+- `PolynomialRegressor`: `[a0, a1, ..., ad]`
+- `HarmonicRegressor`:  `[a0, s1, c1, s2, c2, ..., sK, cK]`
+- `TrendEstimator`:     `[a0, a1, s1, c1, s2, c2, ..., sK, cK]`
+- `RobustRegressor`:    same as polynomial of chosen degree
+
+---
+
+## Config Structs (config.hpp) -- RegressionConfig
+
+```cpp
+enum class RegressionMethodEnum {
+    LINEAR, POLYNOMIAL, HARMONIC, TREND, ROBUST, CALIBRATION
+};
+
+struct RegressionGapFillingConfig {
+    std::string strategy{"linear"};
+    int         maxFillLength{0};
+};
+
+struct RegressionConfig {
+    RegressionGapFillingConfig gapFilling{};
+    RegressionMethodEnum       method{RegressionMethodEnum::LINEAR};
+    int                        polynomialDegree{1};
+    int                        harmonicTerms{2};
+    double                     period{365.25};       // days
+    bool                       robust{false};
+    int                        robustIterations{10};
+    std::string                robustWeightFn{"bisquare"};  // huber | bisquare
+    bool                       computePrediction{false};
+    double                     predictionHorizon{0.0};  // days ahead
+    double                     confidenceLevel{0.95};
+    double                     significanceLevel{0.05};
+    int                        cvFolds{10};              // [2, 100]
+};
+```
+
+#### AppConfig output directories
+```cpp
+struct AppConfig {
+    // ...
+    std::filesystem::path logDir;        // OUTPUT/LOG
+    std::filesystem::path csvDir;        // OUTPUT/CSV
+    std::filesystem::path imgDir;        // OUTPUT/IMG
+    std::filesystem::path protocolsDir;  // OUTPUT/PROTOCOLS
+};
+```
+
+---
+
+## regression.json -- Prototype Configuration
+
+```json
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "mjd",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png",
+        "time_format": "utc",
+        "enabled": {
+            "time_series":              true,
+            "histogram":                true,
+            "acf":                      false,
+            "qq_plot":                  false,
+            "boxplot":                  false,
+            "regression_overlay":       true,
+            "regression_residuals":     true,
+            "regression_cdf_plot":      false,
+            "regression_qq_bands":      true
+        }
+    },
+
+    "stats": {
+        "enabled": true,
+        "nan_policy": "skip",
+        "hurst": false
+    },
+
+    "regression": {
+        "gap_filling": {
+            "strategy": "linear",
+            "max_fill_length": 0
+        },
+
+        "method": "linear",
+
+        "polynomial_degree": 1,
+
+        "harmonic_terms": 2,
+        "period": 365.25,
+
+        "robust": false,
+        "robust_iterations": 10,
+        "robust_weight_fn": "bisquare",
+
+        "compute_prediction": false,
+        "prediction_horizon": 365.25,
+        "confidence_level": 0.95,
+        "significance_level": 0.05,
+
+        "cv_folds": 10
+    }
+}
+```
+
+#### JSON key reference for `regression` block
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `"linear"` | `linear` \| `polynomial` \| `harmonic` \| `trend` \| `robust` \| `calibration` |
+| `polynomial_degree` | int | `1` | Degree for polynomial/robust regression (>= 1) |
+| `harmonic_terms` | int | `2` | Number of sin/cos pairs K for harmonic/trend |
+| `period` | double | `365.25` | Fundamental period in days |
+| `robust` | bool | `false` | Enable IRLS robust estimation |
+| `robust_iterations` | int | `10` | Max IRLS iterations |
+| `robust_weight_fn` | string | `"bisquare"` | `huber` \| `bisquare` |
+| `compute_prediction` | bool | `false` | Compute and save prediction beyond data range |
+| `prediction_horizon` | double | `0.0` | Days beyond last observation to predict |
+| `confidence_level` | double | `0.95` | Confidence level for intervals |
+| `significance_level` | double | `0.05` | Alpha for hypothesis tests in protocol |
+| `cv_folds` | int | `10` | K-fold CV folds [2, 100]; LOO-CV used for OLS automatically |
+| `gap_filling.strategy` | string | `"linear"` | `linear` \| `forward_fill` \| `mean` \| `none` |
+| `gap_filling.max_fill_length` | int | `0` | Max gap to fill in samples (0 = unlimited) |
 
 ---
 
 ## loki_filter -- Key Details
-
-### FilterResult fields
-```cpp
-struct FilterResult {
-    TimeSeries  filtered;
-    TimeSeries  residuals;
-    std::string filterName;
-    int         effectiveWindow{0};      // samples actually used (0 = not applicable e.g. EMA)
-    double      effectiveBandwidth{0.0}; // window/n fraction (0 = not applicable)
-};
-```
-Every filter populates `effectiveWindow` and `effectiveBandwidth` in `apply()`.
-`main.cpp` logs these after every filter run with a tuning hint.
-
-### Window vs bandwidth
-- `MovingAverageFilter`, `WeightedMovingAverageFilter`, `SavitzkyGolayFilter`:
-  configured by `window` in **samples** (not days/seconds).
-  For 6h data: 1 year = 1461 samples. For daily: 365. For 1Hz: 86400.
-- `KernelSmoother`, `LoessFilter`: configured by `bandwidth` as **fraction of n**.
-  Effective window = `ceil(bandwidth * n)` samples.
-- `EmaFilter`: no fixed window, controlled by `alpha` in (0, 1].
-
-### Auto-window
-If `window == 0` or `bandwidth == 0.0` in JSON, `FilterWindowAdvisor` is called
-automatically. Method selected by `auto_window_method`: `silverman_mad` (default),
-`silverman`, `acf_peak`. Result is logged at INFO level.
-
-### Performance
-- LOESS is O(n * k * p^2) -- avoid for n > 10000. Use KernelSmoother instead.
-- KernelSmoother, MA, WMA, SG: O(n * w) -- suitable for any n.
-- EMA: O(n) -- fastest, causal only.
-
-### FilterWindowAdvisor is static
-`FilterWindowAdvisor::advise(series, cfg)` -- static method, do NOT instantiate.
+(unchanged from previous CLAUDE.md -- see filter thread for full detail)
 
 ---
 
-## loki_regression -- Planned (threads R1-R8)
+## Planned Future Work
 
-### Architecture
-```
-loki_core/math/lsq         <- reused directly
-loki_core/stats/distributions  <- C2: needed for p-values
-loki_core/stats/hypothesis     <- C2: needed for residual diagnostics
-loki_regression/               <- R1-R6: regressors + report + plots
-apps/loki_regression/          <- R7: pipeline app
-```
+### R5 -- ANOVA + hypothesis testing + residual diagnostics (NEXT)
+- ANOVA table (SSR, SSE, SST, F-statistic, p-value)
+- VIF (variance inflation factor) for multicollinearity detection
+- Cook's distance for influence diagnostics
+- Breusch-Pagan test for heteroscedasticity
+- Durbin-Watson already in `loki_core/stats/hypothesis`
+- These will consume `distributions.hpp` and `hypothesis.hpp` from C2
 
-### RegressionResult (R1)
-```cpp
-struct RegressionResult {
-    Eigen::VectorXd  coefficients;     // estimated parameters
-    Eigen::VectorXd  residuals;        // observation residuals
-    Eigen::MatrixXd  cofactorX;        // cofactor matrix of unknowns
-    double           sigma0;           // unit weight standard deviation
-    double           rSquared;         // coefficient of determination
-    double           rSquaredAdj;      // adjusted R^2
-    double           aic;              // Akaike Information Criterion
-    double           bic;              // Bayesian Information Criterion
-    int              dof;              // degrees of freedom (n - p)
-    bool             converged;        // IRLS convergence flag
-    std::string      modelName;        // for logging and report header
-    // Prediction support:
-    TimeSeries       fitted;           // fitted values at observation times
-};
-```
+### R6 -- Calibration + Total Least Squares
+- `CalibrationRegressor` -- orthogonal regression (errors in both x and y)
+- TLS via SVD (Eigen)
+- `multicollinearity` -- condition number, VIF
 
-### Prediction + confidence intervals (R1)
-Given new design matrix `A_new`, prediction at new points:
-```
-y_pred = A_new * x
-var_pred = sigma0^2 * (A_new * cofactorX * A_new^T + I)  // prediction interval
-var_conf = sigma0^2 * (A_new * cofactorX * A_new^T)       // confidence interval
-```
-Requires t-distribution quantile from `loki_core/stats/distributions`.
+### R7 -- `apps/loki_regression` + `PlotRegression` + protocol + CMakeLists
+Files to create:
+- `libs/loki_regression/include/loki/regression/plotRegression.hpp`
+- `libs/loki_regression/src/plotRegression.cpp`
+- `apps/loki_regression/CMakeLists.txt`
+- `apps/loki_regression/main.cpp`
+- `libs/loki_regression/CMakeLists.txt`
+- `config/regression.json`
 
-### Thread plan
-| Thread | Content |
-|---|---|
-| C2 | `distributions.hpp/.cpp` + `hypothesis.hpp/.cpp` in loki_core/stats |
-| R1 | `RegressionResult` + `LinearRegressor` + prediction + confidence intervals + `RegressionReport` (TXT) |
-| R2 | `PolynomialRegressor` + AIC/BIC + cross-validation (leave-one-out) |
-| R3 | `HarmonicRegressor` + `TrendEstimator` (trend + seasonal + residuals) |
-| R4 | `RobustRegressor` (IRLS interface) + weighted regression |
-| R5 | ANOVA table + hypothesis testing + residual diagnostics (VIF, Cook's distance, Breusch-Pagan, Durbin-Watson) |
-| R6 | Calibration + Total Least Squares (orthogonal regression) + multicollinearity |
-| R7 | `apps/loki_regression` + `PlotRegression` + CSV + protocol + unit tests |
-| R8 | Levenberg-Marquardt nonlinear LSQ (separate thread, later) |
+`main.cpp` pipeline:
+1. Load config (`ConfigLoader::load`)
+2. Init logger, create output dirs (LOG, CSV, IMG, PROTOCOLS)
+3. Load data (`DataManager`)
+4. Gap fill if configured
+5. Instantiate regressor based on `method` (factory pattern or switch)
+6. `fit(ts)` -> `RegressionResult`
+7. Log: modelName, sigma0, R^2, adj-R^2, AIC, BIC, dof
+8. If `computePrediction`: call `predict()`, save CSV
+9. Plots: overlay, residual diagnostics, QQ with bands
+10. Protocol: write `OUTPUT/PROTOCOLS/regression_[dataset]_[param]_protocol.txt`
+11. LOO-CV or k-fold CV (polynomial/robust), log CV RMSE and bias
 
-### RegressionReport format (R1+)
-Plain text `.txt` file written to `OUTPUT/REPORTS/`:
+Protocol format (see CLAUDE.md section below).
+
+### R8 -- Levenberg-Marquardt nonlinear LSQ (separate thread, later)
+
+---
+
+## Protocol Format (OUTPUT/PROTOCOLS/)
+
+Filename: `regression_[dataset]_[componentName]_protocol.txt`
+
 ```
 ============================================================
- REGRESSION REPORT -- LinearRegressor
+ REGRESSION PROTOCOL -- LinearRegressor
 ============================================================
- Model:        y = a0 + a1 * x
+ Dataset:      CLIM_DATA_EX1    Series: col_3
  Observations: 1276    Parameters: 2    DOF: 1274
+ Method:       linear    Robust: no
 
  COEFFICIENTS
  -------------------------------------------------------
@@ -450,6 +615,13 @@ Plain text `.txt` file written to `OUTPUT/REPORTS/`:
  AIC:              -4821.3   BIC: -4810.1
  F-statistic:      33.7      p-value: <0.001
 
+ CROSS-VALIDATION
+ -------------------------------------------------------
+ Method:           LOO-CV (analytical)
+ CV RMSE:          0.0341
+ CV MAE:           0.0251
+ CV Bias:          0.0001
+
  RESIDUAL DIAGNOSTICS
  -------------------------------------------------------
  Mean:             0.0000    Std dev: 0.0318
@@ -458,308 +630,55 @@ Plain text `.txt` file written to `OUTPUT/REPORTS/`:
 ============================================================
 ```
 
-### FilterReport format (F7)
-Requires C2 (Jarque-Bera, Durbin-Watson). Written to `OUTPUT/REPORTS/`:
-```
-============================================================
- FILTER REPORT -- KernelSmoother(Epanechnikov)
-============================================================
- Dataset:      CLIM_DATA_EX1    Series: col_3
- Observations: 36524
- Filter:       KernelSmoother(Epanechnikov)
- Window:       3652 samples     Bandwidth: 0.100000
- Auto-window:  yes (SILVERMAN_MAD)
-
- RESIDUAL STATISTICS
- -------------------------------------------------------
- Mean:              0.0001    Std dev: 0.0318
- MAD:               0.0214    RMSE:    0.0318
- Min:              -0.1123    Max:     0.1456
-
- RESIDUAL DIAGNOSTICS
- -------------------------------------------------------
- Normality (J-B):   p = 0.041   [FAIL -- non-normal residuals]
- Autocorr. (D-W):   0.43        [FAIL -- strong autocorrelation]
- ACF lag-1:         0.821
-
- TUNING HINTS
- -------------------------------------------------------
- High ACF in residuals suggests bandwidth is too large.
- Current: bandwidth=0.100 -> window=3652 samples (~913 days at 6h resolution).
- Suggested: try bandwidth 0.01-0.03 for better frequency resolution.
-============================================================
-```
-TUNING HINTS section is generated automatically based on ACF lag-1 and D-W thresholds:
-- ACF lag-1 > 0.5 -> bandwidth too large, suggest reducing
-- ACF lag-1 < 0.1 and D-W near 2.0 -> good fit
-- D-W < 1.5 -> positive autocorrelation remaining
-
-### OutlierReport format (to be added in loki_outlier update thread)
-Written to `OUTPUT/REPORTS/`:
-```
-============================================================
- OUTLIER REPORT -- MAD detector
-============================================================
- Dataset:      CLIM_DATA_EX1    Series: col_3
- Observations: 36524
- Deseasonalization: MEDIAN_YEAR
-
- DETECTION RESULTS
- -------------------------------------------------------
- Method:            MAD    Multiplier: 3.0
- Outliers detected: 47     (0.13% of series)
- Replacement:       linear interpolation   Max fill: unlimited
-
- SERIES STATISTICS
- -------------------------------------------------------
-             Before cleaning    After cleaning
- Mean:            0.0923             0.0921
- Std dev:         0.0341             0.0318
- MAD:             0.0241             0.0198
- Min:            -0.1456            -0.0987
- Max:             0.2341             0.1823
-
- DIAGNOSTICS
- -------------------------------------------------------
- Normality (J-B):   p = 0.124   [PASS]
-============================================================
-```
-
-### HomogeneityReport format (to be added in loki_homogeneity update thread)
-Written to `OUTPUT/REPORTS/`:
-```
-============================================================
- HOMOGENEITY REPORT -- SNHT (Alexandersson)
-============================================================
- Dataset:      CLIM_DATA_EX1    Series: col_3
- Observations: 36524
- Significance level: 0.05    Min segment: 180d
-
- PRE-PROCESSING
- -------------------------------------------------------
- Gap filling:         linear    Filled: 23 gaps
- Pre-outliers removed:  23      (method: mad_bounds, k=5.0)
- Deseasonalization:   MEDIAN_YEAR
- Post-outliers removed: 12      (method: mad, k=3.0)
- ACF dependence correction: yes (lag-1 ACF = 0.34)
-
- CHANGE POINTS DETECTED: 3
- -------------------------------------------------------
- #   Index    MJD          Date         Shift       p-value
- 1   8640     51840.000    2001-01-15   -0.0312      0.001
- 2   14400    53400.000    2005-03-22    0.0187      0.023
- 3   21600    55200.000    2010-02-08   -0.0095      0.041
-
- SEGMENT STATISTICS
- -------------------------------------------------------
- Seg  Date range                n       Mean     Std dev
- 1    1987-01-01 -- 2001-01-15  8640    0.0923   0.0318
- 2    2001-01-15 -- 2005-03-22  5760    0.0611   0.0301
- 3    2005-03-22 -- 2010-02-08  7200    0.0798   0.0325
- 4    2010-02-08 -- 2016-12-31  7924    0.0703   0.0312
-
- ADJUSTMENTS APPLIED
- -------------------------------------------------------
- Reference segment: 1 (oldest / leftmost)
- Total cumulative correction: +0.0220
- Segment 2 corrected by: +0.0312
- Segment 3 corrected by: +0.0125
- Segment 4 corrected by: +0.0220
-============================================================
-```
-
-### Report infrastructure -- shared across all modules
-- Report dir: `OUTPUT/REPORTS/` -- new subdir alongside LOG, CSV, IMG.
-- Must be created in `main.cpp` alongside other output dirs.
-- Filename: `[program]_[dataset]_[parameter]_report.txt`
-  e.g. `filter_CLIM_DATA_EX1_col_3_report.txt`
-- A `ReportWriter` helper class in each module handles formatting.
-  Alternatively a shared `loki_core/io/reportWriter.hpp` if patterns converge.
-- Dates shown in human-readable form (UTC) when time_format allows,
-  otherwise MJD. Use `TimeStamp::toUtcString()` if available.
-- All float values formatted with consistent precision (4 decimal places default).
-- `[PASS]` / `[FAIL]` / `[WARN]` tags for diagnostic results.
-- Reports are always generated (not gated by a config flag) when the pipeline runs.
-
----
-
-## Config Structs (config.hpp)
-
-### FilterConfig -- complete
-Enum `FilterMethodEnum` and all sub-configs defined OUTSIDE `FilterConfig`
-to avoid GCC 13 aggregate-init bug. `FilterConfig` uses `using` aliases.
-
-### RegressionConfig (to be added in R7)
-```cpp
-enum class RegressionMethodEnum {
-    LINEAR, POLYNOMIAL, HARMONIC, TREND, ROBUST, CALIBRATION
-};
-
-struct RegressionConfig {
-    RegressionMethodEnum method{RegressionMethodEnum::LINEAR};
-    int    polynomialDegree{1};
-    int    harmonicTerms{2};
-    double period{365.25};          // days, for harmonic regression
-    bool   robust{false};
-    int    robustIterations{10};
-    std::string robustWeightFn{"bisquare"};  // huber | bisquare
-    bool   computePrediction{false};
-    double predictionHorizon{0.0};  // days ahead to predict
-    double confidenceLevel{0.95};   // for intervals
-};
-```
-
-### AppConfig output directories
-```cpp
-struct AppConfig {
-    std::filesystem::path workspace;
-    // ...
-    std::filesystem::path logDir;      // OUTPUT/LOG
-    std::filesystem::path csvDir;      // OUTPUT/CSV
-    std::filesystem::path imgDir;      // OUTPUT/IMG
-    std::filesystem::path reportsDir;  // OUTPUT/REPORTS  <- ADD in C2/R1 thread
-};
-```
-`reportsDir` must be added to `AppConfig` and initialized in `ConfigLoader::load()`
-alongside `logDir`, `csvDir`, `imgDir`. All `main.cpp` files must create it with
-`std::filesystem::create_directories(cfg.reportsDir)`.
-
 ---
 
 ## Known Issues and Workarounds
 
-### GCC 13 aggregate-init bug -- CRITICAL, applies to every new module
+### GCC 13 aggregate-init bug -- CRITICAL
 Any `Config` struct that contains an enum member with a default value CANNOT
-be defined as a nested struct inside a class. GCC 13 fails with:
-  `could not convert '<brace-enclosed initializer list>' to 'const Config&'`
-**Fix:** Define the enum and Config struct OUTSIDE the class with descriptive names
-(e.g. `LsqWeightFunction`, `LsqSolverConfig`), then add `using` aliases inside:
-```cpp
-// WRONG -- causes GCC 13 error:
-class MyClass {
-    struct Config { MyEnum val{MyEnum::DEFAULT}; };  // FAILS
-};
-// CORRECT:
-enum class MyClassEnum { DEFAULT };
-struct MyClassConfig { MyClassEnum val{MyClassEnum::DEFAULT}; };
-class MyClass {
-    using Config = MyClassConfig;
-    using MyEnum = MyClassEnum;
-};
-```
-This applies to: `LsqSolver`, `FilterWindowAdvisor`, `FilterMethodEnum`,
-and ALL future Config structs with enum members.
+be defined as a nested struct inside a class. Fix: define outside with descriptive
+names, add `using` aliases inside class.
+Applies to: `LsqSolver`, `FilterWindowAdvisor`, `FilterMethodEnum`,
+`RegressionMethodEnum`, and ALL future Config structs with enum members.
 
-### `TimeSeries` API -- no `observations()` method
-`TimeSeries` does NOT have an `observations()` method. Always use direct indexing:
-```cpp
-// WRONG:
-const auto& obs = series.observations();  // compile error
-obs[i].timestamp                          // compile error, field is .time
+### `TimeSeries` API
+- No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
+- `TimeSeries::append(const TimeStamp& time, double value, uint8_t flag = 0)`
+- `::TimeStamp` is NOT in `namespace loki` -- always qualify as `::TimeStamp`
 
-// CORRECT:
-series[i].value
-series[i].time   // not .timestamp
-series.size()
-```
+### `std::numbers::pi` instead of `M_PI`
+Use `std::numbers::pi` (C++20 `<numbers>`) throughout. `M_PI` is not standard
+and may be missing on Windows/MinGW without `_USE_MATH_DEFINES`.
 
-### `TimeSeries::append` signature
-```cpp
-void append(const TimeStamp& time, double value, uint8_t flag = 0);
-// NOT: append({time, value}) -- brace-init does not work
-```
+### `regressorUtils.hpp` location
+Lives in `include/loki/regression/` (not hidden in `src/`) so all regressors
+can include it as `<loki/regression/regressorUtils.hpp>`.
 
-### `FilterWindowAdvisor` is a static-only class
-Do NOT instantiate `FilterWindowAdvisor`. Call directly:
-```cpp
-// WRONG:
-FilterWindowAdvisor advisor{cfg};
-advisor.advise(series);
-// CORRECT:
-FilterWindowAdvisor::advise(series, cfg);
-```
+### `computeIntervals()` x field
+`detail::computeIntervals()` sets `PredictionPoint::x = aRow[1]` (second column).
+This is correct for linear and polynomial (column 1 = x).
+For harmonic, `x` in `PredictionPoint` is the t value passed in `xNew` -- correct
+because `DesignMatrix::harmonic` puts t implicitly in the sin/cos terms, not as
+a raw column. If needed, caller can overwrite `pt.x` after `computeIntervals()`.
 
-### `::TimeStamp` not in `namespace loki`
-Always qualify as `::TimeStamp` in loki namespace code.
-
-### `using namespace loki;` in app `main.cpp`
-Add after includes. Sub-namespace types still need qualification:
-`loki::filter::PlotFilter`, `loki::filter::FilterResult` -- wait, FilterResult
-is in `namespace loki` directly, not `loki::filter`. Check the header.
-
-### Eigen3 SYSTEM includes
-See Build Instructions section. Never use `PUBLIC Eigen3::Eigen` in
-`target_link_libraries` -- causes -Werror failures on Eigen internal headers.
-
-### `loki_filter` app CMake target name
-Library: `loki_filter`, Executable target: `loki_filter_app` with
-`OUTPUT_NAME "loki_filter"`. Same pattern for `loki_regression_app`.
-
-### `loki.sh` app registration
-Every new app must be added to BOTH associative arrays in `loki.sh`:
-```bash
-APP_EXE=([filter]="apps/loki_filter/loki_filter.exe" ...)
-APP_CONFIG=([filter]="config/filter.json" ...)
-```
-AND to the `case` statement in argument parsing:
-```bash
-loki|homogenization|outlier|filter|regression|all)
-    APP="${arg}" ;;
-```
-Forgetting the case statement means the app argument is silently ignored
-and the default `APP="loki"` is used -- hard to diagnose.
-
-### Window parameter is in SAMPLES not days/seconds
-`MovingAverageFilter.window`, `SavitzkyGolayFilter.window` are in samples:
-- Daily data: 1 year = 365 samples
-- 6-hourly data: 1 year = 1461 samples
-- 1Hz data: 1 minute = 60 samples
-Future improvement: parse human-readable duration like `min_segment_duration`.
+### `loki_regression` CMake target name
+Library: `loki_regression`, Executable: `loki_regression_app` with
+`OUTPUT_NAME "loki_regression"`.
 
 ---
 
-## Planned Future Work
+## What Claude Needs at Start of Next Thread
 
-### C2 -- loki_core/stats extensions (NEXT)
-- `distributions.hpp / .cpp`: t-CDF, F-CDF, chi2-CDF, normal CDF/quantile
-- `hypothesis.hpp / .cpp`: Jarque-Bera, Shapiro-Wilk, KS test, Runs test, Durbin-Watson
+To continue seamlessly on **R5 (ANOVA + diagnostics)**:
+- No new files needed -- R5 uses existing `lsq.hpp`, `distributions.hpp`,
+  `hypothesis.hpp`, and `RegressionResult`.
+- Claude should propose `AnovaTable` struct and `RegressionDiagnostics` class
+  signatures before implementing.
 
-### loki_regression (R1-R8, after C2)
-See thread plan above.
-
-### loki_filter -- Pending (F7)
-- `PlotFilter` additional diagnostics
-- Unit tests for F3b (LOESS), F4 (SG), F5 (Advisor) -- pending
-- Integration tests on 6h climatological and ms-resolution data
-
-### SplineFilter (after loki_filter stable)
-Cubic smoothing spline, also usable as GapFiller strategy.
-
-### loki_kalman
-Standalone module, NOT a wrapper in loki_filter.
-LSQ from loki_core/math used for state initialisation.
-
-### Alternative homogeneity detectors
-SNHT Alexandersson, Pettitt, Buishand -- after loki_regression stable.
-
----
-
-## Planned Modules
-
-| Module | Description | Status |
-|---|---|---|
-| `loki_homogeneity` | Change point detection, SNHT, homogenization | complete |
-| `loki_outlier` | IQR, MAD, Z-score, OutlierCleaner | complete |
-| `loki_filter` | MA/EMA/WMA/Kernel/LOESS/SavitzkyGolay, FilterWindowAdvisor | F1-F6 done, F7 pending |
-| `loki_regression` | Linear, polynomial, harmonic, robust, calibration, NLS | planned R1-R8 |
-| `loki_decomposition` | Trend, seasonality, residuals (STL, classical) | planned |
-| `loki_svd` | SVD/PCA decomposition | planned |
-| `loki_kalman` | Kalman filter, smoother, EKF | planned |
-| `loki_arima` | AR, ARMA, ARIMA, SARIMA | planned |
-| `loki_spectral` | FFT, power spectrum, Lomb-Scargle | planned |
-| `loki_stationarity` | ADF, KPSS, unit root tests | planned |
-| `loki_clustering` | k-means, DBSCAN, Hungarian algorithm | planned |
-| `loki_qc` | Quality control, gap filling, flagging | planned |
+To continue on **R7 (app + CMakeLists + main.cpp)**:
+- `libs/loki_filter/CMakeLists.txt` (as reference for structure)
+- `apps/loki_filter/main.cpp` (as reference for pipeline pattern)
+- `libs/loki_regression/CMakeLists.txt` (if already started)
 
 ---
 
@@ -774,8 +693,10 @@ SNHT Alexandersson, Pettitt, Buishand -- after loki_regression stable.
 - gnuplot terminal: `'noenhanced'` (except boxplot stats panel which uses `enhanced`).
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `deseasonalizer.hpp` and `medianYearSeries.hpp` are in `loki_core/timeseries/`.
-- `SeriesMetadata` must be populated by Loader after loading.
-- Plot output -> `OUTPUT/IMG/`, reports -> `OUTPUT/REPORTS/`, temp files use `.tmp_` prefix.
+- Plot output -> `OUTPUT/IMG/`, protocols -> `OUTPUT/PROTOCOLS/`, temp files use `.tmp_` prefix.
 - Time series input may have no periodic component (GNSS, non-climatological data).
-- Sampling rate varies from milliseconds to 6 hours. Detectors must not assume any fixed time step.
+- Sampling rate varies from milliseconds to 6 hours. Detectors must not assume fixed time step.
 - For ms data: MedianYearSeries throws ConfigException (resolution < 1h).
+- `metrics.hpp` is in `loki_core/stats/` -- usable from all modules.
+- `plot.hpp` now includes `cdfPlot`, `qqPlotWithBands`, `residualDiagnostics`.
+  Requires `#include <loki/stats/distributions.hpp>` in `plot.cpp`.
