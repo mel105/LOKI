@@ -97,6 +97,8 @@ RegressionResult PolynomialRegressor::fit(const TimeSeries& ts)
     for (int i = 0; i < n; ++i)
         result.fitted.append(times[static_cast<std::size_t>(i)], fitted[i]);
 
+    result.designMatrix = A;
+
     m_lastResult = result;
     m_fitted     = true;
 

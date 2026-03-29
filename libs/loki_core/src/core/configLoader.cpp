@@ -452,7 +452,11 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("regression_overlay"))    cfg.regressionOverlay    = e["regression_overlay"].get<bool>();
         if (e.contains("regression_residuals"))  cfg.regressionResiduals  = e["regression_residuals"].get<bool>();
         if (e.contains("regression_cdf_plot"))   cfg.regressionCdfPlot    = e["regression_cdf_plot"].get<bool>();
-        if (e.contains("regression_qq_bands"))   cfg.regressionQqBands    = e["regression_qq_bands"].get<bool>();
+        if (e.contains("regression_qq_bands"))      cfg.regressionQqBands      = e["regression_qq_bands"].get<bool>();
+        if (e.contains("regression_residual_acf"))  cfg.regressionResidualAcf  = e["regression_residual_acf"].get<bool>();
+        if (e.contains("regression_residual_hist")) cfg.regressionResidualHist = e["regression_residual_hist"].get<bool>();
+        if (e.contains("regression_influence"))     cfg.regressionInfluence    = e["regression_influence"].get<bool>();
+        if (e.contains("regression_leverage"))      cfg.regressionLeverage     = e["regression_leverage"].get<bool>();
     }
 
     return cfg;

@@ -49,6 +49,7 @@ struct RegressionResult {
     std::string     modelName;        ///< Human-readable model name for protocol.
     TimeSeries      fitted;           ///< Fitted values at observation times.
     double          tRef{0.0};        ///< MJD of first observation -- x-axis reference.
+    Eigen::MatrixXd designMatrix;     ///< Design matrix X used in fit() -- required by RegressionDiagnostics.
 };
 
 } // namespace loki::regression

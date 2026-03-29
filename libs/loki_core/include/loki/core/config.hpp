@@ -330,9 +330,13 @@ struct PlotConfig {
 
     // -- Regression pipeline plots --------------------------------------------
     bool regressionOverlay       {true};   ///< Fitted curve over raw data.
-    bool regressionResiduals     {true};   ///< Residual diagnostics (4-panel).
+    bool regressionResiduals     {true};   ///< Residuals in time.
     bool regressionCdfPlot       {false};  ///< ECDF vs theoretical CDF.
     bool regressionQqBands       {true};   ///< QQ plot with confidence bands.
+    bool regressionResidualAcf   {false};  ///< ACF of residuals with 95% band.
+    bool regressionResidualHist  {false};  ///< Histogram of residuals with normal fit.
+    bool regressionInfluence     {false};  ///< Cook's distance bar chart.
+    bool regressionLeverage      {false};  ///< Leverage vs standardized residuals scatter.
 };
 
 // -----------------------------------------------------------------------------

@@ -21,7 +21,9 @@ target_sources(loki_core
         src/stats/distributions.cpp
         src/stats/hypothesis.coo
         src/math/lsq.cpp
+        src/math/svd.cpp
         src/math/designMatrix.cpp
+        src/math/hatMatrix.cpp
 )
 
 target_include_directories(loki_core

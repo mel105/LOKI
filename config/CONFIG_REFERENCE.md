@@ -18,6 +18,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 5. [loki_outlier](#5-loki_outlier)
 6. [loki_homogeneity](#6-loki_homogeneity)
 7. [loki_filter](#7-loki_filter)
+8. [loki_regression](#8-loki_regression)
 
 ---
 
@@ -614,3 +615,246 @@ produces the following pipeline-specific plots:
 > method specified in `auto_window_method`. The advisor result is logged at
 > `INFO` level so the effective value is always visible in the log.
 > Set `window`/`bandwidth` to a positive value to disable auto-estimation.
+---
+
+## 8. loki_regression
+
+Default config: `config/regression.json`
+
+The regression pipeline runs the following steps in order:
+
+```
+1. GapFiller                  -- fill NaN / missing values
+2. Regressor::fit()           -- fit the selected model
+3. RegressionDiagnostics      -- ANOVA, influence, VIF, Breusch-Pagan
+4. CSV export                 -- mjd; original; fitted; residual (+ trend/seasonal for trend method)
+5. Protocol                   -- OUTPUT/PROTOCOLS/regression_[dataset]_[param]_protocol.txt
+6. Plots                      -- OUTPUT/IMG/
+```
+
+---
+
+### 8.1 regression.gap_filling
+
+Controls NaN and gap handling before regression is applied.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `linear` | Fill strategy. See options below. |
+| `max_fill_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+
+### strategy options
+
+| Value | Description |
+|---|---|
+| `linear` | Linear interpolation between nearest valid neighbours. |
+| `forward_fill` | Copy last valid value forward. |
+| `mean` | Replace with series mean. |
+| `none` | No filling -- gaps remain as NaN (valid observations are used, NaN skipped). |
+
+---
+
+### 8.2 regression.method
+
+Selects the regression model.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `linear` | Regression algorithm. See options below. |
+
+### method options
+
+| Value | Class | Description |
+|---|---|---|
+| `linear` | `LinearRegressor` | OLS fit of `y = a0 + a1 * t`. Coefficients: `[a0, a1]`. |
+| `polynomial` | `PolynomialRegressor` | OLS polynomial of degree `d`. Coefficients: `[a0, a1, ..., ad]`. Supports analytical LOO-CV and k-fold CV. |
+| `harmonic` | `HarmonicRegressor` | OLS fit of `K` sin/cos pairs at sub-harmonics of `period`. Coefficients: `[a0, s1, c1, ..., sK, cK]`. |
+| `trend` | `TrendEstimator` | Joint OLS fit of linear trend + `K` harmonics. Coefficients: `[a0, a1, s1, c1, ..., sK, cK]`. CSV includes separate trend and seasonal columns. |
+| `robust` | `RobustRegressor` | IRLS polynomial regression. Downweights outliers via Huber or Bisquare weight function. |
+| `calibration` | `CalibrationRegressor` | Total Least Squares (TLS) via SVD. Minimises orthogonal distances -- use when both `x` and `y` have measurement error. Residuals are orthogonal; `cofactorX` is not available. |
+
+> **X-axis convention**: All regressors use `x = mjd - tRef` (days relative to first
+> valid observation) for numerical stability. `tRef` is stored in `RegressionResult`
+> and reported in the protocol.
+
+---
+
+### 8.3 regression.polynomial_degree
+
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `polynomial_degree` | int | `1` | >= 1 | Polynomial degree for `polynomial` and `robust` methods. Degree 1 is equivalent to linear regression. |
+
+> Used by: `polynomial`, `robust`. Ignored by all other methods.
+
+---
+
+### 8.4 regression.harmonic_terms and period
+
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `harmonic_terms` | int | `2` | >= 1 | Number of sin/cos pairs `K`. Each pair adds 2 parameters. |
+| `period` | float | `365.25` | > 0 | Fundamental period in days. Sub-harmonics are `T/1, T/2, ..., T/K`. |
+
+> Used by: `harmonic`, `trend`. Ignored by all other methods.
+>
+> **Tip**: For annual climatological signal use `period: 365.25` with `harmonic_terms: 2`
+> (annual + semi-annual). For GNSS draconitic signal use `period: 351.4`.
+
+---
+
+### 8.5 regression.robust settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `robust` | bool | `false` | Enable IRLS robust estimation. For `robust` method this is always forced `true`. |
+| `robust_iterations` | int | `10` | Maximum number of IRLS re-weighting iterations. |
+| `robust_weight_fn` | string | `bisquare` | Weight function. See options below. |
+
+### robust_weight_fn options
+
+| Value | Tuning constant | Description |
+|---|---|---|
+| `bisquare` | `c = 4.685` | Tukey bisquare. Hard redescending -- completely zeros out extreme outliers. Recommended default (95% Gaussian efficiency). |
+| `huber` | `k = 1.345` | Huber. Soft -- linear tails for large residuals. Less aggressive than bisquare. |
+
+> Used by: `robust`. When `robust: true` is set for `linear`, `polynomial`, `harmonic`,
+> or `trend`, IRLS is applied through `LsqSolver`. For `polynomial` with `robust: true`,
+> k-fold CV is used instead of analytical LOO-CV.
+
+---
+
+### 8.6 regression.cross_validation
+
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `cv_folds` | int | `10` | 2 -- 100 | Number of folds for k-fold CV. Clamped to `min(100, n/2)` with a warning. For OLS `polynomial` regression, analytical LOO-CV via hat matrix is used regardless of this setting. For `robust` fits, k-fold CV is always used. |
+
+> LOO-CV (Leave-One-Out) is computed in O(n) via the hat matrix diagonal `h_ii`:
+> `cv_error_i = e_i / (1 - h_ii)`. This is exact and does not require re-fitting.
+
+---
+
+### 8.7 regression.prediction
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `compute_prediction` | bool | `false` | If `true`, evaluate the fitted model beyond the data range. |
+| `prediction_horizon` | float | `0.0` | Days beyond the last observation to predict. |
+| `confidence_level` | float | `0.95` | Confidence level for confidence and prediction intervals (e.g. `0.95` = 95%). |
+
+> When `compute_prediction: true`, the regressor's `predict()` method is called
+> and results are appended to the CSV output. Prediction intervals are wider than
+> confidence intervals -- they account for both parameter uncertainty and residual variance.
+>
+> **Note for TLS** (`calibration` method): prediction intervals are approximate
+> (based on `sigma0` treated as vertical error) because `cofactorX` is not available.
+
+---
+
+### 8.8 regression.significance_level
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `significance_level` | float | `0.05` | Alpha level for hypothesis tests in diagnostics and protocol. Used for F-test (ANOVA) and Breusch-Pagan rejection decisions. |
+
+---
+
+### 8.9 Diagnostics
+
+`RegressionDiagnostics` runs automatically after each fit. Results are logged and written to the protocol. No configuration is needed -- all diagnostics are always computed.
+
+| Diagnostic | Method | Output |
+|---|---|---|
+| ANOVA table | F-test: `F = MSR / MSE` | SSR, SSE, SST, F-statistic, p-value, df |
+| Cook's distance | `D_i = (e_i^2 * h_ii) / (p * sigma0^2 * (1 - h_ii)^2)` | Flagged if `D_i > 4/n` |
+| Leverage | Hat matrix diagonal `h_ii` via thin QR | Flagged if `h_ii > 2p/n` |
+| Standardized residuals | `r_i = e_i / (sigma0 * sqrt(1 - h_ii))` | Written with influence measures |
+| VIF | `VIF_j = 1 / (1 - R^2_j)`, auxiliary OLS per predictor | Flagged if `VIF > 10` |
+| Breusch-Pagan | LM = `n * R^2` of auxiliary regression `e_i^2 ~ y-hat_i` | Rejected if `p < significance_level` |
+
+> **Note**: VIF requires at least 2 predictor columns (intercept + 1). For `linear`
+> regression with a single predictor, VIF is not computed (only 2 columns in design matrix).
+>
+> **Note**: Cook's distance and leverage require `designMatrix` to be populated in
+> `RegressionResult`. All regressors store this automatically after `fit()`.
+
+---
+
+### 8.10 Plots (regression pipeline)
+
+In addition to the generic plots (see [Section 3](#3-common-plots)), loki_regression
+produces the following pipeline-specific plots:
+
+| Flag | Default | Description |
+|---|---|---|
+| `regression_overlay` | `true` | Original series + fitted curve on one plot. |
+| `regression_residuals` | `true` | Residuals vs time with zero baseline. |
+| `regression_qq_bands` | `true` | QQ plot of residuals with confidence bands. |
+| `regression_cdf_plot` | `false` | ECDF of residuals vs theoretical normal CDF. |
+| `regression_residual_acf` | `false` | ACF of residuals with 95% confidence band (`+/- 1.96/sqrt(n)`). Useful for detecting autocorrelation in residuals. |
+| `regression_residual_hist` | `false` | Histogram of residuals with fitted normal curve. |
+| `regression_influence` | `false` | Cook's distance bar chart with `4/n` threshold line. |
+| `regression_leverage` | `false` | Leverage `h_ii` vs standardized residuals scatter. Reference lines at `2p/n` (leverage) and `+/-2` (residuals). |
+
+---
+
+### 8.11 CSV output
+
+The CSV file is written to `<workspace>/OUTPUT/CSV/`.
+Filename: `[stationId]_[componentName]_regression.csv`
+
+For all methods except `trend`:
+
+```
+mjd ; original ; fitted ; residual
+```
+
+For `trend` method (TrendEstimator):
+
+```
+mjd ; original ; fitted ; trend ; seasonal ; residual
+```
+
+> **Note**: `trend` and `seasonal` columns are currently written as `NaN` placeholders
+> pending full `DecompositionResult` integration in the CSV writer (planned).
+
+---
+
+### 8.12 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `regression_[dataset]_[componentName]_protocol.txt`
+
+The protocol contains:
+- Model name, dataset, series name, observation count, parameter count, DOF
+- Coefficient table with estimates and standard errors (N/A for TLS)
+- Model fit metrics: sigma0, R^2, adjusted R^2, AIC, BIC
+- ANOVA table: SSR, SSE, SST, F-statistic, p-value
+- Residual diagnostics: mean, std dev, Breusch-Pagan result, Cook's D count, leverage count
+- VIF table (if applicable)
+
+---
+
+### Example
+
+```json
+"regression": {
+    "gap_filling": {
+        "strategy": "linear",
+        "max_fill_length": 0
+    },
+    "method": "linear",
+    "polynomial_degree": 1,
+    "harmonic_terms": 2,
+    "period": 365.25,
+    "robust": false,
+    "robust_iterations": 10,
+    "robust_weight_fn": "bisquare",
+    "compute_prediction": false,
+    "prediction_horizon": 365.25,
+    "confidence_level": 0.95,
+    "significance_level": 0.05,
+    "cv_folds": 10
+}
+```

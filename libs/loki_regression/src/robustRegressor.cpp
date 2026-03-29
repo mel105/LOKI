@@ -117,6 +117,8 @@ RegressionResult RobustRegressor::fit(const TimeSeries& ts)
         m_weights.push_back(wo);
     }
 
+    result.designMatrix = A;
+
     m_lastResult = result;
     m_fitted     = true;
 
