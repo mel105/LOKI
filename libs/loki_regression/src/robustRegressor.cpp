@@ -146,12 +146,12 @@ RobustRegressor::predict(const std::vector<double>& xNew) const
         throw AlgorithmException(
             "RobustRegressor::predict(): must call fit() before predict().");
     }
-
+ 
     const int k = static_cast<int>(xNew.size());
     Eigen::VectorXd xVec = Eigen::Map<const Eigen::VectorXd>(xNew.data(), k);
     const Eigen::MatrixXd aNew = buildDesignMatrix(xVec);
-
-    return detail::computeIntervals(m_lastResult, aNew, m_cfg.confidenceLevel);
+ 
+    return detail::computeIntervals(m_lastResult, aNew, xNew, m_cfg.confidenceLevel);
 }
 
 // -----------------------------------------------------------------------------

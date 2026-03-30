@@ -90,12 +90,12 @@ std::pair<double, double> shapiroWilkWZ(const std::vector<double>& sorted)
     const int n = static_cast<int>(sorted.size());
 
     // Compute expected normal order statistics (approximation).
-    std::vector<double> m(n);
+    std::vector<double> m(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         // Approximation: use normal quantile of (i+1 - 3/8) / (n + 1/4).
         const double p = (static_cast<double>(i + 1) - 0.375) /
                          (static_cast<double>(n) + 0.25);
-        m[i] = loki::stats::normalQuantile(std::clamp(p, 1e-10, 1.0 - 1e-10));
+        m[static_cast<std::size_t>(i)] = loki::stats::normalQuantile(std::clamp(p, 1e-10, 1.0 - 1e-10));
     }
 
     // Compute c = m / ||m||
@@ -127,11 +127,11 @@ std::pair<double, double> shapiroWilkWZ(const std::vector<double>& sorted)
     const double a_prev = polyval(A2_C, 2, u) / mnorm;
 
     // Build weight vector a (symmetric).
-    std::vector<double> a(n, 0.0);
-    a[n - 1] =  a_last;
+    std::vector<double> a(static_cast<std::size_t>(n), 0.0);
+    a[static_cast<std::size_t>(n) - 1] =  a_last;
     a[0]     = -a_last;
     if (n >= 4) {
-        a[n - 2] =  a_prev;
+        a[static_cast<std::size_t>(n) - 2] =  a_prev;
         a[1]     = -a_prev;
     }
     // Remaining weights approximated from m / ||m|| with scaling.
@@ -140,17 +140,17 @@ std::pair<double, double> shapiroWilkWZ(const std::vector<double>& sorted)
     double mrem2 = 0.0;
     const int start = (n >= 4) ? 2 : 1;
     const int end   = n / 2;
-    for (int i = start; i < end; ++i) mrem2 += m[i] * m[i];
+    for (int i = start; i < end; ++i) mrem2 += m[static_cast<std::size_t>(i)] * m[static_cast<std::size_t>(i)];
     const double mremNorm = (mrem2 > 0.0) ? std::sqrt(mrem2) : 1.0;
 
     for (int i = start; i < end; ++i) {
-        a[n - 1 - i] =  scale * m[n - 1 - i] / (mremNorm * mnorm);
-        a[i]         = -a[n - 1 - i];
+        a[static_cast<std::size_t>(n) - 1 - static_cast<std::size_t>(i)] =  scale * m[static_cast<std::size_t>(n) - 1 - static_cast<std::size_t>(i)] / (mremNorm * mnorm);
+        a[static_cast<std::size_t>(i)] = -a[static_cast<std::size_t>(n) - 1 - static_cast<std::size_t>(i)];
     }
 
     // W = (sum a_i * x_(i))^2 / sum (x_i - mean)^2
     double aw = 0.0;
-    for (int i = 0; i < n; ++i) aw += a[i] * sorted[i];
+    for (int i = 0; i < n; ++i) aw += a[static_cast<std::size_t>(i)] * sorted[static_cast<std::size_t>(i)];
 
     const double mean = sampleMean(sorted);
     double ss = 0.0;

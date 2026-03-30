@@ -16,7 +16,6 @@ void computeGoodnessOfFit(RegressionResult&      result,
     const int    n  = static_cast<int>(l.size());
     const double nd = static_cast<double>(n);
 
-    // Total sum of squares around the mean.
     const double yMean = l.mean();
     const double ssTot = (l.array() - yMean).square().sum();
     const double ssRes = result.residuals.squaredNorm();
@@ -25,7 +24,6 @@ void computeGoodnessOfFit(RegressionResult&      result,
     result.rSquaredAdj = 1.0 - (1.0 - result.rSquared) *
                          (nd - 1.0) / static_cast<double>(result.dof);
 
-    // AIC and BIC using MLE sigma^2 = ssRes/n (standard for model comparison).
     const double sigma2Mle = ssRes / nd;
     const double logLik    = -0.5 * nd *
                              (std::log(2.0 * std::numbers::pi * sigma2Mle) + 1.0);
@@ -36,9 +34,10 @@ void computeGoodnessOfFit(RegressionResult&      result,
 }
 
 std::vector<PredictionPoint> computeIntervals(
-    const RegressionResult& result,
-    const Eigen::MatrixXd&  aNew,
-    double                  confLevel)
+    const RegressionResult&    result,
+    const Eigen::MatrixXd&     aNew,
+    const std::vector<double>& xNew,
+    double                     confLevel)
 {
     if (result.dof <= 0) {
         throw AlgorithmException(
@@ -46,10 +45,19 @@ std::vector<PredictionPoint> computeIntervals(
             + std::to_string(result.dof) + ".");
     }
 
+    if (static_cast<int>(xNew.size()) != static_cast<int>(aNew.rows())) {
+        throw AlgorithmException(
+            "computeIntervals: xNew.size()=" + std::to_string(xNew.size()) +
+            " must equal aNew.rows()=" + std::to_string(aNew.rows()) + ".");
+    }
+
     const double alpha = 1.0 - confLevel;
     const double tCrit = loki::stats::tQuantile(
         1.0 - alpha / 2.0, static_cast<double>(result.dof));
     const double s = result.sigma0;
+
+    const bool hasCofactor = (result.cofactorX.rows() > 0 &&
+                               result.cofactorX.cols() > 0);
 
     const int k = static_cast<int>(aNew.rows());
     std::vector<PredictionPoint> out;
@@ -57,15 +65,19 @@ std::vector<PredictionPoint> computeIntervals(
 
     for (int i = 0; i < k; ++i) {
         const Eigen::VectorXd aRow = aNew.row(i);
-        const double yHat    = aRow.dot(result.coefficients);
-        const double varConf = s * s *
-            (aRow.transpose() * result.cofactorX * aRow).value();
+        const double yHat = aRow.dot(result.coefficients);
+
+        double varConf = 0.0;
+        if (hasCofactor) {
+            varConf = s * s *
+                (aRow.transpose() * result.cofactorX * aRow).value();
+        }
         const double varPred = varConf + s * s;
         const double seConf  = std::sqrt(std::max(0.0, varConf));
         const double sePred  = std::sqrt(std::max(0.0, varPred));
 
         PredictionPoint pt;
-        pt.x         = aRow.size() > 1 ? aRow[1] : 0.0;  // x = second column (after intercept)
+        pt.x         = xNew[static_cast<std::size_t>(i)];
         pt.predicted = yHat;
         pt.confLow   = yHat - tCrit * seConf;
         pt.confHigh  = yHat + tCrit * seConf;

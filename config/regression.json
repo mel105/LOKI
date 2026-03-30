@@ -2,8 +2,8 @@
     "workspace": "C:/Users/eliasmichal/Dokumenty/Osobne",
 
     "input": {
-        "file": "CLIM_DATA_EX1.txt",
-        "time_format": "mjd",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst",
         "time_columns": [0],
         "delimiter": ";",
         "comment_char": "%",
@@ -20,18 +20,18 @@
         "time_format": "utc",
         "enabled": {
             "time_series":                  true,
-            "histogram":                    false,
-            "acf":                          false,
-            "qq_plot":                      false,
-            "boxplot":                      false,
+            "histogram":                    true,
+            "acf":                          true,
+            "qq_plot":                      true,
+            "boxplot":                      true,
             "regression_overlay":           true,
             "regression_residuals":         true,
             "regression_qq_bands":          true,
-            "regression_cdf_plot":          false,
-            "regression_residual_acf":      false,
-            "regression_residual_hist":     false,
-            "regression_influence":         false,
-            "regression_leverage":          false
+            "regression_cdf_plot":          true,
+            "regression_residual_acf":      true,
+            "regression_residual_hist":     true,
+            "regression_influence":         true,
+            "regression_leverage":          true
         }
     },
 
@@ -47,18 +47,18 @@
             "max_fill_length": 0
         },
 
-        "method": "linear",
+        "method": "polynomial",
 
-        "polynomial_degree": 1,
+        "polynomial_degree": 3,
 
-        "harmonic_terms": 2,
+        "harmonic_terms": 4,
         "period": 365.25,
 
-        "robust": false,
+        "robust": true,
         "robust_iterations": 10,
         "robust_weight_fn": "bisquare",
 
-        "compute_prediction": false,
+        "compute_prediction": true,
         "prediction_horizon": 365.25,
         "confidence_level": 0.95,
         "significance_level": 0.05,

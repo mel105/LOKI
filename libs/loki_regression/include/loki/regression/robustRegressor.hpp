@@ -2,6 +2,7 @@
 
 #include <loki/regression/regressor.hpp>
 #include <loki/core/config.hpp>
+#include <loki/math/lsq.hpp>
 
 #include <vector>
 

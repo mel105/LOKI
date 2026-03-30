@@ -4,6 +4,8 @@
 
 #include <Eigen/Dense>
 
+#include <vector>
+
 namespace loki::regression::detail {
 
 /**
@@ -25,13 +27,17 @@ void computeGoodnessOfFit(RegressionResult&      result,
  *
  * @param result     Fitted RegressionResult (sigma0, cofactorX, dof must be set).
  * @param aNew       Design matrix for new points (k x nParams).
+ * @param xNew       x values (mjd - tRef) corresponding to rows of aNew.
+ *                   Used to populate PredictionPoint::x correctly for all
+ *                   model types (linear, harmonic, polynomial, etc.).
  * @param confLevel  Confidence level in (0, 1), e.g. 0.95.
  * @return           Vector of PredictionPoint, one per row of aNew.
- * @throws AlgorithmException if dof <= 0.
+ * @throws AlgorithmException if dof <= 0 or xNew.size() != aNew.rows().
  */
 std::vector<PredictionPoint> computeIntervals(
-    const RegressionResult& result,
-    const Eigen::MatrixXd&  aNew,
-    double                  confLevel);
+    const RegressionResult&    result,
+    const Eigen::MatrixXd&     aNew,
+    const std::vector<double>& xNew,
+    double                     confLevel);
 
 } // namespace loki::regression::detail

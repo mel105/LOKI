@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <numbers>
 
 using namespace loki;
 
@@ -205,7 +206,7 @@ double tQuantileImpl(double p, double df)
         // t-pdf: Gamma((df+1)/2) / (sqrt(df*pi) * Gamma(df/2)) * (1 + x^2/df)^(-(df+1)/2)
         const double lgn = std::lgamma((df + 1.0) / 2.0);
         const double lgd = std::lgamma(df / 2.0);
-        const double pdf = std::exp(lgn - lgd - 0.5 * std::log(df * M_PI))
+        const double pdf = std::exp(lgn - lgd - 0.5 * std::log(df * std::numbers::pi))
                            * std::pow(1.0 + x * x / df, -(df + 1.0) / 2.0);
         if (pdf < 1.0e-30) break;
         const double dx = fx / pdf;

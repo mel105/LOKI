@@ -71,13 +71,16 @@ RegressionResult CalibrationRegressor::fit(const TimeSeries& ts)
     Z.col(0) = xc;
     Z.col(1) = yc;
 
-    const SvdDecomposition svd(Z);
+    // const SvdDecomposition svd(Z);
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Z, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
     // The last right singular vector v = V[:, 1] defines the orthogonal complement
     // of the best-fit line. The line direction is v_perp = V[:, 0].
     // Line equation: v[0] * xc + v[1] * yc = 0
     // => slope = -v[0] / v[1]
-    const Eigen::MatrixXd& Vmat = svd.V();
+    //const Eigen::MatrixXd& Vmat = svd.V();
+    const Eigen::MatrixXd& Vmat = svd.matrixV();
+    
     const double v0 = Vmat(0, 1); // last right singular vector, x component
     const double v1 = Vmat(1, 1); // last right singular vector, y component
 
@@ -145,17 +148,15 @@ CalibrationRegressor::predict(const std::vector<double>& xNew) const
         throw AlgorithmException(
             "CalibrationRegressor::predict(): must call fit() before predict().");
     }
-
+ 
     const int k = static_cast<int>(xNew.size());
     Eigen::MatrixXd aNew(k, 2);
     for (int i = 0; i < k; ++i) {
         aNew(i, 0) = 1.0;
         aNew(i, 1) = xNew[static_cast<std::size_t>(i)];
     }
-
-    // Approximate intervals: treat sigma0 as vertical error (conservative).
-    // cofactorX is empty for TLS -- computeIntervals falls back to sigma0-only intervals.
-    return detail::computeIntervals(m_lastResult, aNew, m_cfg.confidenceLevel);
+ 
+    return detail::computeIntervals(m_lastResult, aNew, xNew, m_cfg.confidenceLevel);
 }
 
 // -----------------------------------------------------------------------------

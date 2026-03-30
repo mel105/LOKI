@@ -22,8 +22,8 @@ SvdDecomposition::SvdDecomposition(const Eigen::MatrixXd& M,
     }
 
     unsigned int flags = Eigen::ComputeThinU | Eigen::ComputeThinV;
-    if (computeFullU) flags = (flags & ~Eigen::ComputeThinU) | Eigen::ComputeFullU;
-    if (computeFullV) flags = (flags & ~Eigen::ComputeThinV) | Eigen::ComputeFullV;
+    if (computeFullU) flags = (flags & ~static_cast<unsigned int>(Eigen::ComputeThinU)) | static_cast<unsigned int>(Eigen::ComputeFullU);
+    if (computeFullV) flags = (flags & ~static_cast<unsigned int>(Eigen::ComputeThinV)) | static_cast<unsigned int>(Eigen::ComputeFullV);
 
     m_svd = Eigen::BDCSVD<Eigen::MatrixXd>(M, flags);
 

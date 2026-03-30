@@ -999,7 +999,7 @@ void Plot::residualDiagnostics(const std::vector<double>& residuals,
     const auto acfFile    = writeTempData(".tmp_" + title + "_acf",  acfData);
 
     auto fmt = [](double v, int prec = 8) -> std::string {
-        std::ostringstream ss; ss.precision(prec); ss << std::fixed << v; return ss.str();
+        std::ostringstream oss; oss.precision(prec); oss << std::fixed << v; return oss.str();
     };
 
     try {

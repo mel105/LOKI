@@ -39,9 +39,10 @@ PlotRegression::PlotRegression(const AppConfig& cfg)
 //  plotAll
 // ----------------------------------------------------------------------------
 
-void PlotRegression::plotAll(const TimeSeries&        original,
-                              const RegressionResult&  result,
-                              const InfluenceMeasures& influence) const
+void PlotRegression::plotAll(const TimeSeries&                  original,
+                              const RegressionResult&             result,
+                              const InfluenceMeasures&            influence,
+                              const std::vector<PredictionPoint>& prediction) const
 {
     const auto& p = m_cfg.plots;
 
@@ -91,6 +92,12 @@ void PlotRegression::plotAll(const TimeSeries&        original,
         try { plotLeverage(original, result, influence); }
         catch (const LOKIException& ex) {
             LOKI_WARNING("PlotRegression: leverage failed: " + std::string(ex.what()));
+        }
+    }
+    if (p.regressionOverlay && !prediction.empty()) {
+        try { plotPrediction(original, result, prediction); }
+        catch (const LOKIException& ex) {
+            LOKI_WARNING("PlotRegression: prediction failed: " + std::string(ex.what()));
         }
     }
 
@@ -152,7 +159,6 @@ void PlotRegression::plotResiduals(const TimeSeries&       original,
     const auto        datRes  = m_cfg.imgDir / (".tmp_" + base + "_res.dat");
     const auto        outPath = _outPath(base, "residuals");
 
-    // Write residuals aligned to fitted timestamps.
     {
         std::ofstream dat(datRes);
         dat << std::fixed << std::setprecision(10);
@@ -189,13 +195,13 @@ void PlotRegression::plotResiduals(const TimeSeries&       original,
 void PlotRegression::plotQqBands(const TimeSeries&       original,
                                   const RegressionResult& result) const
 {
-    const std::string base    = _baseName(original);
-    const auto        outPath = _outPath(base, "qq_bands");
+    const std::string base = _baseName(original);
 
-    // Delegate to loki::Plot::qqPlotWithBands which already exists in loki_core.
     try {
         Plot plot{m_cfg};
-        plot.qqPlotWithBands(result.fitted, outPath);
+        std::vector<double> res(result.residuals.data(),
+                                result.residuals.data() + result.residuals.size());
+        plot.qqPlotWithBands(res, base + "_qq_bands");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotRegression::plotQqBands failed: " + std::string(ex.what()));
     }
@@ -208,12 +214,13 @@ void PlotRegression::plotQqBands(const TimeSeries&       original,
 void PlotRegression::plotCdf(const TimeSeries&       original,
                               const RegressionResult& result) const
 {
-    const std::string base    = _baseName(original);
-    const auto        outPath = _outPath(base, "cdf");
+    const std::string base = _baseName(original);
 
     try {
         Plot plot{m_cfg};
-        plot.cdfPlot(result.fitted, outPath);
+        std::vector<double> res(result.residuals.data(),
+                                result.residuals.data() + result.residuals.size());
+        plot.cdfPlot(res, DistributionType::NORMAL, {}, base + "_cdf");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotRegression::plotCdf failed: " + std::string(ex.what()));
     }
@@ -236,8 +243,7 @@ void PlotRegression::plotResidualAcf(const TimeSeries&       original,
         return;
     }
 
-    std::vector<double> resVec(result.residuals.data(),
-                               result.residuals.data() + n);
+    std::vector<double> resVec(result.residuals.data(), result.residuals.data() + n);
 
     const int maxLag = std::min(n / 2, m_cfg.plots.options.acfMaxLag > 0
                                        ? m_cfg.plots.options.acfMaxLag : 60);
@@ -375,9 +381,9 @@ void PlotRegression::plotInfluence(const TimeSeries&        original,
         Gnuplot gp;
         gp("set terminal " + _terminal(1200, 400));
         gp("set output '" + fwdSlash(outPath) + "'");
-        gp("set title 'Cook' + \"'\" + 's distance: " + base + "' noenhanced");
+        gp("set title 'Cook s distance: " + base + "' noenhanced");
         gp("set xlabel 'Observation index'");
-        gp("set ylabel 'Cook' + \"'\" + 's D'");
+        gp("set ylabel 'Cook s D'");
         gp("set grid");
         gp("set key off");
         gp("set arrow 1 from graph 0, first " + std::to_string(threshold)
@@ -432,11 +438,9 @@ void PlotRegression::plotLeverage(const TimeSeries&        original,
         gp("set ylabel 'Standardized residual'");
         gp("set grid");
         gp("set key off");
-        // Leverage threshold (2p/n)
         gp("set arrow 1 from " + std::to_string(hThresh) + ", graph 0"
            + " to " + std::to_string(hThresh) + ", graph 1"
            + " nohead lc rgb '#d7191c' lw 1.5 dt 2");
-        // +/- 2 sigma bands
         gp("set arrow 2 from graph 0, first  2.0 to graph 1, first  2.0"
            " nohead lc rgb '#888888' lw 1 dt 3");
         gp("set arrow 3 from graph 0, first -2.0 to graph 1, first -2.0"
@@ -450,6 +454,84 @@ void PlotRegression::plotLeverage(const TimeSeries&        original,
     }
     std::filesystem::remove(datLev);
     (void)result;
+}
+
+// ----------------------------------------------------------------------------
+//  plotPrediction
+// ----------------------------------------------------------------------------
+
+void PlotRegression::plotPrediction(const TimeSeries&                  original,
+                                     const RegressionResult&             result,
+                                     const std::vector<PredictionPoint>& prediction) const
+{
+    if (prediction.empty()) {
+        LOKI_WARNING("PlotRegression::plotPrediction: prediction vector is empty, skipping.");
+        return;
+    }
+ 
+    const std::string base    = _baseName(original);
+    const auto        datOrig = m_cfg.imgDir / (".tmp_" + base + "_pred_orig.dat");
+    const auto        datFit  = m_cfg.imgDir / (".tmp_" + base + "_pred_fit.dat");
+    const auto        datPred = m_cfg.imgDir / (".tmp_" + base + "_pred_fc.dat");
+    const auto        outPath = _outPath(base, "prediction");
+ 
+    _writeSeriesDat(original,      datOrig);
+    _writeSeriesDat(result.fitted, datFit);
+ 
+    // Write forecast: mjd, predicted, conf_low, conf_high, pred_low, pred_high.
+    // PredictionPoint.x is mjd - tRef, convert back to absolute MJD.
+    {
+        std::ofstream dat(datPred);
+        dat << std::fixed << std::setprecision(10);
+        for (const auto& pt : prediction) {
+            const double mjd = pt.x + result.tRef;
+            dat << mjd          << "\t"
+                << pt.predicted << "\t"
+                << pt.confLow   << "\t"
+                << pt.confHigh  << "\t"
+                << pt.predLow   << "\t"
+                << pt.predHigh  << "\n";
+        }
+    }
+ 
+    // Vertical separator at end of fitted region.
+    double splitMjd = 0.0;
+    if (result.fitted.size() > 0)
+        splitMjd = result.fitted[result.fitted.size() - 1].time.mjd();
+ 
+    try {
+        Gnuplot gp;
+        gp("set terminal " + _terminal(1400, 500));
+        gp("set output '" + fwdSlash(outPath) + "'");
+        gp("set title 'Regression forecast: " + base + "' noenhanced");
+        gp("set xlabel 'MJD'");
+        gp("set ylabel 'Value'");
+        gp("set grid");
+        gp("set key top left");
+ 
+        // Vertical dashed line at fit/forecast boundary.
+        gp("set arrow 1 from " + std::to_string(splitMjd) + ", graph 0"
+           + " to "            + std::to_string(splitMjd) + ", graph 1"
+           + " nohead lc rgb '#888888' lw 1.5 dt 2");
+ 
+        // col 1=mjd, 2=predicted, 3=conf_low, 4=conf_high, 5=pred_low, 6=pred_high
+        gp("plot '" + fwdSlash(datOrig) + "' u 1:2"
+           " w l lc rgb '#cccccc' lw 1.0 t 'Original',"
+           " '" + fwdSlash(datFit) + "' u 1:2"
+           " w l lc rgb '#d7191c' lw 2.0 t 'Fitted',"
+           " '" + fwdSlash(datPred) + "' u 1:5:6"
+           " w filledcurves lc rgb '#d0e8f5' fs transparent solid 0.5 t 'Prediction interval',"
+           " '" + fwdSlash(datPred) + "' u 1:3:4"
+           " w filledcurves lc rgb '#6baed6' fs transparent solid 0.6 t 'Confidence interval',"
+           " '" + fwdSlash(datPred) + "' u 1:2"
+           " w l lc rgb '#2c7bb6' lw 2.0 t 'Forecast'");
+    } catch (const LOKIException& ex) {
+        LOKI_WARNING("PlotRegression::plotPrediction failed: " + std::string(ex.what()));
+    }
+ 
+    std::filesystem::remove(datOrig);
+    std::filesystem::remove(datFit);
+    std::filesystem::remove(datPred);
 }
 
 // ----------------------------------------------------------------------------

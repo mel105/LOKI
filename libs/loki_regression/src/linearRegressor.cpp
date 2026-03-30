@@ -92,15 +92,15 @@ LinearRegressor::predict(const std::vector<double>& xNew) const
         throw AlgorithmException(
             "LinearRegressor::predict(): must call fit() before predict().");
     }
-
+ 
     const int k = static_cast<int>(xNew.size());
     Eigen::MatrixXd aNew(k, 2);
     for (int i = 0; i < k; ++i) {
         aNew(i, 0) = 1.0;
         aNew(i, 1) = xNew[static_cast<std::size_t>(i)];
     }
-
-    return detail::computeIntervals(m_lastResult, aNew, m_cfg.confidenceLevel);
+ 
+    return detail::computeIntervals(m_lastResult, aNew, xNew, m_cfg.confidenceLevel);
 }
 
 Eigen::MatrixXd LinearRegressor::buildDesignMatrix(const Eigen::VectorXd& x)
