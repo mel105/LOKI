@@ -189,7 +189,6 @@ void PlotOutlier::plotComparison(const TimeSeries& original,
         gp("set ylabel 'Value'");
         gp("set grid");
         gp("set key top right");
-        // Original in blue (consistent with plotOriginalWithOutliers)
         gp("plot '" + _fwdSlash(datOrig) + "' u 1:2 w l lc rgb '#2166ac' lw 1.0 t 'Original',"
            " '" + _fwdSlash(datCln)  + "' u 1:2 w l lc rgb '#1a9641' lw 1.5 t 'Cleaned'");
     } catch (const LOKIException& ex) {
@@ -219,16 +218,14 @@ void PlotOutlier::plotResiduals(const TimeSeries&   original,
         Gnuplot gp;
         gp("set terminal " + _terminal());
         gp("set output '" + _fwdSlash(outPath) + "'");
-        gp("set title 'Residuals + outliers: " + _datasetName()
-           + "  n=" + std::to_string(detection.nOutliers) + "' noenhanced");
+        gp("set title 'Residuals: " + _datasetName()
+           + "  n=" + std::to_string(detection.nOutliers) + " outliers' noenhanced");
         gp("set xlabel 'MJD'");
         gp("set ylabel 'Residual'");
         gp("set grid");
         gp("set key top right");
-        gp("set style line 1 lc rgb '#1a9641' lw 1.0");
-        gp("set style line 2 lc rgb '#d7191c' pt 9 ps 1.2");
-        gp("plot '" + _fwdSlash(datRes) + "' u 1:2 w l ls 1 t 'Residuals',"
-           " '" + _fwdSlash(datOut) + "' u 1:2 w p ls 2 t 'Outlier'");
+        gp("plot '" + _fwdSlash(datRes) + "' u 1:2 w l lc rgb '#1a9641' lw 1.0 t 'Residuals',"
+           " '" + _fwdSlash(datOut) + "' u 1:2 w p lc rgb '#d7191c' pt 9 ps 1.2 t 'Outlier'");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotOutlier::plotResiduals failed: " + std::string(ex.what()));
     }
@@ -243,8 +240,6 @@ void PlotOutlier::plotResiduals(const TimeSeries&   original,
 void PlotOutlier::plotSeasonalOverlay(const TimeSeries&          series,
                                        const std::vector<double>& seasonal) const
 {
-    if (seasonal.empty()) return;
-
     const std::string stem    = _stem(series, "seasonal_overlay");
     const auto        datOrig = m_cfg.imgDir / (".tmp_" + stem + "_orig.dat");
     const auto        datSeas = m_cfg.imgDir / (".tmp_" + stem + "_seas.dat");
@@ -252,28 +247,111 @@ void PlotOutlier::plotSeasonalOverlay(const TimeSeries&          series,
 
     _writeSeriesDat(series, datOrig);
 
-    std::vector<double> times;
-    times.reserve(series.size());
+    // Build MJD vector for seasonal
+    std::vector<double> mjds;
+    mjds.reserve(series.size());
     for (std::size_t i = 0; i < series.size(); ++i)
-        times.push_back(series[i].time.mjd());
-    _writeVectorDat(times, seasonal, datSeas);
+        mjds.push_back(series[i].time.mjd());
+    _writeVectorDat(mjds, seasonal, datSeas);
 
     try {
         Gnuplot gp;
         gp("set terminal " + _terminal());
         gp("set output '" + _fwdSlash(outPath) + "'");
-        gp("set title 'Original + seasonal model: " + _datasetName() + "' noenhanced");
+        gp("set title 'Seasonal overlay: " + _datasetName() + "' noenhanced");
         gp("set xlabel 'MJD'");
         gp("set ylabel 'Value'");
         gp("set grid");
         gp("set key top right");
         gp("plot '" + _fwdSlash(datOrig) + "' u 1:2 w l lc rgb '#2166ac' lw 1.0 t 'Original',"
-           " '" + _fwdSlash(datSeas) + "' u 1:2 w l lc rgb '#d7191c' lw 2.0 t 'Seasonal'");
+           " '" + _fwdSlash(datSeas) + "' u 1:2 w l lc rgb '#d7191c' lw 1.5 t 'Seasonal'");
     } catch (const LOKIException& ex) {
         LOKI_WARNING("PlotOutlier::plotSeasonalOverlay failed: " + std::string(ex.what()));
     }
     std::filesystem::remove(datOrig);
     std::filesystem::remove(datSeas);
+}
+
+// ----------------------------------------------------------------------------
+//  plotLeverages
+// ----------------------------------------------------------------------------
+
+void PlotOutlier::plotLeverages(const TimeSeries&      series,
+                                 const Eigen::VectorXd& leverages,
+                                 double                 threshold,
+                                 int                    arOrder,
+                                 std::size_t            nOutliers) const
+{
+    if (leverages.size() == 0) return;
+
+    const std::string stem    = _stem(series, "leverage");
+    const auto        datLev  = m_cfg.imgDir / (".tmp_" + stem + "_lev.dat");
+    const auto        datOut  = m_cfg.imgDir / (".tmp_" + stem + "_out.dat");
+    const auto        outPath = _outPath(stem);
+
+    // Write leverage data: col1 = MJD (offset by arOrder), col2 = h_ii
+    // Outlier file: same columns but only rows exceeding threshold
+    {
+        std::ofstream levDat(datLev);
+        std::ofstream outDat(datOut);
+        levDat << std::fixed << std::setprecision(10);
+        outDat << std::fixed << std::setprecision(10);
+
+        const std::size_t rows   = static_cast<std::size_t>(leverages.size());
+        const std::size_t offset = static_cast<std::size_t>(arOrder);
+
+        for (std::size_t i = 0; i < rows; ++i) {
+            const std::size_t serIdx = i + offset;
+            if (serIdx >= series.size()) break;
+
+            const double mjd = series[serIdx].time.mjd();
+            const double h   = leverages(static_cast<Eigen::Index>(i));
+
+            levDat << mjd << "\t" << h << "\n";
+            if (h > threshold) {
+                outDat << mjd << "\t" << h << "\n";
+            }
+        }
+    }
+
+    try {
+        Gnuplot gp;
+        gp("set terminal " + _terminal());
+        gp("set output '" + _fwdSlash(outPath) + "'");
+
+        std::ostringstream title;
+        title << "Hat matrix leverages (DEH): " << _datasetName()
+              << "  AR order=" << arOrder
+              << "  n=" << nOutliers << " flagged"
+              << "  threshold=" << std::fixed << std::setprecision(6) << threshold;
+        gp("set title '" + title.str() + "' noenhanced");
+        gp("set xlabel 'MJD'");
+        gp("set ylabel 'h_{ii}'");
+        gp("set grid");
+        gp("set key top right");
+
+        // Dashed red threshold line
+        std::ostringstream thr;
+        thr << std::fixed << std::setprecision(10) << threshold;
+        gp("set arrow 1 from graph 0, first " + thr.str()
+           + " to graph 1, first " + thr.str()
+           + " nohead lc rgb '#d7191c' lw 1.5 dt 2");
+
+        std::string plotCmd =
+            "plot '" + _fwdSlash(datLev) + "' u 1:2 w l lc rgb '#2166ac' lw 1.0 t 'leverage h_{ii}'";
+
+        if (nOutliers > 0) {
+            plotCmd += ", '" + _fwdSlash(datOut)
+                    + "' u 1:2 w p lc rgb '#d7191c' pt 9 ps 1.2 t 'flagged'";
+        }
+
+        gp(plotCmd);
+    } catch (const LOKIException& ex) {
+        LOKI_WARNING("PlotOutlier::plotLeverages failed: " + std::string(ex.what()));
+    }
+
+    std::filesystem::remove(datLev);
+    std::filesystem::remove(datOut);
 }
 
 // ----------------------------------------------------------------------------

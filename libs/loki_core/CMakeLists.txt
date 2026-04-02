@@ -21,9 +21,9 @@ target_sources(loki_core
         src/stats/distributions.cpp
         src/stats/hypothesis.cpp
         src/math/lsq.cpp
-        # src/math/svd.cpp
         src/math/designMatrix.cpp
         src/math/hatMatrix.cpp
+        src/math/lagMatrix.cpp
         src/math/lm.cpp
 )
 

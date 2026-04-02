@@ -32,7 +32,8 @@
             "deseasonalized":        true,
             "seasonal_overlay":      true,
             "residuals_with_bounds": true,
-            "outlier_overlay":       false
+            "outlier_overlay":       false,
+            "leverage_plot":         true
         }
     },
 
@@ -49,7 +50,7 @@
             "median_year_min_years": 5
         },
         "detection": {
-            "method": "mad",
+            "method": "hat_matrix",
             "iqr_multiplier": 1.5,
             "mad_multiplier": 3.0,
             "zscore_threshold": 3.0
@@ -57,6 +58,11 @@
         "replacement": {
             "strategy": "linear",
             "max_fill_length": 0
+        },
+        "hat_matrix": {
+            "ar_order": 50,
+            "significance_level": 0.001,
+            "enabled": true
         }
     }
 }

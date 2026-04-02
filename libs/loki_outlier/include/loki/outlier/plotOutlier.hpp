@@ -4,6 +4,9 @@
 #include <loki/outlier/outlierResult.hpp>
 #include <loki/timeseries/timeSeries.hpp>
 
+#include <Eigen/Dense>
+
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -23,6 +26,7 @@ namespace loki::outlier {
  *   plotSeasonalOverlay      -- original + seasonal model overlay
  *   plotResidualsWithBounds  -- residuals + detection bound lines
  *   plotOutlierOverlay       -- pre + post detection on one plot (homogeneity)
+ *   plotLeverages            -- DEH leverage h_ii vs time + threshold line
  *   plotAll                  -- calls all enabled plots based on PlotConfig flags
  */
 class PlotOutlier {
@@ -67,8 +71,6 @@ public:
     /**
      * @brief Plots the original series with the seasonal model overlaid.
      *
-     * Output: [program]_[dataset]_[param]_seasonal_overlay.[fmt]
-     *
      * @param series   Original input series.
      * @param seasonal Seasonal component values (same length as series).
      */
@@ -76,12 +78,28 @@ public:
                              const std::vector<double>& seasonal) const;
 
     /**
-     * @brief Runs all enabled outlier plots based on PlotConfig flags.
+     * @brief Plots hat matrix leverage values h_ii over time with threshold line.
      *
-     * Calls individual plot methods according to cfg.plots flags.
-     * plotResidualsWithBounds is called here when residualsWithBounds flag is set.
-     * plotSeasonalOverlay is called here when seasonalOverlay flag is set and
-     * hasComponent is true.
+     * Output: [program]_[dataset]_[param]_leverage.[fmt]
+     *
+     * The leverage vector has length n - arOrder; indices are offset by arOrder
+     * relative to the original series. Outlier positions (h_ii > threshold) are
+     * marked as filled triangles. The threshold line is drawn as a dashed red line.
+     *
+     * @param series        Original input series (used for MJD timestamps and naming).
+     * @param leverages     Leverage values h_ii, length n - arOrder.
+     * @param threshold     Detection threshold chi2Quantile(1-alpha, p) / n.
+     * @param arOrder       AR lag order p (used as index offset and in title).
+     * @param nOutliers     Number of detected outliers (for title).
+     */
+    void plotLeverages(const TimeSeries&      series,
+                       const Eigen::VectorXd& leverages,
+                       double                 threshold,
+                       int                    arOrder,
+                       std::size_t            nOutliers) const;
+
+    /**
+     * @brief Runs all enabled outlier plots based on PlotConfig flags.
      *
      * @param original      Original input series.
      * @param cleaned       Cleaned series.

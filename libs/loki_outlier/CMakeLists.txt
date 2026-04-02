@@ -4,8 +4,8 @@ cmake_minimum_required(VERSION 3.25)
 # loki_outlier -- outlier detection and replacement
 #   O1: outlierResult.hpp
 #   O2: IqrDetector, MadDetector, ZScoreDetector
-#   O3: OutlierCleaner (planned)
-#   O4: HatMatrixDetector (planned)
+#   O3: OutlierCleaner
+#   O4: HatMatrixDetector (DEH method, Hau & Tong 1989)
 # -----------------------------------------------------------------------------
 
 add_library(loki_outlier STATIC)
@@ -18,6 +18,7 @@ target_sources(loki_outlier
         src/zScoreDetector.cpp
         src/outlierCleaner.cpp
         src/plotOutlier.cpp
+        src/hatMatrixDetector.cpp
 )
 
 target_include_directories(loki_outlier

@@ -156,9 +156,16 @@ struct OutlierConfig {
         int         maxFillLength{0};
     };
 
+    struct HatMatrixSection {
+        int    arOrder           {5};
+        double significanceLevel {0.05};
+        bool   enabled           {true};
+    };
+
     DeseasonalizationSection deseasonalization{};
     DetectionSection         detection{};
     ReplacementSection       replacement{};
+    HatMatrixSection         hatMatrix{};
 };
 
 // -----------------------------------------------------------------------------
@@ -261,14 +268,14 @@ enum class NonlinearModelEnum {
  * @brief Configuration for NonlinearRegressor (Levenberg-Marquardt).
  */
 struct NonlinearConfig {
-    NonlinearModelEnum model          {NonlinearModelEnum::EXPONENTIAL};
-    std::vector<double> initialParams {};   ///< Starting point for LM. Required.
-    int                maxIterations  {100};
-    double             gradTol        {1.0e-8};
-    double             stepTol        {1.0e-8};
-    double             lambdaInit     {1.0e-3};
-    double             lambdaFactor   {10.0};
-    double             confidenceLevel{0.95};
+    NonlinearModelEnum  model          {NonlinearModelEnum::EXPONENTIAL};
+    std::vector<double> initialParams  {};
+    int                 maxIterations  {100};
+    double              gradTol        {1.0e-8};
+    double              stepTol        {1.0e-8};
+    double              lambdaInit     {1.0e-3};
+    double              lambdaFactor   {10.0};
+    double              confidenceLevel{0.95};
 };
 
 // -----------------------------------------------------------------------------
@@ -288,15 +295,15 @@ struct RegressionConfig {
     RegressionMethodEnum       method{RegressionMethodEnum::LINEAR};
     int                        polynomialDegree{1};
     int                        harmonicTerms{2};
-    double                     period{365.25};       ///< Days; for harmonic regression.
+    double                     period{365.25};
     bool                       robust{false};
     int                        robustIterations{10};
-    std::string                robustWeightFn{"bisquare"};  ///< huber | bisquare
+    std::string                robustWeightFn{"bisquare"};
     bool                       computePrediction{false};
-    double                     predictionHorizon{0.0};  ///< Days ahead to predict.
-    double                     confidenceLevel{0.95};   ///< For confidence/prediction intervals.
-    double                     significanceLevel{0.05}; ///< For hypothesis tests in protocol.
-    int                        cvFolds{10};             ///< K-fold CV folds [2, 100].
+    double                     predictionHorizon{0.0};
+    double                     confidenceLevel{0.95};
+    double                     significanceLevel{0.05};
+    int                        cvFolds{10};
     NonlinearConfig            nonlinear{};
 };
 
@@ -308,10 +315,7 @@ struct RegressionConfig {
  * @brief Fine-grained options for individual plot types.
  */
 struct PlotOptionsConfig {
-    /// Maximum lag for ACF plot. 0 = auto: min(N/10, 200).
     int acfMaxLag{0};
-
-    /// Number of bins for histogram. 0 = auto: Sturges rule ceil(log2(N)+1).
     int histogramBins{0};
 };
 
@@ -344,6 +348,7 @@ struct PlotConfig {
     bool seasonalOverlay     {true};
     bool residualsWithBounds {true};
     bool outlierOverlay      {false};
+    bool leveragePlot        {true};   ///< DEH leverage vs time (HatMatrixDetector).
 
     // -- Homogeneity pipeline plots -------------------------------------------
     bool changePoints     {true};
@@ -359,14 +364,14 @@ struct PlotConfig {
     bool residualsQq             {false};
 
     // -- Regression pipeline plots --------------------------------------------
-    bool regressionOverlay       {true};   ///< Fitted curve over raw data.
-    bool regressionResiduals     {true};   ///< Residuals in time.
-    bool regressionCdfPlot       {false};  ///< ECDF vs theoretical CDF.
-    bool regressionQqBands       {true};   ///< QQ plot with confidence bands.
-    bool regressionResidualAcf   {false};  ///< ACF of residuals with 95% band.
-    bool regressionResidualHist  {false};  ///< Histogram of residuals with normal fit.
-    bool regressionInfluence     {false};  ///< Cook's distance bar chart.
-    bool regressionLeverage      {false};  ///< Leverage vs standardized residuals scatter.
+    bool regressionOverlay       {true};
+    bool regressionResiduals     {true};
+    bool regressionCdfPlot       {false};
+    bool regressionQqBands       {true};
+    bool regressionResidualAcf   {false};
+    bool regressionResidualHist  {false};
+    bool regressionInfluence     {false};
+    bool regressionLeverage      {false};
 };
 
 // -----------------------------------------------------------------------------
@@ -398,7 +403,7 @@ struct AppConfig {
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
     std::filesystem::path imgDir;
-    std::filesystem::path protocolsDir;  ///< OUTPUT/PROTOCOLS/
+    std::filesystem::path protocolsDir;
 };
 
 } // namespace loki

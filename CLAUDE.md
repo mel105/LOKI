@@ -9,7 +9,7 @@ It should be placed in the root of the repository and kept up to date.
 
 LOKI is a professional C++ toolkit for statistical analysis of time series data.
 The long-term goal is a modular ecosystem of analysis libraries with a GUI/IDE frontend.
-Current focus: nonlinear regression with Levenberg-Marquardt (`loki_regression` R8).
+Current focus: hat matrix leverage-based outlier detection (`loki_outlier` O4).
 
 ---
 
@@ -140,14 +140,10 @@ All plot output files follow this naming convention:
 - **format** : `png` | `eps` | `svg`
 
 ### Rules for plotters
-- `PlotRegression` (loki_regression) uses prefix `regression_`.
 - Temporary data files use `.tmp_` prefix and are deleted immediately after gnuplot runs.
 - Gnuplot on Windows requires forward slashes -- use `fwdSlash()` helper on all paths.
 - gnuplot terminal: `pngcairo noenhanced font 'Sans,12'`
-- gnuplot title for Cook's distance: use `'Cook s distance'` (no apostrophe) to avoid
-  gnuplot string concatenation errors.
-- `qqPlotWithBands` and `cdfPlot` in `loki::Plot` expect `std::string` stem (not full path)
-  -- `Plot` builds the full output path internally via `outputPath(stem)`.
+- `qqPlotWithBands` and `cdfPlot` in `loki::Plot` expect `std::string` stem (not full path).
 
 ---
 
@@ -199,7 +195,7 @@ loki/
 |   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer, medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
-|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm [R8])
+|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -215,7 +211,7 @@ loki/
 |       |   +-- trendEstimator.hpp
 |       |   +-- robustRegressor.hpp
 |       |   +-- calibrationRegressor.hpp
-|       |   +-- nonlinearRegressor.hpp  [R8]
+|       |   +-- nonlinearRegressor.hpp
 |       |   +-- regressionDiagnostics.hpp
 |       |   +-- plotRegression.hpp
 |       +-- src/
@@ -226,7 +222,7 @@ loki/
 |           +-- trendEstimator.cpp
 |           +-- robustRegressor.cpp
 |           +-- calibrationRegressor.cpp
-|           +-- nonlinearRegressor.cpp  [R8]
+|           +-- nonlinearRegressor.cpp
 |           +-- regressionDiagnostics.cpp
 |           +-- plotRegression.cpp
 +-- tests/
@@ -261,6 +257,7 @@ loki/
 
 ### CMake target name collision
 Executable: `loki_regression_app` with `OUTPUT_NAME "loki_regression"`.
+Same pattern for `loki_outlier_app` with `OUTPUT_NAME "loki_outlier"`.
 
 ### Runtime DLLs (Windows)
 `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`
@@ -281,7 +278,7 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `version.hpp` -- `0.3.0`
 - `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
 - `logger.hpp / .cpp`
-- `config.hpp` -- all config structs including `PlotConfig` with 8 regression plot flags
+- `config.hpp` -- all config structs including `PlotConfig`, `NonlinearConfig`
 - `configLoader.hpp / .cpp`
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
@@ -302,123 +299,95 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `lsq.hpp / .cpp`
 - `designMatrix.hpp / .cpp`
 - `hatMatrix.hpp / .cpp`
-- `svd.hpp` -- header-only (see SVD note below)
+- `svd.hpp` -- header-only (BDCSVD linking bug workaround, see Known Issues)
+- `lm.hpp / .cpp` -- Levenberg-Marquardt solver
 
-### loki_outlier -- complete
+### loki_outlier -- complete (O1-O3)
 ### loki_homogeneity -- complete
 ### loki_filter -- complete
 
-### loki_regression -- R1-R7 complete, R8 next
+### loki_regression -- R1-R8 complete
+- `LinearRegressor`, `PolynomialRegressor`, `HarmonicRegressor`
+- `TrendEstimator` (does NOT inherit Regressor, handled separately in main)
+- `RobustRegressor` (IRLS, Huber/Bisquare)
+- `CalibrationRegressor` (TLS via JacobiSVD)
+- `NonlinearRegressor` (LM, built-in: EXPONENTIAL/LOGISTIC/GAUSSIAN, CUSTOM via ModelFn)
+- `RegressionDiagnostics`, `PlotRegression`
 
-#### Key design decisions
-- **X-axis convention**: `x = mjd - tRef` (days relative to first valid observation).
-- **`designMatrix`** stored in `RegressionResult` after every `fit()`.
-- **`HatMatrix`** and **`SvdDecomposition`** in `loki_core/math/` for reuse.
-- **`TrendEstimator`** does NOT inherit from `Regressor` -- returns `DecompositionResult`.
-  Handled separately in `main.cpp` with explicit branch on `RegressionMethodEnum::TREND`.
-  Prediction is NOT supported for `TrendEstimator`.
-- **`CalibrationRegressor`** (TLS): uses `Eigen::JacobiSVD` directly (not `SvdDecomposition`).
-- **`computeIntervals`** in `regressorUtils` takes explicit `xNew` vector for correct
-  `PredictionPoint::x` assignment -- critical for non-polynomial models (harmonic etc.)
-  where design matrix columns are not simply [1, x, x^2, ...].
-- **Prediction guard**: `MAX_PREDICTION_POINTS = 100'000` -- skips prediction with warning
-  if estimated point count exceeds limit (protects against ms-rate data + long horizon).
-- **Re-fit before predict()**: prediction in `main.cpp` creates a new regressor, re-fits,
-  then calls `predict()` -- necessary because `buildRegressor` returns a fresh object.
-- **Protocol**: `OUTPUT/PROTOCOLS/regression_[dataset]_[param]_protocol.txt`
-- **CSV fitted**: `mjd;original;fitted;residual` (+ `trend;seasonal` for `TrendEstimator`)
-- **CSV prediction**: `mjd;predicted;conf_low;conf_high;pred_low;pred_high`
-  conf_* = confidence interval for mean response (narrow for large n)
-  pred_* = prediction interval for future observations (includes sigma0, wider)
-
-#### RegressionResult fields
-```cpp
-struct RegressionResult {
-    Eigen::VectorXd  coefficients;
-    Eigen::VectorXd  residuals;
-    Eigen::MatrixXd  cofactorX;
-    double           sigma0;
-    double           rSquared;
-    double           rSquaredAdj;
-    double           aic;
-    double           bic;
-    int              dof;
-    bool             converged;
-    std::string      modelName;
-    TimeSeries       fitted;
-    double           tRef;
-    Eigen::MatrixXd  designMatrix;
-};
-```
-
-#### PredictionPoint fields
-```cpp
-struct PredictionPoint {
-    double x;         // mjd - tRef
-    double predicted;
-    double confLow;
-    double confHigh;
-    double predLow;
-    double predHigh;
-};
-```
-
-#### PlotConfig -- regression flags
-```cpp
-bool regressionOverlay       {true};
-bool regressionResiduals     {true};
-bool regressionCdfPlot       {false};
-bool regressionQqBands       {true};
-bool regressionResidualAcf   {false};
-bool regressionResidualHist  {false};
-bool regressionInfluence     {false};
-bool regressionLeverage      {false};
-// prediction plot reuses regressionOverlay flag -- shown when prediction is non-empty
-```
+#### Key design decisions (regression)
+- X-axis: `x = mjd - tRef`; `tRef` stored in `RegressionResult`
+- `designMatrix` in `RegressionResult` after every `fit()`
+- `NonlinearRegressor`: standalone (not inheriting Regressor), `designMatrix` = Jacobian at solution
+- `LmResult` -> `RegressionResult` mapping: params->coefficients, covariance->cofactorX, jacobian->designMatrix
+- `ModelFn = std::function<double(double x, const Eigen::VectorXd& params)>` defined in `lm.hpp`
+- Prediction intervals for nonlinear: delta method (gradient-based, approximate)
+- `computeIntervals` in `regressorUtils::detail` -- takes explicit `xNew` vector
+- Prediction guard: `MAX_PREDICTION_POINTS = 100'000`
+- Protocol: `OUTPUT/PROTOCOLS/regression_[dataset]_[param]_protocol.txt`
+- CSV fitted: `mjd;original;fitted;residual` (+ `trend;seasonal` for TrendEstimator)
+- CSV prediction: `mjd;predicted;conf_low;conf_high;pred_low;pred_high`
 
 ---
 
-## NEXT THREAD: R8 -- Levenberg-Marquardt Nonlinear Regression
+## NEXT THREAD: O4 -- HatMatrixDetector in loki_outlier
 
-### Architecture decisions (agreed)
-- **`LmSolver`** lives in `loki_core/math/` (analogous to `LsqSolver`)
-- **`NonlinearRegressor`** in `loki_regression/` -- standalone, does NOT inherit `Regressor`
-  (different interface: requires model function + initial parameter guess)
-- **Jacobian**: numerical by default (finite differences), analytical optional for built-in models
-- **Built-in models** (selected via config enum):
-  - `EXPONENTIAL`: `y = a * exp(b*x)` -- nonlinear trend, climatological data
-  - `LOGISTIC`: `y = L / (1 + exp(-k*(x - x0)))` -- S-curve, velocity profiles (train data)
-  - `GAUSSIAN`: `y = A * exp(-((x-mu)^2) / (2*sigma^2))` -- isolated peaks
-  - `CUSTOM`: user-supplied `std::function<double(double, const Eigen::VectorXd&)>`
-- **Model function type**:
-  ```cpp
-  using ModelFn = std::function<double(double x, const Eigen::VectorXd& params)>;
-  ```
-- **Initial parameter estimates**: required from config or user -- LM is sensitive to
-  starting point; bad initial values -> non-convergence
+### Background and motivation
+The hat matrix (projection matrix) `H = A(A^T A)^{-1} A^T` maps observations
+to fitted values. Its diagonal elements `h_ii` (leverages) measure how much
+influence each observation has on its own fit. High-leverage points are
+geometrically remote from the bulk of the data -- they are potential outliers
+even if their residuals appear small ("hidden outliers" or "masked outliers").
 
-### Config additions needed (config.hpp + configLoader.cpp)
+This is the key advantage over residual-based methods (MAD, IQR, Z-score):
+a high-leverage outlier can pull the fit toward itself, resulting in a small
+residual despite being anomalous. The hat matrix detects these geometrically.
+
+### Pipeline context
+The `HatMatrixDetector` operates on **residuals** (deseasonalized series),
+not the raw signal. Deseasonalization is done upstream in the outlier pipeline
+using either:
+- `moving_average` strategy (sensor/signal data)
+- `median_year` strategy (climatological/GNSS data, step >= 1 hour)
+
+This is consistent with the existing `loki_outlier` pipeline (O1-O3 detectors
+all operate on residuals after the deseasonalization step).
+
+### Design decisions (agreed)
+- `HatMatrixDetector` lives in `loki_outlier`
+- Does NOT inherit from `OutlierDetector` base class -- different interface
+  (requires AR order parameter; output includes leverage values, not just flags)
+- Input: deseasonalized `TimeSeries` (residuals)
+- Internally builds a design matrix `A` from AR(p) structure:
+  row i = [e_{i-1}, e_{i-2}, ..., e_{i-p}]  (lagged residuals as predictors)
+  This captures temporal dependence structure -- key for time series outliers
+- Computes `H = A(A^T A)^{-1} A^T` via `HatMatrix` from `loki_core/math/`
+- Detection threshold: chi-squared with `p` degrees of freedom at `alpha` level
+  `h_ii > chi2_quantile(1 - alpha, p) / n`  (scaled leverage threshold)
+- Output struct `HatMatrixResult`:
+  - `std::vector<std::size_t> outlierIndices` -- indices in original series
+  - `Eigen::VectorXd leverages` -- full `h_ii` vector (for plotting)
+  - `double threshold` -- the chi-squared derived threshold used
+  - `int arOrder` -- AR order actually used
+
+### Config additions needed
 ```cpp
-enum class NonlinearModelEnum { EXPONENTIAL, LOGISTIC, GAUSSIAN, CUSTOM };
-
-struct NonlinearConfig {
-    NonlinearModelEnum   model{NonlinearModelEnum::EXPONENTIAL};
-    Eigen::VectorXd      initialParams;   // starting point for LM
-    int                  maxIterations{100};
-    double               tolerance{1e-6};
-    double               lambdaInit{1e-3};
-    double               lambdaFactor{10.0};
-    double               confidenceLevel{0.95};
+struct HatMatrixConfig {
+    int    arOrder          {5};     // AR lag order p; higher = more context
+    double significanceLevel{0.05};  // alpha for chi-squared threshold
+    bool   enabled          {true};
 };
 ```
+Add `HatMatrixConfig hatMatrix{}` to `OutlierConfig`.
 
-### LmSolver design
-- Input: `ModelFn f`, `Eigen::VectorXd x`, `Eigen::VectorXd y`,
-         `Eigen::VectorXd p0` (initial params), `LmConfig`
-- Output: `LmResult` with converged params, residuals, Jacobian at solution,
-          sigma0, covariance matrix (for intervals)
-- Jacobian: numerical via central differences `(f(x, p+h) - f(x, p-h)) / (2h)`
-- Damping: standard Marquardt -- increase lambda on step rejection, decrease on acceptance
+### Files to request at thread start
+- `libs/loki_outlier/include/loki/outlier/outlierDetector.hpp` -- base class
+- `libs/loki_outlier/include/loki/outlier/` -- directory listing (all existing detectors)
+- `libs/loki_outlier/CMakeLists.txt`
+- `apps/loki_outlier/main.cpp`
+- `libs/loki_core/include/loki/math/hatMatrix.hpp` -- existing HatMatrix API
+- `libs/loki_core/include/loki/core/config.hpp` -- OutlierConfig section
+- `libs/loki_core/src/core/configLoader.cpp` -- _parseOutlier section
+- The academic paper on the method (user will attach PDF)
 
 ---
 
@@ -436,28 +405,13 @@ into static libraries on Windows/GCC. Two fixes applied:
 Do NOT move `SvdDecomposition` back to a `.cpp` file. Do NOT use `BDCSVD` in any `.cpp`
 that gets compiled into a static library.
 
-### `computeIntervals` -- x assignment
-`PredictionPoint::x` must be set from the explicit `xNew` vector, NOT extracted from
-the design matrix row. For harmonic models `aRow[1] = sin(2*pi*t/T)`, not `t`.
-The `computeIntervals` signature requires `xNew` as a separate parameter.
-
-### Polynomial regression -- multicollinearity warning
-For high-degree polynomials (>= 4) on short series, VIF values in millions are expected
-due to natural correlation of power basis columns. This is NOT a bug -- it is an inherent
-property of the monomial basis. For high-degree fits, orthogonal polynomials (Legendre)
-would be needed. Current recommendation: use degree <= 3 for stable results.
-For sensor/train velocity data, polynomial regression is a poor physical model --
-consider logistic curve (NonlinearRegressor) or Kalman filter instead.
-
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
 - `TimeSeries::append(const TimeStamp& time, double value, uint8_t flag = 0)`
 - `::TimeStamp` is NOT in `namespace loki` -- always qualify as `::TimeStamp`
 
 ### `std::numbers::pi` instead of `M_PI`
-Use `std::numbers::pi` (C++20 `<numbers>`). `M_PI` is not standard on Windows/MinGW.
-IntelliSense may show false errors for `std::numbers::pi` -- set `"cppStandard": "c++20"`
-in `.vscode/c_cpp_properties.json` and reset IntelliSense database.
+Use `std::numbers::pi` (C++20 `<numbers>`).
 
 ### Logger macros
 - `LOKI_WARNING` (not `LOKI_WARN`)
@@ -467,47 +421,43 @@ in `.vscode/c_cpp_properties.json` and reset IntelliSense database.
 - Use `fwdSlash()` helper on all paths
 - Font: `'Sans,12'` (not `'Helvetica,12'`)
 - Terminal: `noenhanced` (prevents underscore subscript interpretation)
-- String concatenation in gnuplot commands does NOT work -- avoid `'Cook' + "'" + 's'`
 
-### `hypothesis.cpp` -- sign conversion
-Vector indexing with `int` requires `static_cast<std::size_t>()` throughout
-`shapiroWilkWZ()` to avoid `-Werror=sign-conversion`.
+### `distributions.hpp` namespace
+Functions are in `loki::stats::` -- e.g. `loki::stats::tQuantile(p, df)`.
+`tQuantile` takes `double df` (not int).
 
-### `distributions.cpp` -- `std::numbers::pi`
-Requires `#include <numbers>` at top of file.
-
-### `plot.cpp` -- shadowed variable
-Lambda inside `qqPlotWithBands` must use `oss` not `ss` (shadows outer `double ss`).
+### `regressorUtils` namespace
+`computeIntervals` and `computeGoodnessOfFit` are in `loki::regression::detail`.
 
 ---
 
 ## Config Structs
 
-### RegressionConfig (config.hpp)
+### NonlinearConfig (config.hpp) -- added in R8
+```cpp
+enum class NonlinearModelEnum {
+    EXPONENTIAL,  // a * exp(b * x)
+    LOGISTIC,     // L / (1 + exp(-k * (x - x0)))
+    GAUSSIAN      // A * exp(-((x - mu)^2) / (2 * sigma^2))
+};
+
+struct NonlinearConfig {
+    NonlinearModelEnum  model          {NonlinearModelEnum::EXPONENTIAL};
+    std::vector<double> initialParams  {};
+    int                 maxIterations  {100};
+    double              gradTol        {1.0e-8};
+    double              stepTol        {1.0e-8};
+    double              lambdaInit     {1.0e-3};
+    double              lambdaFactor   {10.0};
+    double              confidenceLevel{0.95};
+};
+```
+Member of `RegressionConfig`: `NonlinearConfig nonlinear{}`.
+
+### RegressionMethodEnum (config.hpp)
 ```cpp
 enum class RegressionMethodEnum {
-    LINEAR, POLYNOMIAL, HARMONIC, TREND, ROBUST, CALIBRATION
-};
-
-struct RegressionGapFillingConfig {
-    std::string strategy{"linear"};
-    int         maxFillLength{0};
-};
-
-struct RegressionConfig {
-    RegressionGapFillingConfig gapFilling{};
-    RegressionMethodEnum       method{RegressionMethodEnum::LINEAR};
-    int                        polynomialDegree{1};
-    int                        harmonicTerms{2};
-    double                     period{365.25};
-    bool                       robust{false};
-    int                        robustIterations{10};
-    std::string                robustWeightFn{"bisquare"};
-    bool                       computePrediction{false};
-    double                     predictionHorizon{0.0};
-    double                     confidenceLevel{0.95};
-    double                     significanceLevel{0.05};
-    int                        cvFolds{10};
+    LINEAR, POLYNOMIAL, HARMONIC, TREND, ROBUST, CALIBRATION, NONLINEAR
 };
 ```
 
@@ -515,18 +465,14 @@ struct RegressionConfig {
 
 ## Planned Future Work
 
-- **R8** -- Levenberg-Marquardt nonlinear LSQ (next thread -- see design above)
-- **`loki_kalman`** -- standalone Kalman filter; ideal for sensor/train velocity data
+- **O4** -- `HatMatrixDetector` in `loki_outlier` (next thread -- see design above)
+- **`loki_kalman`** -- standalone Kalman filter
 - **`SplineFilter`** -- future addition to `loki_filter`
-- **`HatMatrixDetector`** (O4) -- leverage-based outlier detection in `loki_outlier`
 - **`loki_spectral`** -- FFT, prerequisite for HarmonicSeries
 - **`loki_arima`** -- AR, ARMA, ARIMA
 - **`loki_svd`** -- SSA, PCA; uses `SvdDecomposition` from `loki_core/math/`
-- **`loki_clustering`** -- k-means, DBSCAN; useful for segmenting train velocity profiles
-  (identify acceleration/cruise/braking phases) and climatological regime detection
-- Additional change point methods: SNHT Alexandersson, Pettitt, Buishand
-  NOTE: `snhtDetector` references in memory are from empty file attachments -- ignore them,
-  these detectors are not yet implemented.
+- **`loki_clustering`** -- k-means, DBSCAN
+- Additional change point methods: Pettitt, Buishand
 
 ---
 
@@ -537,10 +483,12 @@ struct RegressionConfig {
 - Build directory `build/` is gitignored.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
-- `hatMatrix.hpp` and `svd.hpp` are in `loki_core/math/`.
+- `hatMatrix.hpp`, `svd.hpp`, `lm.hpp` are in `loki_core/math/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
+- `lm.hpp / lm.cpp` -- `LmSolver` and `ModelFn` type alias live here.
 - Plot output -> `OUTPUT/IMG/`, protocols -> `OUTPUT/PROTOCOLS/`, CSV -> `OUTPUT/CSV/`.
-- Temp gnuplot files use `.tmp_` prefix and are deleted after gnuplot runs.
 - `regressorUtils.hpp` is in `include/loki/regression/` (not hidden in `src/`).
 - `loki_regression` CMake: library `loki_regression`, executable `loki_regression_app`
   with `OUTPUT_NAME "loki_regression"`.
+- `loki_outlier` CMake: library `loki_outlier`, executable `loki_outlier_app`
+  with `OUTPUT_NAME "loki_outlier"`.

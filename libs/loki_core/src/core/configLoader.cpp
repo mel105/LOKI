@@ -215,11 +215,11 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 
     if (j.contains("detection")) {
         const auto& d = j.at("detection");
-        cfg.detection.significanceLevel  = getOrDefault<double>     (d, "significance_level",   0.05,  false);
-        cfg.detection.acfDependenceLimit = getOrDefault<double>     (d, "acf_dependence_limit", 0.2,   false);
-        cfg.detection.correctForDependence = getOrDefault<bool>     (d, "correct_for_dependence", true, false);
-        cfg.detection.minSegmentPoints   = getOrDefault<int>        (d, "min_segment_points",   60,    false);
-        cfg.detection.minSegmentDuration = getOrDefault<std::string>(d, "min_segment_duration", "",    false);
+        cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",    0.05,  false);
+        cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",  0.2,   false);
+        cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true, false);
+        cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",    60,    false);
+        cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",  "",    false);
     }
 
     return cfg;
@@ -242,16 +242,34 @@ OutlierConfig ConfigLoader::_parseOutlier(const nlohmann::json& j)
 
     if (j.contains("detection")) {
         const auto& d = j.at("detection");
-        cfg.detection.method           = getOrDefault<std::string>(d, "method",            "mad", false);
-        cfg.detection.iqrMultiplier    = getOrDefault<double>     (d, "iqr_multiplier",    1.5,   false);
-        cfg.detection.madMultiplier    = getOrDefault<double>     (d, "mad_multiplier",    3.0,   false);
-        cfg.detection.zscoreThreshold  = getOrDefault<double>     (d, "zscore_threshold",  3.0,   false);
+        cfg.detection.method          = getOrDefault<std::string>(d, "method",           "mad", false);
+        cfg.detection.iqrMultiplier   = getOrDefault<double>     (d, "iqr_multiplier",   1.5,   false);
+        cfg.detection.madMultiplier   = getOrDefault<double>     (d, "mad_multiplier",   3.0,   false);
+        cfg.detection.zscoreThreshold = getOrDefault<double>     (d, "zscore_threshold", 3.0,   false);
     }
 
     if (j.contains("replacement")) {
         const auto& r = j.at("replacement");
         cfg.replacement.strategy      = getOrDefault<std::string>(r, "strategy",        "linear", false);
         cfg.replacement.maxFillLength = getOrDefault<int>        (r, "max_fill_length", 0,        false);
+    }
+
+    if (j.contains("hat_matrix")) {
+        const auto& hm = j.at("hat_matrix");
+        cfg.hatMatrix.arOrder           = getOrDefault<int>   (hm, "ar_order",           5,    false);
+        cfg.hatMatrix.significanceLevel = getOrDefault<double>(hm, "significance_level",  0.05, false);
+        cfg.hatMatrix.enabled           = getOrDefault<bool>  (hm, "enabled",             true, false);
+
+        if (cfg.hatMatrix.arOrder < 1) {
+            throw ConfigException(
+                "ConfigLoader: outlier.hat_matrix.ar_order must be >= 1, got "
+                + std::to_string(cfg.hatMatrix.arOrder) + ".");
+        }
+        if (cfg.hatMatrix.significanceLevel <= 0.0 || cfg.hatMatrix.significanceLevel >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: outlier.hat_matrix.significance_level must be in (0, 1), got "
+                + std::to_string(cfg.hatMatrix.significanceLevel) + ".");
+        }
     }
 
     return cfg;
@@ -411,12 +429,12 @@ RegressionConfig ConfigLoader::_parseRegression(const nlohmann::json& j)
         if (nl.contains("initial_params"))
             cfg.nonlinear.initialParams = nl.at("initial_params").get<std::vector<double>>();
 
-        cfg.nonlinear.maxIterations   = getOrDefault<int>   (nl, "max_iterations",  100,    false);
-        cfg.nonlinear.gradTol         = getOrDefault<double>(nl, "grad_tol",        1.0e-8, false);
-        cfg.nonlinear.stepTol         = getOrDefault<double>(nl, "step_tol",        1.0e-8, false);
-        cfg.nonlinear.lambdaInit      = getOrDefault<double>(nl, "lambda_init",     1.0e-3, false);
-        cfg.nonlinear.lambdaFactor    = getOrDefault<double>(nl, "lambda_factor",   10.0,   false);
-        cfg.nonlinear.confidenceLevel = getOrDefault<double>(nl, "confidence_level",0.95,   false);
+        cfg.nonlinear.maxIterations   = getOrDefault<int>   (nl, "max_iterations",   100,    false);
+        cfg.nonlinear.gradTol         = getOrDefault<double>(nl, "grad_tol",         1.0e-8, false);
+        cfg.nonlinear.stepTol         = getOrDefault<double>(nl, "step_tol",         1.0e-8, false);
+        cfg.nonlinear.lambdaInit      = getOrDefault<double>(nl, "lambda_init",      1.0e-3, false);
+        cfg.nonlinear.lambdaFactor    = getOrDefault<double>(nl, "lambda_factor",    10.0,   false);
+        cfg.nonlinear.confidenceLevel = getOrDefault<double>(nl, "confidence_level", 0.95,   false);
     }
 
     return cfg;
@@ -458,6 +476,7 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("seasonal_overlay"))      cfg.seasonalOverlay     = e["seasonal_overlay"].get<bool>();
         if (e.contains("residuals_with_bounds")) cfg.residualsWithBounds = e["residuals_with_bounds"].get<bool>();
         if (e.contains("outlier_overlay"))       cfg.outlierOverlay      = e["outlier_overlay"].get<bool>();
+        if (e.contains("leverage_plot"))         cfg.leveragePlot        = e["leverage_plot"].get<bool>();
 
         // Homogeneity pipeline
         if (e.contains("change_points"))    cfg.changePoints    = e["change_points"].get<bool>();
@@ -473,9 +492,9 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("residuals_qq"))              cfg.residualsQq            = e["residuals_qq"].get<bool>();
 
         // Regression pipeline
-        if (e.contains("regression_overlay"))    cfg.regressionOverlay    = e["regression_overlay"].get<bool>();
-        if (e.contains("regression_residuals"))  cfg.regressionResiduals  = e["regression_residuals"].get<bool>();
-        if (e.contains("regression_cdf_plot"))   cfg.regressionCdfPlot    = e["regression_cdf_plot"].get<bool>();
+        if (e.contains("regression_overlay"))       cfg.regressionOverlay      = e["regression_overlay"].get<bool>();
+        if (e.contains("regression_residuals"))     cfg.regressionResiduals    = e["regression_residuals"].get<bool>();
+        if (e.contains("regression_cdf_plot"))      cfg.regressionCdfPlot      = e["regression_cdf_plot"].get<bool>();
         if (e.contains("regression_qq_bands"))      cfg.regressionQqBands      = e["regression_qq_bands"].get<bool>();
         if (e.contains("regression_residual_acf"))  cfg.regressionResidualAcf  = e["regression_residual_acf"].get<bool>();
         if (e.contains("regression_residual_hist")) cfg.regressionResidualHist = e["regression_residual_hist"].get<bool>();

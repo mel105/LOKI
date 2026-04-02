@@ -130,6 +130,8 @@ All plots land in `<workspace>/OUTPUT/IMG/`.
 | `seasonal_overlay` | `true` | Original series + seasonal model overlay (only when deseasonalization is active) |
 | `residuals_with_bounds` | `true` | Residuals + detection threshold lines |
 | `outlier_overlay` | `false` | Pre-outlier and post-outlier detections on one plot. **Relevant only for `loki_homogeneity`** — ignored by `loki_outlier` which has a single detection pass. |
+| `leverage_plot` | `true` | Leverage values h_ii vs time with threshold line and flagged positions. Generated only when `detection.method` is `hat_matrix`. |
+
 
 ### Homogeneity pipeline plots
 
@@ -242,6 +244,7 @@ residuals rather than the raw signal.
 | `iqr_multiplier` | float | `1.5` | Fence width for `iqr`. Standard: 1.5 (mild), 3.0 (extreme). |
 | `mad_multiplier` | float | `3.0` | Threshold multiplier for `mad` and `mad_bounds`. Roughly equivalent to sigma units after normalisation by 0.6745. |
 | `zscore_threshold` | float | `3.0` | Z-score threshold for `zscore`. Flags values with `|z| > threshold`. |
+| `hat_matrix` | DEH-based (Hau & Tong, 1989). Detects geometrically remote state vectors via hat matrix leverage values h_ii. Does not depend on estimated AR coefficients. Use when residual-based methods fail to detect innovation outliers or masked outliers. |
 
 ### method options
 
@@ -290,6 +293,70 @@ Controls how detected outlier positions are filled after removal.
     }
 }
 ```
+
+### 5.4 outlier.hat_matrix
+
+Controls the DEH-based hat matrix detector (Hau & Tong, 1989).
+Active only when `detection.method` is `hat_matrix`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Enable or disable the hat matrix detector. |
+| `ar_order` | int | `5` | AR lag order p. Each row of the design matrix contains p lagged residual values. Higher p captures more temporal context. |
+| `significance_level` | float | `0.05` | Alpha for the chi-squared threshold. Threshold = chi2_quantile(1 - alpha, p) / n. |
+
+### ar_order selection guide
+
+The detection threshold is derived from the chi-squared distribution with p
+degrees of freedom. The choice of p depends on the sampling rate and the
+expected temporal extent of anomalies.
+
+| Sampling rate | Recommended ar_order | Context captured |
+|---|---|---|
+| Daily | 5 -- 14 | 1 -- 2 weeks |
+| 6-hourly | 28 -- 56 | 1 -- 2 weeks |
+| Hourly | 24 -- 168 | 1 day -- 1 week |
+| Sub-hourly / ms | 10 -- 30 | application-specific |
+
+To select p empirically: compute the ACF of the deseasonalized residuals and
+choose p as the lag where ACF first crosses the 95% confidence band
+(+/- 1.96 / sqrt(n)). This lag represents the effective decorrelation length
+of the residuals.
+
+> **Note on batch detection**: a single outlier at position t causes lag vectors
+> z_{t+1}, ..., z_{t+p} to be remote as well, because they all contain the
+> anomalous value. This produces clusters of up to p consecutive flagged positions.
+> This is expected behaviour documented in Hau & Tong (1989), Section 6, and
+> reflects true contamination of the AR neighbourhood -- not a false positive rate issue.
+
+> **Note on replacement**: detected positions are replaced using the same
+> `outlier.replacement` settings as the standard pipeline (linear interpolation
+> by default). The seasonal component (if any) is subtracted before replacement
+> and added back after reconstruction, identical to the O1-O3 pipeline.
+
+### Example
+```json
+"outlier": {
+    "deseasonalization": {
+        "strategy": "median_year",
+        "median_year_min_years": 5
+    },
+    "detection": {
+        "method": "hat_matrix"
+    },
+    "replacement": {
+        "strategy": "linear",
+        "max_fill_length": 0
+    },
+    "hat_matrix": {
+        "enabled": true,
+        "ar_order": 30,
+        "significance_level": 0.001
+    }
+}
+```
+```
+
 
 ---
 
