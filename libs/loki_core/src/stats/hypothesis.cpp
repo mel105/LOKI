@@ -400,4 +400,57 @@ double durbinWatson(
     return num / den;
 }
 
+HypothesisResult ljungBox(
+    const std::vector<double>& data,
+    int                        maxLag,
+    double                     alpha,
+    NanPolicy                  policy)
+{
+    if (maxLag < 1) {
+        throw DataException(
+            "ljungBox: maxLag must be >= 1, got " + std::to_string(maxLag) + ".");
+    }
+
+    const auto v = prepareData(data, policy, "ljungBox",
+                               static_cast<std::size_t>(maxLag) + 2);
+    if (v.empty()) {
+        return {std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN(),
+                false, "ljung-box"};
+    }
+
+    const double n = static_cast<double>(v.size());
+
+    // Compute biased ACF estimates rho[1..maxLag].
+    const double mu = sampleMean(v);
+    double denom = 0.0;
+    for (double xi : v) {
+        const double d = xi - mu;
+        denom += d * d;
+    }
+
+    if (denom < std::numeric_limits<double>::epsilon()) {
+        throw AlgorithmException(
+            "ljungBox: series has zero variance -- test is undefined.");
+    }
+
+    // Q = n*(n+2) * sum_{k=1}^{maxLag} rho_k^2 / (n-k)
+    double Q = 0.0;
+    for (int k = 1; k <= maxLag; ++k) {
+        const auto kk = static_cast<std::size_t>(k);
+        double numer = 0.0;
+        for (std::size_t i = 0; i < v.size() - kk; ++i) {
+            numer += (v[i] - mu) * (v[i + kk] - mu);
+        }
+        const double rho = numer / denom; // biased ACF at lag k
+        Q += (rho * rho) / (n - static_cast<double>(k));
+    }
+    Q *= n * (n + 2.0);
+
+    // Under H0, Q ~ chi2(maxLag).
+    const double pValue = 1.0 - chi2Cdf(Q, static_cast<double>(maxLag));
+
+    return {Q, pValue, pValue < alpha, "ljung-box"};
+}
+
 } // namespace loki::stats

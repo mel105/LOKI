@@ -84,7 +84,8 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.filter      = _parseFilter     (j.value("filter",      json::object()));
     cfg.regression  = _parseRegression (j.value("regression",  json::object()));
     cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
-    cfg.stats       = _parseStats      (j);
+    cfg.stats        = _parseStats         (j);
+    cfg.stationarity = _parseStationarity(j.value("stationarity", json::object()));
 
     return cfg;
 }
@@ -465,6 +466,7 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("comparison"))   cfg.comparison  = e["comparison"].get<bool>();
         if (e.contains("histogram"))    cfg.histogram   = e["histogram"].get<bool>();
         if (e.contains("acf"))          cfg.acf         = e["acf"].get<bool>();
+        if (e.contains("pacf_plot"))    cfg.pacfPlot    = e["pacf_plot"].get<bool>();
         if (e.contains("qq_plot"))      cfg.qqPlot      = e["qq_plot"].get<bool>();
         if (e.contains("boxplot"))      cfg.boxplot     = e["boxplot"].get<bool>();
 
@@ -561,6 +563,105 @@ std::filesystem::path ConfigLoader::_resolvePath(const std::string& raw,
 {
     const std::filesystem::path p(raw);
     return p.is_absolute() ? p : baseDir / p;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseStationarity
+// -----------------------------------------------------------------------------
+
+StationarityConfig ConfigLoader::_parseStationarity(const nlohmann::json& j)
+{
+    StationarityConfig cfg;
+
+    if (j.contains("deseasonalization")) {
+        const auto& ds = j.at("deseasonalization");
+        cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "median_year", false);
+        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        1461,          false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,             false);
+    }
+
+    if (j.contains("differencing")) {
+        const auto& d = j.at("differencing");
+        cfg.differencing.apply = getOrDefault<bool>(d, "apply", false, false);
+        cfg.differencing.order = getOrDefault<int> (d, "order", 1,     false);
+        if (cfg.differencing.order < 1 || cfg.differencing.order > 2) {
+            throw ConfigException(
+                "ConfigLoader: stationarity.differencing.order must be 1 or 2, got "
+                + std::to_string(cfg.differencing.order) + ".");
+        }
+    }
+
+    if (j.contains("tests")) {
+        const auto& t = j.at("tests");
+
+        // Top-level test enable flags
+        if (t.contains("adf")) {
+            const auto& a = t.at("adf");
+            cfg.tests.adfEnabled             = getOrDefault<bool>        (a, "enabled",            true,       false);
+            cfg.tests.adf.trendType          = getOrDefault<std::string> (a, "trend_type",          "constant", false);
+            cfg.tests.adf.lagSelection       = getOrDefault<std::string> (a, "lag_selection",       "aic",      false);
+            cfg.tests.adf.maxLags            = getOrDefault<int>         (a, "max_lags",            -1,         false);
+            cfg.tests.adf.significanceLevel  = getOrDefault<double>      (a, "significance_level",  0.05,       false);
+
+            const std::string& tt = cfg.tests.adf.trendType;
+            if (tt != "none" && tt != "constant" && tt != "trend") {
+                throw ConfigException(
+                    "ConfigLoader: stationarity.tests.adf.trend_type must be "
+                    "'none', 'constant', or 'trend', got '" + tt + "'.");
+            }
+            const std::string& ls = cfg.tests.adf.lagSelection;
+            if (ls != "aic" && ls != "bic" && ls != "fixed") {
+                throw ConfigException(
+                    "ConfigLoader: stationarity.tests.adf.lag_selection must be "
+                    "'aic', 'bic', or 'fixed', got '" + ls + "'.");
+            }
+        }
+
+        if (t.contains("kpss")) {
+            const auto& k = t.at("kpss");
+            cfg.tests.kpssEnabled            = getOrDefault<bool>        (k, "enabled",            true,    false);
+            cfg.tests.kpss.trendType         = getOrDefault<std::string> (k, "trend_type",          "level", false);
+            cfg.tests.kpss.lags              = getOrDefault<int>         (k, "lags",               -1,      false);
+            cfg.tests.kpss.significanceLevel = getOrDefault<double>      (k, "significance_level",  0.05,   false);
+
+            const std::string& tt = cfg.tests.kpss.trendType;
+            if (tt != "level" && tt != "trend") {
+                throw ConfigException(
+                    "ConfigLoader: stationarity.tests.kpss.trend_type must be "
+                    "'level' or 'trend', got '" + tt + "'.");
+            }
+        }
+
+        if (t.contains("pp")) {
+            const auto& p = t.at("pp");
+            cfg.tests.ppEnabled              = getOrDefault<bool>        (p, "enabled",            true,       false);
+            cfg.tests.pp.trendType           = getOrDefault<std::string> (p, "trend_type",          "constant", false);
+            cfg.tests.pp.lags                = getOrDefault<int>         (p, "lags",               -1,         false);
+            cfg.tests.pp.significanceLevel   = getOrDefault<double>      (p, "significance_level",  0.05,       false);
+
+            const std::string& tt = cfg.tests.pp.trendType;
+            if (tt != "none" && tt != "constant" && tt != "trend") {
+                throw ConfigException(
+                    "ConfigLoader: stationarity.tests.pp.trend_type must be "
+                    "'none', 'constant', or 'trend', got '" + tt + "'.");
+            }
+        }
+
+        if (t.contains("runs_test")) {
+            const auto& r = t.at("runs_test");
+            cfg.tests.runsTestEnabled = getOrDefault<bool>(r, "enabled", true, false);
+        }
+    }
+
+    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05, false);
+
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: stationarity.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    return cfg;
 }
 
 } // namespace loki

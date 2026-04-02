@@ -122,6 +122,18 @@ public:
     void acf(const TimeSeries& ts, int maxLag = 40);
 
     /**
+     * @brief Plots the partial autocorrelation function (PACF) as an impulse plot.
+     *
+     * Output file: imgDir/pacf_<stationId>_<componentName>.png
+     *
+     * @param ts     Time series whose ACF is plotted.
+     * @param maxLag Maximum number of lags to compute.
+     * @throws DataException if ts has fewer than maxLag + 2 valid observations.
+     * @throws IoException   on gnuplot or file I/O failure.
+     */
+    void pacf(const TimeSeries& ts, int maxLag = 40);
+
+    /**
      * @brief Plots a histogram of the series values.
      *
      * A normal distribution curve fitted to the sample mean and standard
@@ -201,6 +213,19 @@ public:
     void acf(const std::vector<double>& values,
              int maxLag = 40,
              const std::string& title = "acf");
+
+    /**
+     * @brief PACF plot from a raw value vector.
+     *
+     * @param values Vector of values.
+     * @param maxLag Maximum lag.
+     * @param title  Output filename stem.
+     * @throws DataException if values is too short.
+     * @throws IoException   on gnuplot or file I/O failure.
+     */
+    void pacf(const std::vector<double>& values, 
+        int maxLag = 40, 
+        const std::string& title = "pacf");
 
     /**
      * @brief Histogram from a raw value vector.

@@ -331,6 +331,66 @@ std::vector<double> acf(const std::vector<double>& x,
                         loki::NanPolicy policy = loki::NanPolicy::THROW);
 
 /**
+ * @brief Computes the partial autocorrelation function (PACF) up to maxLag.
+ *
+ * Uses the Yule-Walker equations solved via Eigen's LDLT decomposition.
+ * The Toeplitz autocorrelation matrix R and right-hand side r are assembled
+ * from the biased ACF estimates, then phi = R^{-1} r is solved at each lag p.
+ *
+ * Element 0 is always 1.0.
+ * Element k is the partial autocorrelation at lag k (the coefficient phi_{k,k}
+ * of an AR(k) model fitted by Yule-Walker).
+ *
+ * PACF is the correct tool for AR order selection: it cuts off sharply at lag p
+ * for a pure AR(p) process, unlike ACF which decays geometrically.
+ *
+ * @param x       Input time series.
+ * @param maxLag  Maximum lag to compute (inclusive). Must satisfy 1 <= maxLag < x.size().
+ * @param policy  NaN handling policy.
+ * @return Vector of PACF values, indices 0 .. maxLag.
+ * @throws DataException if x is empty, maxLag < 1, or maxLag >= x.size().
+ * @throws DataException if (policy == THROW and NaN present).
+ * @throws AlgorithmException if the Yule-Walker system is numerically singular.
+ */
+std::vector<double> pacf(const std::vector<double>& x,
+                         int maxLag,
+                         loki::NanPolicy policy = loki::NanPolicy::THROW);
+
+/**
+ * @brief First-order differencing: diff[i] = x[i+1] - x[i].
+ *
+ * Returns a vector of length n-1. Useful for removing linear trends and
+ * achieving stationarity before ARIMA modelling.
+ *
+ * @param x      Input time series of length n >= 2.
+ * @param policy NaN handling policy. With SKIP, NaN values are removed
+ *               before differencing; the output length may be shorter than n-1.
+ * @return Differenced series of length n-1 (or fewer with SKIP).
+ * @throws DataException if x has fewer than 2 valid elements.
+ * @throws DataException if (policy == THROW and NaN present).
+ */
+std::vector<double> diff(const std::vector<double>& x,
+                         loki::NanPolicy policy = loki::NanPolicy::THROW);
+
+/**
+ * @brief Seasonal differencing with step s: diff[i] = x[i+s] - x[i].
+ *
+ * Returns a vector of length n-s. Removes periodic structure at period s.
+ * For example, s=1461 removes the annual cycle from 6-hourly data.
+ *
+ * @param x      Input time series of length n > s.
+ * @param s      Seasonal step (must be >= 1 and < x.size()).
+ * @param policy NaN handling policy. With SKIP, NaN values are removed
+ *               before differencing; the output length may be shorter than n-s.
+ * @return Seasonally differenced series of length n-s (or fewer with SKIP).
+ * @throws DataException if x has fewer than s+1 valid elements, or s < 1.
+ * @throws DataException if (policy == THROW and NaN present).
+ */
+std::vector<double> laggedDiff(const std::vector<double>& x,
+                                int s,
+                                loki::NanPolicy policy = loki::NanPolicy::THROW);
+
+/**
  * @brief Estimates the Hurst exponent via rescaled range (R/S) analysis.
  *
  * The Hurst exponent H characterises the long-range memory of a series:

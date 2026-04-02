@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <string>
 #include <vector>
 
 namespace loki::stats {
@@ -64,5 +66,45 @@ double chi2Quantile(double p, double df);
  * @throws AlgorithmException if x < 0, df1 <= 0, or df2 <= 0.
  */
 double fCdf(double x, double df1, double df2);
+
+/**
+ * @brief ADF critical values via MacKinnon (1994) response surface.
+ *
+ * Returns the critical value tau* such that P(ADF statistic <= tau*) = alpha
+ * under the unit-root null hypothesis. Based on the response surface
+ * regression coefficients from MacKinnon (1994, Table 1).
+ *
+ * The response surface model is:
+ *   cv(alpha, n) = beta_inf + beta_1 / n + beta_2 / n^2
+ *
+ * @param alpha     Significance level. Supported values: 0.01, 0.05, 0.10.
+ * @param n         Sample size used in the ADF regression (>= 20 recommended).
+ * @param trendType Deterministic component specification:
+ *                  "none"     -- no constant, no trend
+ *                  "constant" -- constant only (most common)
+ *                  "trend"    -- constant and linear trend
+ * @return Critical value (negative number; reject H0 if ADF stat < cv).
+ * @throws ConfigException if alpha or trendType are not among the supported values.
+ */
+double adfCriticalValue(double alpha,
+                        std::size_t n,
+                        const std::string& trendType);
+
+/**
+ * @brief KPSS critical values from Kwiatkowski et al. (1992), Table 1.
+ *
+ * Returns the critical value eta* such that P(KPSS statistic > eta*) = alpha
+ * under the stationarity null hypothesis. Values are taken directly from the
+ * original paper (asymptotic, independent of n).
+ *
+ * @param alpha     Significance level. Supported values: 0.01, 0.025, 0.05, 0.10.
+ * @param trendType Specification of the deterministic component:
+ *                  "level" -- test stationarity around a constant (eta_mu)
+ *                  "trend" -- test stationarity around a linear trend (eta_tau)
+ * @return Critical value (positive number; reject H0 if KPSS stat > cv).
+ * @throws ConfigException if alpha or trendType are not among the supported values.
+ */
+double kpssCriticalValue(double alpha,
+                         const std::string& trendType);
 
 } // namespace loki::stats

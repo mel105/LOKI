@@ -327,4 +327,97 @@ double fCdf(double x, double df1, double df2)
     return regularisedIncompleteBeta(t, df1 / 2.0, df2 / 2.0);
 }
 
+
+double adfCriticalValue(double alpha,
+                        std::size_t n,
+                        const std::string& trendType)
+{
+    // MacKinnon (1994) response surface coefficients.
+    // Model: cv = beta_inf + beta_1/n + beta_2/n^2
+    // Rows: trendType in {"none", "constant", "trend"}
+    // Cols per row: [beta_inf, beta_1, beta_2] for alpha in {0.01, 0.05, 0.10}
+
+    // Source: MacKinnon (1994), Table 1, case nc / c / ct.
+    struct Coefs { double inf, c1, c2; };
+
+    // none (nc): no constant, no trend
+    static const Coefs NONE_01  = { -2.5658, -1.960,  -10.04 };
+    static const Coefs NONE_05  = { -1.9393, -0.398,    0.00 };
+    static const Coefs NONE_10  = { -1.6156, -0.181,    0.00 };
+
+    // constant (c): constant only
+    static const Coefs CONST_01 = { -3.4335, -5.999,  -29.25 };
+    static const Coefs CONST_05 = { -2.8621, -2.738,   -8.36 };
+    static const Coefs CONST_10 = { -2.5671, -1.438,   -4.48 };
+
+    // trend (ct): constant and linear trend
+    static const Coefs TREND_01 = { -3.9638, -8.353,  -47.44 };
+    static const Coefs TREND_05 = { -3.4126, -4.039,  -17.83 };
+    static const Coefs TREND_10 = { -3.1279, -2.418,   -7.58 };
+
+    const Coefs* c = nullptr;
+
+    if (trendType == "none") {
+        if      (alpha == 0.01) c = &NONE_01;
+        else if (alpha == 0.05) c = &NONE_05;
+        else if (alpha == 0.10) c = &NONE_10;
+    } else if (trendType == "constant") {
+        if      (alpha == 0.01) c = &CONST_01;
+        else if (alpha == 0.05) c = &CONST_05;
+        else if (alpha == 0.10) c = &CONST_10;
+    } else if (trendType == "trend") {
+        if      (alpha == 0.01) c = &TREND_01;
+        else if (alpha == 0.05) c = &TREND_05;
+        else if (alpha == 0.10) c = &TREND_10;
+    }
+
+    if (!c) {
+        throw ConfigException(
+            "adfCriticalValue: unsupported alpha=" +
+            std::to_string(alpha) + " or trendType='" + trendType +
+            "'. Supported: alpha in {0.01,0.05,0.10}, "
+            "trendType in {none,constant,trend}.");
+    }
+
+    const double fn = static_cast<double>(n);
+    return c->inf + c->c1 / fn + c->c2 / (fn * fn);
+}
+
+double kpssCriticalValue(double alpha,
+                         const std::string& trendType)
+{
+    // Kwiatkowski et al. (1992), Table 1. Asymptotic critical values.
+    // Rows: alpha in {0.10, 0.05, 0.025, 0.01}
+    // Cols: level (eta_mu), trend (eta_tau)
+
+    struct Row { double level; double trend; };
+
+    static const Row TABLE[] = {
+        { 0.347, 0.119 },  // alpha = 0.10
+        { 0.463, 0.146 },  // alpha = 0.05
+        { 0.574, 0.176 },  // alpha = 0.025
+        { 0.739, 0.216 }   // alpha = 0.01
+    };
+
+    int idx = -1;
+    if      (alpha == 0.10)  idx = 0;
+    else if (alpha == 0.05)  idx = 1;
+    else if (alpha == 0.025) idx = 2;
+    else if (alpha == 0.01)  idx = 3;
+
+    if (idx < 0) {
+        throw ConfigException(
+            "kpssCriticalValue: unsupported alpha=" +
+            std::to_string(alpha) +
+            ". Supported: 0.01, 0.025, 0.05, 0.10.");
+    }
+
+    if (trendType == "level") return TABLE[static_cast<std::size_t>(idx)].level;
+    if (trendType == "trend") return TABLE[static_cast<std::size_t>(idx)].trend;
+
+    throw ConfigException(
+        "kpssCriticalValue: unsupported trendType='" + trendType +
+        "'. Supported: level, trend.");
+}
+
 } // namespace loki::stats

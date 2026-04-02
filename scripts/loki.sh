@@ -16,6 +16,7 @@
 #   outlier          apps/loki_outlier/loki_outlier.exe
 #   filter           apps/loki_filter/loki_filter.exe
 #   regression       apps/loki_regression/loki_regression.exe
+#   stationarity     apps/loki_stationarity/loki_stationarity.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -70,6 +71,7 @@ declare -A APP_EXE=(
     [outlier]="apps/loki_outlier/loki_outlier.exe"
     [filter]="apps/loki_filter/loki_filter.exe"
     [regression]="apps/loki_regression/loki_regression.exe"
+    [stationarity]="apps/loki_stationarity/loki_stationarity.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -77,6 +79,7 @@ declare -A APP_CONFIG=(
     [outlier]="config/outlier.json"
     [filter]="config/filter.json"
     [regression]="config/regression.json"
+    [stationarity]="config/stationarity.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -104,7 +107,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|all)
+        loki|homogenization|outlier|filter|regression|stationarity|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;
@@ -122,9 +125,12 @@ for arg in "$@"; do
             # handled below with index tracking
             ;;
         *)
-            # Could be filter pattern or config file
             if [[ "${arg}" == *.json ]]; then
                 CONFIG_OVERRIDE="${arg}"
+            elif [[ "${arg}" != --* ]]; then
+                echo "[LOKI] ERROR: Unknown argument '${arg}'." >&2
+                echo "       Known apps: ${!APP_EXE[*]}" >&2
+                exit 1
             fi
             ;;
     esac

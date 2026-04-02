@@ -372,6 +372,9 @@ struct PlotConfig {
     bool regressionResidualHist  {false};
     bool regressionInfluence     {false};
     bool regressionLeverage      {false};
+
+    // -- Stationarity pipeline plots ------------------------------------------
+    bool pacfPlot                {true};   ///< PACF of residuals with confidence band.
 };
 
 // -----------------------------------------------------------------------------
@@ -382,6 +385,54 @@ struct StatsConfig {
     bool      enabled   {true};
     NanPolicy nanPolicy {NanPolicy::SKIP};
     bool      hurst     {true};
+};
+
+// -----------------------------------------------------------------------------
+//  StationarityConfig  (sub-configs defined outside to avoid GCC 13 aggregate init bug)
+// -----------------------------------------------------------------------------
+
+struct AdfConfig {
+    std::string trendType         {"constant"};  // "none" | "constant" | "trend"
+    int         maxLags           {-1};          // -1 = auto via AIC/BIC
+    std::string lagSelection      {"aic"};       // "aic" | "bic" | "fixed"
+    double      significanceLevel {0.05};
+};
+
+struct KpssConfig {
+    std::string trendType         {"level"};     // "level" | "trend"
+    int         lags              {-1};          // -1 = auto (Newey-West bandwidth)
+    double      significanceLevel {0.05};
+};
+
+struct PpConfig {
+    std::string trendType         {"constant"};  // "none" | "constant" | "trend"
+    int         lags              {-1};          // -1 = auto (Newey-West bandwidth)
+    double      significanceLevel {0.05};
+};
+
+struct StationarityDifferencingConfig {
+    bool apply {false};
+    int  order {1};
+};
+
+struct StationarityTestsConfig {
+    bool       adfEnabled      {true};
+    bool       kpssEnabled     {true};
+    bool       ppEnabled       {true};
+    bool       runsTestEnabled {true};
+    AdfConfig  adf             {};
+    KpssConfig kpss            {};
+    PpConfig   pp              {};
+};
+
+/**
+ * @brief Top-level configuration for the loki_stationarity pipeline.
+ */
+struct StationarityConfig {
+    DeseasonalizationConfig        deseasonalization {};
+    StationarityDifferencingConfig differencing      {};
+    StationarityTestsConfig        tests             {};
+    double                         significanceLevel {0.05};
 };
 
 // -----------------------------------------------------------------------------
@@ -398,7 +449,8 @@ struct AppConfig {
     StatsConfig       stats;
     OutlierConfig     outlier;
     FilterConfig      filter;
-    RegressionConfig  regression;
+    RegressionConfig   regression;
+    StationarityConfig stationarity;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

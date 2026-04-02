@@ -19,6 +19,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 6. [loki_homogeneity](#6-loki_homogeneity)
 7. [loki_filter](#7-loki_filter)
 8. [loki_regression](#8-loki_regression)
+9. [loki_stationarity](#9-loki_stationarity)
 
 ---
 
@@ -1099,5 +1100,330 @@ are computed identically to linear methods. However, note:
         "initial_params": [10.0, 500.0, 30.0],
         "max_iterations": 200
     }
+}
+```
+
+---
+
+## 9. loki_stationarity
+
+Default config: `config/stationarity.json`
+
+The stationarity pipeline tests whether a time series is stationary (has a
+constant mean and variance over time, with no unit root). It is used both as
+a **diagnostic tool** before homogenization (to detect structural breaks and
+non-stationarity caused by change points) and as a **prerequisite check**
+before ARIMA modelling (to determine the differencing order d).
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller                  -- fill NaN / missing values (linear, always on)
+2. Deseasonalizer             -- subtract seasonal component
+3. (optional) Differencing    -- apply first-order or seasonal differencing
+4. StationarityAnalyzer       -- run all enabled tests
+5. CSV export                 -- mjd; original; residual; diff1; diff2
+6. Protocol                   -- OUTPUT/PROTOCOLS/stationarity_[dataset]_[param]_protocol.txt
+7. Plots                      -- time series, ACF, PACF, histogram, QQ
+```
+
+### Recommended workflow
+
+```
+loki_stationarity (before homogenization)
+  -> identifies non-stationarity caused by change points, trends, outliers
+
+loki_homogeneity
+  -> corrects change points and shifts
+
+loki_stationarity (after homogenization)
+  -> verifies that residuals are now stationary
+
+loki_arima (if stationary confirmed)
+  -> fits AR/MA model; uses recommended d from stationarity protocol
+```
+
+---
+
+### 9.1 stationarity.deseasonalization
+
+Subtracts a seasonal component before testing so that tests operate on
+residuals rather than the raw signal. Same options as
+[outlier.deseasonalization](#51-outlierdeseasonalization).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `median_year` | Deseasonalization method. See options below. |
+| `ma_window_size` | int | `1461` | Window in samples for `moving_average`. For 6-hourly data: 1461 = 1 year. |
+| `median_year_min_years` | int | `5` | Minimum years per slot for `median_year`. |
+
+### strategy options
+
+| Value | Best for |
+|---|---|
+| `median_year` | Climatological and GNSS data with a clear annual cycle |
+| `moving_average` | Sensor data without a strict annual period |
+| `none` | Pre-computed residuals or series without periodic component |
+
+> **Note on window size**: `ma_window_size` is in samples, not time units.
+> For 6-hourly data one year = 1461 samples. For daily data one year = 365 samples.
+
+---
+
+### 9.2 stationarity.differencing
+
+Optional differencing applied to the deseasonalized residuals before testing.
+Useful when you already suspect the series needs differencing and want to
+verify that the differenced series is stationary.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `apply` | bool | `false` | Apply differencing before running tests. |
+| `order` | int | `1` | Differencing order. `1` = first differences `y[t] - y[t-1]`. `2` = second differences. Maximum: `2`. |
+
+> **Note**: Differencing is applied to the **residuals** (after deseasonalization),
+> not to the raw series. The CSV output always contains `diff1` and `diff2`
+> columns regardless of this setting -- they are computed for reference.
+
+---
+
+### 9.3 stationarity.tests
+
+Controls which tests are enabled and their individual configurations.
+
+#### ADF test (`tests.adf`)
+
+The **Augmented Dickey-Fuller** test is a unit root test.
+
+- **H0**: the series has a unit root (is non-stationary, I(1))
+- **H1**: the series is stationary (I(0))
+- **Reject H0** when `tau < critical value` (left-tailed test)
+- Critical values from MacKinnon (1994) response surface
+- Lag order selected automatically by AIC or BIC (Schwert 1989 upper bound)
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run the ADF test. |
+| `trend_type` | string | `constant` | Deterministic component included in the regression. See options below. |
+| `lag_selection` | string | `aic` | Method for automatic lag order selection. See options below. |
+| `max_lags` | int | `-1` | Upper bound on lag search. `-1` = auto via Schwert (1989): `floor(12 * (n/100)^0.25)`. |
+| `significance_level` | float | `0.05` | Alpha for the `rejected` flag in the protocol. |
+
+### trend_type options (ADF and PP)
+
+| Value | Regression model | Use when |
+|---|---|---|
+| `none` | `dy_t = gamma * y_{t-1} + ...` | Series has zero mean and no trend (rare in practice) |
+| `constant` | `dy_t = alpha + gamma * y_{t-1} + ...` | Series fluctuates around a non-zero constant mean. **Most common choice.** |
+| `trend` | `dy_t = alpha + delta*t + gamma * y_{t-1} + ...` | Series has a visible deterministic linear trend in addition to possible unit root |
+
+> **Guidance**: for climatological residuals after deseasonalization, `constant`
+> is almost always the correct choice. Use `trend` only if you observe a clear
+> linear drift in the residuals (e.g. long-term climate change signal).
+
+### lag_selection options
+
+| Value | Description |
+|---|---|
+| `aic` | Minimise AIC over lags 0..max_lags. **Recommended.** Tends to select more lags, capturing more serial correlation. |
+| `bic` | Minimise BIC over lags 0..max_lags. More parsimonious than AIC. |
+| `fixed` | Use exactly `max_lags` lags. Requires `max_lags >= 0`. |
+
+#### KPSS test (`tests.kpss`)
+
+The **Kwiatkowski-Phillips-Schmidt-Shin** test is a stationarity test --
+the **complement** of ADF/PP. It has the opposite null hypothesis.
+
+- **H0**: the series **is** stationary (around a constant or trend)
+- **H1**: the series has a unit root (is non-stationary)
+- **Reject H0** when `eta > critical value` (right-tailed test)
+- Critical values from Kwiatkowski et al. (1992), Table 1 (asymptotic)
+- Long-run variance estimated via Newey-West with Bartlett kernel
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run the KPSS test. |
+| `trend_type` | string | `level` | Model specification. See options below. |
+| `lags` | int | `-1` | Newey-West bandwidth. `-1` = auto: `floor(4 * (n/100)^(2/9))`. |
+| `significance_level` | float | `0.05` | Alpha for the `rejected` flag. Supported: 0.01, 0.025, 0.05, 0.10. |
+
+### trend_type options (KPSS)
+
+| Value | Tests stationarity around | Use when |
+|---|---|---|
+| `level` | A constant mean (eta_mu statistic) | Series has no trend. **Most common choice.** |
+| `trend` | A linear trend (eta_tau statistic) | Series has a deterministic linear trend and you want to test trend-stationarity |
+
+> **Important**: KPSS is very sensitive to remaining trends and change points.
+> A single undetected shift in the series can cause `eta` to be extremely large
+> (10x or more above the critical value), even if the series is otherwise stationary.
+> This is expected behaviour -- it is precisely what KPSS is designed to detect.
+
+#### PP test (`tests.pp`)
+
+The **Phillips-Perron** test is a non-parametric alternative to ADF.
+Instead of augmenting the regression with lagged differences (ADF), PP
+applies a semi-parametric Newey-West correction to the standard
+Dickey-Fuller t-statistic.
+
+- **H0**: the series has a unit root (same as ADF)
+- **H1**: the series is stationary
+- **Reject H0** when `Z(t) < critical value` (left-tailed, same as ADF)
+- Critical values from MacKinnon (1994) -- identical distribution to ADF
+- More robust to heteroskedasticity than ADF; less sensitive to lag choice
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run the PP test. |
+| `trend_type` | string | `constant` | Same options as ADF: `none`, `constant`, `trend`. |
+| `lags` | int | `-1` | Newey-West bandwidth for the correction term. `-1` = auto. |
+| `significance_level` | float | `0.05` | Alpha for the `rejected` flag. |
+
+#### Runs test (`tests.runs_test`)
+
+A supplementary non-parametric test for **randomness** (serial independence).
+Does not test for unit roots or stationarity per se -- it tests whether the
+sequence of signs above/below the median is random. Included as a quick
+diagnostic for serial dependence in residuals.
+
+- **H0**: the sequence is random (no serial dependence)
+- **H1**: positive or negative serial correlation is present
+- The `rejected` flag does **not** influence the joint conclusion or `recommendedDiff`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run the runs test. |
+
+---
+
+### 9.4 stationarity.significance_level
+
+Global significance level used for the **joint conclusion** logic.
+Individual test significance levels (in `tests.adf`, `tests.kpss`, `tests.pp`)
+control those tests' own `rejected` flags independently.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `significance_level` | float | `0.05` | Alpha for the joint `isStationary` and `recommendedDiff` conclusion. |
+
+---
+
+### 9.5 Joint conclusion logic
+
+The `StationarityAnalyzer` combines individual test results into a single
+verdict using the following logic:
+
+| ADF/PP verdict | KPSS verdict | Joint conclusion | Recommended d |
+|---|---|---|---|
+| Unit root REJECTED (stationary) | Stationarity NOT rejected (stationary) | **STATIONARY** | 0 |
+| Unit root NOT rejected (non-stationary) | Stationarity REJECTED (non-stationary) | **NON-STATIONARY** | 1 |
+| Unit root REJECTED | Stationarity REJECTED | **CONFLICTING** -> conservative: NON-STATIONARY | 1 |
+| Unit root NOT rejected | Stationarity NOT rejected | **CONFLICTING** -> conservative: NON-STATIONARY | 1 |
+
+> **On conflicting results**: conflicting ADF/KPSS outcomes are common in practice
+> and indicate ambiguity rather than error. They arise when:
+> - The series has structural breaks or change points (KPSS rejects, ADF may not)
+> - The series has long memory / strong persistence (KPSS sensitive, ADF less so)
+> - The sample is too short for reliable asymptotic approximations
+>
+> In these cases, visual inspection of the time series and ACF plots is essential.
+> Run `loki_homogeneity` to remove change points and re-test.
+
+> **On `recommendedDiff`**: the value `d` is a recommendation for ARIMA modelling,
+> not a prescription. For climatological residuals that are stationary but have
+> strong serial dependence, `d=0` with a high AR order is usually preferable to
+> differencing. Differencing can destroy meaningful low-frequency signal.
+
+---
+
+### 9.6 Plots (stationarity pipeline)
+
+In addition to the generic plots (see [Section 3](#3-common-plots)), loki_stationarity
+produces the following pipeline-specific plot:
+
+| Flag | Default | Description |
+|---|---|---|
+| `pacf_plot` | `true` | Partial autocorrelation function (PACF) of the residuals with 95% confidence band at +/- 1.96/sqrt(n). Used to identify the AR order p for ARIMA modelling: PACF cuts off sharply at lag p for a pure AR(p) process. |
+
+> **ACF vs PACF for model identification**:
+> - **ACF** (autocorrelation function): decays geometrically for AR processes,
+>   cuts off sharply at lag q for MA(q). Use ACF to identify MA order.
+> - **PACF** (partial autocorrelation function): cuts off sharply at lag p for AR(p),
+>   decays geometrically for MA processes. Use PACF to identify AR order.
+> - For ARIMA: examine ACF and PACF of the differenced series (if d > 0).
+
+---
+
+### 9.7 CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `[stationId]_[componentName]_stationarity.csv`
+
+```
+mjd ; original ; residual ; diff1 ; diff2
+```
+
+| Column | Description |
+|---|---|
+| `mjd` | Modified Julian Date of the observation |
+| `original` | Raw loaded value |
+| `residual` | Value after deseasonalization (series used for testing) |
+| `diff1` | First differences of residuals: `residual[t] - residual[t-1]` |
+| `diff2` | Second differences: `diff1[t] - diff1[t-1]` |
+
+> `diff1` and `diff2` are always written regardless of the `differencing.apply`
+> setting. They are shorter than `original` and `residual` by 1 and 2 rows
+> respectively -- NaN is used to pad them to the original length in the file.
+
+---
+
+### 9.8 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `stationarity_[dataset]_[componentName]_protocol.txt`
+
+The protocol contains:
+- Series name, observation count, deseasonalization strategy, differencing settings
+- Per-test section: test statistic, critical values at 1%/5%/10%, verdict
+- Joint conclusion: `isStationary`, `recommendedDiff`, human-readable summary
+
+---
+
+### Example
+
+```json
+"stationarity": {
+    "deseasonalization": {
+        "strategy": "median_year",
+        "ma_window_size": 1461,
+        "median_year_min_years": 5
+    },
+    "differencing": {
+        "apply": false,
+        "order": 1
+    },
+    "tests": {
+        "adf": {
+            "enabled": true,
+            "trend_type": "constant",
+            "lag_selection": "aic",
+            "max_lags": -1,
+            "significance_level": 0.05
+        },
+        "kpss": {
+            "enabled": true,
+            "trend_type": "level",
+            "significance_level": 0.05
+        },
+        "pp": {
+            "enabled": true,
+            "trend_type": "constant",
+            "significance_level": 0.05
+        },
+        "runs_test": {
+            "enabled": true
+        }
+    },
+    "significance_level": 0.05
 }
 ```

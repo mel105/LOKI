@@ -1,0 +1,73 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "stats": {
+        "enabled": true,
+        "nan_policy": "skip",
+        "hurst": false
+    },
+
+    "stationarity": {
+        "deseasonalization": {
+            "strategy": "median_year",
+            "ma_window_size": 1461,
+            "median_year_min_years": 5
+        },
+        "differencing": {
+            "apply": false,
+            "order": 1
+        },
+        "tests": {
+            "adf": {
+                "enabled": true,
+                "trend_type": "constant",
+                "lag_selection": "aic",
+                "max_lags": -1,
+                "significance_level": 0.05
+            },
+            "kpss": {
+                "enabled": true,
+                "trend_type": "level",
+                "significance_level": 0.05
+            },
+            "pp": {
+                "enabled": true,
+                "trend_type": "constant",
+                "significance_level": 0.05
+            },
+            "runs_test": {
+                "enabled": true
+            }
+        },
+        "significance_level": 0.05
+    },
+
+    "plots": {
+        "output_format": "png",
+        "plot_options": {
+            "acf_max_lag": 60,
+            "histogram_bins": 0
+        },
+        "enabled": {
+            "time_series": true,
+            "histogram": true,
+            "acf": true,
+            "qq_plot": false,
+            "pacf_plot": true
+        }
+    }
+}

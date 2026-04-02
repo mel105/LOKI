@@ -107,4 +107,32 @@ double durbinWatson(
     const std::vector<double>& residuals,
     NanPolicy                  policy = NanPolicy::SKIP);
 
+/**
+ * @brief Ljung-Box test for autocorrelation up to a given lag.
+ *
+ * Tests H0: no autocorrelation up to lag maxLag (residuals are white noise).
+ *
+ * Test statistic:
+ *   Q = n*(n+2) * sum_{k=1}^{maxLag} rho_k^2 / (n-k)
+ *
+ * Under H0, Q is asymptotically chi-squared with maxLag degrees of freedom.
+ * Useful as a residual diagnostic after fitting AR/ARIMA models.
+ *
+ * Note: for very short series or large maxLag the chi-squared approximation
+ * deteriorates. A commonly recommended choice is maxLag = min(10, n/5).
+ *
+ * @param data   Input data (typically model residuals). NaN handling by policy.
+ * @param maxLag Maximum lag to include in the test statistic (>= 1).
+ * @param alpha  Significance level (default 0.05).
+ * @param policy NaN handling policy (default SKIP).
+ * @return HypothesisResult with testName "ljung-box" and statistic = Q.
+ *         The lags field is not used here; use maxLag directly from the call site.
+ * @throws DataException if fewer than maxLag+2 valid observations remain, or maxLag < 1.
+ */
+HypothesisResult ljungBox(
+    const std::vector<double>& data,
+    int                        maxLag,
+    double                     alpha  = 0.05,
+    NanPolicy                  policy = NanPolicy::SKIP);
+
 } // namespace loki::stats

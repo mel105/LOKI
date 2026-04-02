@@ -1,5 +1,7 @@
 #include "loki/stats/descriptive.hpp"
 
+#include <Eigen/Dense>
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -685,6 +687,138 @@ double hurstExponent(const std::vector<double>& x, loki::NanPolicy policy)
 }
 
 // -----------------------------------------------------------------------------
+
+
+// =============================================================================
+// New functions to append to descriptive.cpp (after hurstExponent, before summarize)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// pacf
+// -----------------------------------------------------------------------------
+
+std::vector<double> pacf(const std::vector<double>& x,
+                         int maxLag,
+                         loki::NanPolicy policy)
+{
+    if (maxLag < 1) {
+        throw DataException(
+            "pacf: maxLag must be >= 1, got " + std::to_string(maxLag) + ".");
+    }
+
+    const auto clean = applyNanPolicy(x, policy);
+    requireNonEmpty(clean, "pacf");
+
+    if (static_cast<std::size_t>(maxLag) >= clean.size()) {
+        throw DataException(
+            "pacf: maxLag (" + std::to_string(maxLag) +
+            ") must be less than series length (" +
+            std::to_string(clean.size()) + ").");
+    }
+
+    // Precompute ACF values r[0..maxLag]. r[0] = 1.0 by definition.
+    const std::size_t p = static_cast<std::size_t>(maxLag);
+    std::vector<double> r(p + 1);
+    for (std::size_t k = 0; k <= p; ++k) {
+        r[k] = autocorrelation(clean, static_cast<int>(k), loki::NanPolicy::THROW);
+    }
+
+    // Result vector: element 0 = 1.0, elements 1..maxLag filled below.
+    std::vector<double> result(p + 1, 0.0);
+    result[0] = 1.0;
+
+    // For each order m from 1 to maxLag, solve the Yule-Walker system
+    // R_m * phi_m = r_m, where R_m is the m x m Toeplitz ACF matrix
+    // and r_m = [r[1], ..., r[m]]^T.
+    // The PACF at lag m is phi_m[m-1] (the last component).
+    //
+    // We use Eigen's LDLT solver on the symmetric Toeplitz matrix.
+    for (std::size_t m = 1; m <= p; ++m) {
+        Eigen::MatrixXd R(static_cast<Eigen::Index>(m),
+                          static_cast<Eigen::Index>(m));
+        Eigen::VectorXd rhs(static_cast<Eigen::Index>(m));
+
+        for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(m); ++i) {
+            rhs(i) = r[static_cast<std::size_t>(i) + 1];
+            for (Eigen::Index j = 0; j < static_cast<Eigen::Index>(m); ++j) {
+                const std::size_t diff =
+                    static_cast<std::size_t>(std::abs(i - j));
+                R(i, j) = r[diff];
+            }
+        }
+
+        const Eigen::LDLT<Eigen::MatrixXd> ldlt(R);
+        if (ldlt.info() != Eigen::Success) {
+            throw AlgorithmException(
+                "pacf: Yule-Walker system is numerically singular at lag " +
+                std::to_string(m) + ".");
+        }
+
+        const Eigen::VectorXd phi = ldlt.solve(rhs);
+        // The PACF at lag m is the last coefficient phi[m-1].
+        result[m] = phi(static_cast<Eigen::Index>(m) - 1);
+    }
+
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// diff
+// -----------------------------------------------------------------------------
+
+std::vector<double> diff(const std::vector<double>& x,
+                         loki::NanPolicy policy)
+{
+    const auto clean = applyNanPolicy(x, policy);
+    requireMinSize(clean, 2, "diff");
+    if (policy == loki::NanPolicy::PROPAGATE && hasNan(clean)) {
+        return std::vector<double>(clean.size() - 1,
+                                   std::numeric_limits<double>::quiet_NaN());
+    }
+
+    std::vector<double> result;
+    result.reserve(clean.size() - 1);
+    for (std::size_t i = 1; i < clean.size(); ++i) {
+        result.push_back(clean[i] - clean[i - 1]);
+    }
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// laggedDiff
+// -----------------------------------------------------------------------------
+
+std::vector<double> laggedDiff(const std::vector<double>& x,
+                                int s,
+                                loki::NanPolicy policy)
+{
+    if (s < 1) {
+        throw DataException(
+            "laggedDiff: s must be >= 1, got " + std::to_string(s) + ".");
+    }
+
+    const auto clean = applyNanPolicy(x, policy);
+
+    if (clean.size() <= static_cast<std::size_t>(s)) {
+        throw DataException(
+            "laggedDiff: series length (" + std::to_string(clean.size()) +
+            ") must be greater than s (" + std::to_string(s) + ").");
+    }
+
+    if (policy == loki::NanPolicy::PROPAGATE && hasNan(clean)) {
+        return std::vector<double>(clean.size() - static_cast<std::size_t>(s),
+                                   std::numeric_limits<double>::quiet_NaN());
+    }
+
+    const std::size_t step = static_cast<std::size_t>(s);
+    std::vector<double> result;
+    result.reserve(clean.size() - step);
+    for (std::size_t i = 0; i < clean.size() - step; ++i) {
+        result.push_back(clean[i + step] - clean[i]);
+    }
+    return result;
+}
+
 // Summary
 // -----------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 #include "loki/io/plot.hpp"
 #include "loki/io/gnuplot.hpp"
 #include "loki/stats/distributions.hpp"
+#include "loki/stats/descriptive.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -170,6 +171,80 @@ void Plot::acf(const TimeSeries& ts, int /*maxLag*/)
     //    vals.size());
     const int lag = effectiveAcfLag(m_config.plots.options.acfMaxLag, vals.size());
     acf(vals, lag, stem);
+}
+
+void Plot::pacf(const TimeSeries& ts, int /*maxLag*/)
+{
+    if (ts.empty()) throw DataException("Plot::pacf(): time series is empty.");
+
+    std::vector<double> vals;
+    vals.reserve(ts.size());
+    for (const auto& obs : ts) if (isValid(obs)) vals.push_back(obs.value);
+
+    const auto& meta = ts.metadata();
+    const std::string dataset = m_config.input.file.stem().string().empty()
+        ? "data" : m_config.input.file.stem().string();
+    const std::string stem = makeStem(dataset,
+        meta.componentName.empty() ? meta.stationId : meta.componentName, "pacf");
+
+    const int lag = effectiveAcfLag(m_config.plots.options.acfMaxLag, vals.size());
+    pacf(vals, lag, stem);
+}
+
+void Plot::pacf(const std::vector<double>& values, int maxLag, const std::string& title)
+{
+    const auto valid = validValues(values);
+    const std::size_t n = valid.size();
+    const int lag = effectiveAcfLag(maxLag, n);
+
+    if (static_cast<int>(n) < lag + 2) {
+        throw DataException(
+            "Plot::pacf(): series too short for maxLag=" + std::to_string(lag) +
+            " (need " + std::to_string(lag + 2) + " valid observations, got " +
+            std::to_string(n) + ").");
+    }
+
+    // Compute PACF via Yule-Walker (reuse loki::stats::pacf).
+    std::vector<double> pacfVals;
+    try {
+        pacfVals = loki::stats::pacf(valid, lag, loki::NanPolicy::THROW);
+    } catch (const loki::LOKIException& ex) {
+        throw AlgorithmException(
+            std::string("Plot::pacf(): PACF computation failed: ") + ex.what());
+    }
+
+    // Build (lag, pacf) pairs for gnuplot.
+    std::vector<std::pair<double, double>> pacfData;
+    pacfData.reserve(static_cast<std::size_t>(lag) + 1);
+    for (int k = 0; k <= lag; ++k) {
+        pacfData.emplace_back(static_cast<double>(k),
+                              pacfVals[static_cast<std::size_t>(k)]);
+    }
+
+    const auto dataFile = writeTempData(".tmp_" + title, pacfData);
+    const double conf   = CONF_95_COEFF / std::sqrt(static_cast<double>(n));
+
+    try {
+        Gnuplot gp;
+        gp(terminalCmd(DEFAULT_WIDTH_PX, DEFAULT_HEIGHT_PX));
+        gp("set output '" + outputPath(title).string() + "'");
+        gp("set title 'Partial Autocorrelation Function'");
+        gp("set xlabel 'Lag'");
+        gp("set ylabel 'PACF'");
+        gp("set yrange [-1:1]");
+        gp("set ytics 0.2");
+        gp("set key off");
+        gp("set grid");
+
+        const std::string confStr = std::to_string(conf);
+        gp("set arrow 1 from graph 0, first  " + confStr +
+           " to graph 1, first  " + confStr + " nohead lc rgb '#999999' lt 2");
+        gp("set arrow 2 from graph 0, first -" + confStr +
+           " to graph 1, first -" + confStr + " nohead lc rgb '#999999' lt 2");
+
+        gp("plot '" + dataFile.string() + "' u 1:2 notitle w impulses lc rgb '#2166ac' lw 3");
+    } catch (...) { removeTempFile(dataFile); throw; }
+    removeTempFile(dataFile);
 }
 
 void Plot::histogram(const TimeSeries& ts, int bins)
