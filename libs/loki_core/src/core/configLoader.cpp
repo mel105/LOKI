@@ -356,6 +356,7 @@ RegressionConfig ConfigLoader::_parseRegression(const nlohmann::json& j)
     else if (method == "trend")       cfg.method = RegressionMethodEnum::TREND;
     else if (method == "robust")      cfg.method = RegressionMethodEnum::ROBUST;
     else if (method == "calibration") cfg.method = RegressionMethodEnum::CALIBRATION;
+    else if (method == "nonlinear")   cfg.method = RegressionMethodEnum::NONLINEAR;
     else {
         LOKI_WARNING("Config 'regression.method' unknown value '" + method + "' -- using 'linear'.");
         cfg.method = RegressionMethodEnum::LINEAR;
@@ -393,6 +394,29 @@ RegressionConfig ConfigLoader::_parseRegression(const nlohmann::json& j)
         throw ConfigException(
             "ConfigLoader: regression.confidence_level must be in (0, 1), got "
             + std::to_string(cfg.confidenceLevel) + ".");
+    }
+
+    if (j.contains("nonlinear")) {
+        const auto& nl = j.at("nonlinear");
+        const std::string nlModel = getOrDefault<std::string>(nl, "model", "exponential", false);
+        if      (nlModel == "exponential") cfg.nonlinear.model = NonlinearModelEnum::EXPONENTIAL;
+        else if (nlModel == "logistic")    cfg.nonlinear.model = NonlinearModelEnum::LOGISTIC;
+        else if (nlModel == "gaussian")    cfg.nonlinear.model = NonlinearModelEnum::GAUSSIAN;
+        else {
+            LOKI_WARNING("Config 'regression.nonlinear.model' unknown value '"
+                         + nlModel + "' -- using 'exponential'.");
+            cfg.nonlinear.model = NonlinearModelEnum::EXPONENTIAL;
+        }
+
+        if (nl.contains("initial_params"))
+            cfg.nonlinear.initialParams = nl.at("initial_params").get<std::vector<double>>();
+
+        cfg.nonlinear.maxIterations   = getOrDefault<int>   (nl, "max_iterations",  100,    false);
+        cfg.nonlinear.gradTol         = getOrDefault<double>(nl, "grad_tol",        1.0e-8, false);
+        cfg.nonlinear.stepTol         = getOrDefault<double>(nl, "step_tol",        1.0e-8, false);
+        cfg.nonlinear.lambdaInit      = getOrDefault<double>(nl, "lambda_init",     1.0e-3, false);
+        cfg.nonlinear.lambdaFactor    = getOrDefault<double>(nl, "lambda_factor",   10.0,   false);
+        cfg.nonlinear.confidenceLevel = getOrDefault<double>(nl, "confidence_level",0.95,   false);
     }
 
     return cfg;

@@ -15,6 +15,7 @@
 #include <loki/regression/robustRegressor.hpp>
 #include <loki/regression/calibrationRegressor.hpp>
 #include <loki/regression/plotRegression.hpp>
+#include <loki/regression/nonlinearRegressor.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -115,6 +116,8 @@ static std::unique_ptr<Regressor> buildRegressor(const RegressionConfig& rcfg)
             return std::make_unique<RobustRegressor>(rcfg);
         case RegressionMethodEnum::CALIBRATION:
             return std::make_unique<CalibrationRegressor>(rcfg);
+        case RegressionMethodEnum::NONLINEAR:
+            return nullptr; // handled separately in main loop
     }
     throw AlgorithmException("buildRegressor: unhandled RegressionMethodEnum value.");
 }
@@ -197,7 +200,7 @@ static void writePredictionCsv(const std::filesystem::path&        csvDir,
                                 const std::vector<PredictionPoint>& prediction)
 {
     if (prediction.empty()) return;
- 
+
     const auto& m    = original.metadata();
     std::string base = m.stationId;
     if (!m.componentName.empty()) {
@@ -205,19 +208,19 @@ static void writePredictionCsv(const std::filesystem::path&        csvDir,
         base += m.componentName;
     }
     if (base.empty()) base = "series";
- 
+
     const std::filesystem::path outPath = csvDir / (base + "_prediction.csv");
     std::ofstream csv(outPath);
     if (!csv.is_open()) {
         LOKI_WARNING("writePredictionCsv: cannot open file: " + outPath.string());
         return;
     }
- 
+
     // conf_low/conf_high: where the mean prediction lies (narrow for large n).
     // pred_low/pred_high: where future observations are expected (includes sigma0).
     csv << "mjd;predicted;conf_low;conf_high;pred_low;pred_high\n";
     csv << std::fixed << std::setprecision(10);
- 
+
     for (const auto& pt : prediction) {
         const double mjd = pt.x + result.tRef;
         csv << mjd          << ";"
@@ -227,7 +230,7 @@ static void writePredictionCsv(const std::filesystem::path&        csvDir,
             << pt.predLow   << ";"
             << pt.predHigh  << "\n";
     }
- 
+
     LOKI_INFO("Prediction CSV written: " + outPath.string());
 }
 
@@ -311,6 +314,8 @@ static void writeProtocol(const std::filesystem::path& protocolsDir,
                 return "a" + std::to_string(i);
             case RegressionMethodEnum::CALIBRATION:
                 return (i == 0) ? "a0 (intercept)" : "a1 (slope, TLS)";
+            case RegressionMethodEnum::NONLINEAR:
+                return "p" + std::to_string(i);
         }
         return "a" + std::to_string(i);
     };
@@ -504,6 +509,12 @@ int main(int argc, char* argv[])
                     LOKI_INFO("Regressor: " + te.name());
                     const auto decomp = te.fit(filled);
                     result = decomp.regression;
+                } else if (cfg.regression.method == RegressionMethodEnum::NONLINEAR) {
+                    NonlinearRegressor nlr{cfg.regression};
+                    LOKI_INFO("Regressor: " + nlr.name());
+                    result = nlr.fit(filled);
+                    if (!result.converged)
+                        LOKI_WARNING("LM did not converge for series: " + seriesName);
                 } else {
                     const auto regressorPtr = buildRegressor(cfg.regression);
                     LOKI_INFO("Regressor: " + regressorPtr->name());
@@ -603,7 +614,7 @@ int main(int argc, char* argv[])
                     } else if (cfg.regression.method == RegressionMethodEnum::TREND) {
                         LOKI_WARNING("Prediction not supported for TrendEstimator method.");
                     } else {
-                        // Build x values starting after last fitted point.
+                        // Build xNew -- shared by both NONLINEAR and linear branches.
                         const double lastFittedMjd =
                             result.fitted.size() > 0
                             ? result.fitted[result.fitted.size() - 1].time.mjd()
@@ -615,16 +626,21 @@ int main(int argc, char* argv[])
                             + "  x0=" + std::to_string(x0)
                             + "  nPred=" + std::to_string(nPred));
 
-                            
                         std::vector<double> xNew;
                         xNew.reserve(nPred);
                         for (std::size_t k = 0; k < nPred; ++k)
                             xNew.push_back(x0 + static_cast<double>(k) * stepDays);
 
-                        // Re-fit to restore internal state, then predict.
-                        const auto regressorPtr = buildRegressor(cfg.regression);
-                        regressorPtr->fit(filled);
-                        predictionPts = regressorPtr->predict(xNew);
+                        if (cfg.regression.method == RegressionMethodEnum::NONLINEAR) {
+                            NonlinearRegressor nlrPred{cfg.regression};
+                            nlrPred.fit(filled);
+                            predictionPts = nlrPred.predict(xNew);
+                        } else {
+                            // Re-fit to restore internal state, then predict.
+                            const auto regressorPtr = buildRegressor(cfg.regression);
+                            regressorPtr->fit(filled);
+                            predictionPts = regressorPtr->predict(xNew);
+                        }
 
                         LOKI_INFO("Prediction: " + std::to_string(predictionPts.size())
                                   + " points (horizon="

@@ -858,3 +858,179 @@ The protocol contains:
     "cv_folds": 10
 }
 ```
+
+---
+
+### 8.13 regression.nonlinear
+
+Applies only when `method: "nonlinear"`. Controls the Levenberg-Marquardt
+nonlinear least-squares solver and the choice of parametric model.
+
+All other regression keys (`polynomial_degree`, `harmonic_terms`, `period`,
+`robust`, `robust_iterations`, `robust_weight_fn`, `cv_folds`) are ignored
+when `method: "nonlinear"`.
+
+---
+
+#### Model selection
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model` | string | `exponential` | Parametric model to fit. See model table below. |
+| `initial_params` | float[] | see defaults | Starting parameter vector for LM. Length must match the model. **Strongly recommended** -- LM convergence is sensitive to starting values. |
+
+#### Available models
+
+| Value | Formula | Parameters | Count |
+|---|---|---|---|
+| `exponential` | `y = a * exp(b * x)` | `[a, b]` | 2 |
+| `logistic` | `y = L / (1 + exp(-k * (x - x0)))` | `[L, k, x0]` | 3 |
+| `gaussian` | `y = A * exp(-((x - mu)^2) / (2 * sigma^2))` | `[A, mu, sigma]` | 3 |
+
+> **X-axis convention**: `x = mjd - tRef` (days relative to first valid observation),
+> identical to all other regressors. Initial parameter values must be consistent
+> with this scale.
+
+---
+
+#### Model guide: when to use each model
+
+**`exponential`** -- `y = a * exp(b * x)`
+
+Use when the signal grows or decays at a rate proportional to its current value.
+- `b > 0`: exponential growth (e.g. cumulative drift, sensor degradation)
+- `b < 0`: exponential decay (e.g. relaxation after a step, radioactive decay analogy)
+- Starting values: set `a` near the first observed value, `b` near `0`.
+  For slow drift over years: `b` in the range `[-0.01, 0.01]`.
+  For fast decay over days: `b` around `-0.1` to `-1.0`.
+- Caution: diverges rapidly for large `|b * x|`. If `x` spans thousands of days,
+  keep `|b|` small (order `1e-3` or less).
+
+**`logistic`** -- `y = L / (1 + exp(-k * (x - x0)))`
+
+Use when the signal follows an S-shaped curve: starts near zero, rises
+(or falls) and saturates at a plateau. Classic applications:
+- Velocity profiles: acceleration phase -> cruising speed (train, vehicle data)
+- Adoption curves, population growth with carrying capacity
+- Any signal with a clear lower bound, upper bound, and sigmoidal transition
+Parameters:
+- `L`: asymptotic maximum (saturation level). Set near the observed plateau.
+- `k`: steepness of the transition. Larger `k` = sharper transition.
+  For a transition over ~100 days: `k ~ 0.05`. Over ~10 days: `k ~ 0.5`.
+- `x0`: inflection point in days (x = mjd - tRef). Set near the middle of
+  the transition region.
+- Starting values: inspect the data visually -- estimate where the curve
+  reaches half its maximum (that is `x0`), what the plateau is (`L`),
+  and how sharp the rise is (`k`).
+
+**`gaussian`** -- `y = A * exp(-((x - mu)^2) / (2 * sigma^2))`
+
+Use when the signal forms a single isolated bell-shaped peak above a baseline.
+Applications:
+- Isolated anomalies or events in a residual series
+- Spectral peaks in time domain
+- Any signal dominated by a single symmetric hump
+Parameters:
+- `A`: peak amplitude. Set near the observed maximum.
+- `mu`: peak centre in days (x = mjd - tRef). Set near the observed peak position.
+- `sigma`: peak width (standard deviation in days). Larger = broader peak.
+  For a peak spanning ~30 days: `sigma ~ 10`. Spanning ~1 year: `sigma ~ 100`.
+- Caution: if the baseline is not near zero, subtract it first or add a
+  constant term. The Gaussian model has no intercept parameter.
+- Starting values are critical: if `mu` is far from the actual peak,
+  LM may not find the solution.
+
+---
+
+#### Solver settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `max_iterations` | int | `100` | Maximum LM iterations. Increase to `200-500` for difficult problems. |
+| `grad_tol` | float | `1e-8` | Gradient convergence criterion: stop when `max(J^T r) < grad_tol`. Tighter values require more iterations but give a more precise solution. |
+| `step_tol` | float | `1e-8` | Step convergence criterion: stop when relative step size `< step_tol`. |
+| `lambda_init` | float | `1e-3` | Initial Marquardt damping parameter. Larger values make the first steps more like gradient descent (safer but slower). If LM diverges immediately, try `1e-1` or `1.0`. |
+| `lambda_factor` | float | `10.0` | Damping increase/decrease factor on step rejection/acceptance. Standard value, rarely needs changing. |
+| `confidence_level` | float | `0.95` | Confidence level for prediction and confidence intervals. Intervals are linearisation-based (delta method) -- approximate for strongly nonlinear models. |
+
+---
+
+#### Convergence troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `[WARNING] LM did not converge` | Bad initial params or too few iterations | Improve `initial_params`, increase `max_iterations` |
+| R^2 very low after convergence | Wrong model for the data | Try a different `model` |
+| Very large parameter values | Scale mismatch | Check that `initial_params` are consistent with `x = mjd - tRef` scale |
+| Intervals are very wide | Small dataset or nearly flat Jacobian | Normal for nonlinear models with few observations |
+| Divergence with `b` large in exponential | `b * x_max` overflow | Use smaller `|b|` as starting value, check data span |
+
+---
+
+#### Diagnostics for nonlinear fits
+
+The standard diagnostics (ANOVA, Cook's distance, leverage, VIF, Breusch-Pagan)
+are computed identically to linear methods. However, note:
+
+- `designMatrix` in `RegressionResult` contains the **Jacobian at the solution**,
+  not a true design matrix. For near-linear models this is a good approximation.
+- Cook's distance and leverage are therefore **approximate** for nonlinear models.
+- VIF on the Jacobian columns is meaningful only if the columns are interpretable
+  as predictors (usually not the case for nonlinear models -- treat VIF with caution).
+- ANOVA F-test is valid as a global test of fit (SSR/SSE decomposition holds).
+- Prediction intervals use the **delta method** (linearisation via gradient):
+  they are asymptotically correct but may undercover for strongly nonlinear models
+  or small datasets.
+
+---
+
+#### Example: exponential decay
+
+```json
+"regression": {
+    "method": "nonlinear",
+    "compute_prediction": true,
+    "prediction_horizon": 180.0,
+    "confidence_level": 0.95,
+    "significance_level": 0.05,
+    "nonlinear": {
+        "model": "exponential",
+        "initial_params": [5.0, -0.005],
+        "max_iterations": 200,
+        "grad_tol": 1e-8,
+        "step_tol": 1e-8,
+        "lambda_init": 1e-3,
+        "lambda_factor": 10.0,
+        "confidence_level": 0.95
+    }
+}
+```
+
+#### Example: logistic (train velocity profile)
+
+```json
+"regression": {
+    "method": "nonlinear",
+    "compute_prediction": false,
+    "nonlinear": {
+        "model": "logistic",
+        "initial_params": [80.0, 0.1, 50.0],
+        "max_iterations": 300,
+        "lambda_init": 1e-2
+    }
+}
+```
+
+#### Example: Gaussian peak
+
+```json
+"regression": {
+    "method": "nonlinear",
+    "compute_prediction": false,
+    "nonlinear": {
+        "model": "gaussian",
+        "initial_params": [10.0, 500.0, 30.0],
+        "max_iterations": 200
+    }
+}
+```

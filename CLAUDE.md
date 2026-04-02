@@ -9,7 +9,7 @@ It should be placed in the root of the repository and kept up to date.
 
 LOKI is a professional C++ toolkit for statistical analysis of time series data.
 The long-term goal is a modular ecosystem of analysis libraries with a GUI/IDE frontend.
-Current focus: regression analysis (`loki_regression`) -- build, debug, and test.
+Current focus: nonlinear regression with Levenberg-Marquardt (`loki_regression` R8).
 
 ---
 
@@ -90,7 +90,6 @@ std::exception
 ### Namespace
 - All exception classes live in `namespace loki`.
 - In `.cpp` files, add `using namespace loki;` after the last `#include`.
-- In `apps/` (main), `using namespace loki;` after includes covers most types.
 - `exceptions.hpp` must be included early -- it is included by `logger.hpp`.
 
 ### Where to catch
@@ -135,9 +134,9 @@ All plot output files follow this naming convention:
 ```
 
 - **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression`
-- **dataset** : input filename stem without extension (e.g. `CLIM_DATA_EX1`)
-- **parameter** : series `componentName` from metadata (e.g. `col_3`, `dN`, `temperature`)
-- **plottype** : descriptive short name (e.g. `original`, `filtered`, `residuals`, `overlay`)
+- **dataset** : input filename stem without extension
+- **parameter** : series `componentName` from metadata
+- **plottype** : descriptive short name
 - **format** : `png` | `eps` | `svg`
 
 ### Rules for plotters
@@ -145,6 +144,10 @@ All plot output files follow this naming convention:
 - Temporary data files use `.tmp_` prefix and are deleted immediately after gnuplot runs.
 - Gnuplot on Windows requires forward slashes -- use `fwdSlash()` helper on all paths.
 - gnuplot terminal: `pngcairo noenhanced font 'Sans,12'`
+- gnuplot title for Cook's distance: use `'Cook s distance'` (no apostrophe) to avoid
+  gnuplot string concatenation errors.
+- `qqPlotWithBands` and `cdfPlot` in `loki::Plot` expect `std::string` stem (not full path)
+  -- `Plot` builds the full output path internally via `outputPath(stem)`.
 
 ---
 
@@ -196,7 +199,7 @@ loki/
 |   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer, medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
-|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd)
+|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm [R8])
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -212,6 +215,7 @@ loki/
 |       |   +-- trendEstimator.hpp
 |       |   +-- robustRegressor.hpp
 |       |   +-- calibrationRegressor.hpp
+|       |   +-- nonlinearRegressor.hpp  [R8]
 |       |   +-- regressionDiagnostics.hpp
 |       |   +-- plotRegression.hpp
 |       +-- src/
@@ -222,18 +226,11 @@ loki/
 |           +-- trendEstimator.cpp
 |           +-- robustRegressor.cpp
 |           +-- calibrationRegressor.cpp
+|           +-- nonlinearRegressor.cpp  [R8]
 |           +-- regressionDiagnostics.cpp
 |           +-- plotRegression.cpp
 +-- tests/
-|   +-- unit/
-|   |   +-- core/
-|   |   +-- homogeneity/
-|   |   +-- filter/
-|   |   +-- regression/
 +-- config/
-|   +-- homogenization.json
-|   +-- outlier.json
-|   +-- filter.json
 |   +-- regression.json
 +-- scripts/
 |   +-- loki.sh
@@ -257,45 +254,22 @@ loki/
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
 ```bash
-# Build specific app
 ./scripts/loki.sh build regression --copy-dlls
-./scripts/loki.sh build all --copy-dlls
-
-# Run
 ./scripts/loki.sh run regression
-
-# Test
 ./scripts/loki.sh test --rebuild
 ```
 
 ### CMake target name collision
-The executable target must be named `loki_regression_app` with
-`OUTPUT_NAME "loki_regression"` set via `set_target_properties`.
+Executable: `loki_regression_app` with `OUTPUT_NAME "loki_regression"`.
 
 ### Runtime DLLs (Windows)
-Three DLLs must be present next to every executable:
 `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`
 `--copy-dlls` flag in `loki.sh` handles this automatically.
 
 ### Eigen3 -- SYSTEM includes (critical)
-Eigen3 must be included as SYSTEM to suppress -Werror on its internal headers.
-In `libs/loki_core/CMakeLists.txt`:
 ```cmake
-target_link_libraries(loki_core PUBLIC nlohmann_json::nlohmann_json PRIVATE loki_compiler_options)
 target_include_directories(loki_core SYSTEM PUBLIC
     $<TARGET_PROPERTY:Eigen3::Eigen,INTERFACE_INCLUDE_DIRECTORIES>)
-```
-
-### loki.sh app registration
-Every new app must be added to BOTH associative arrays in `loki.sh`:
-```bash
-APP_EXE=([regression]="apps/loki_regression/loki_regression.exe" ...)
-APP_CONFIG=([regression]="config/regression.json" ...)
-```
-AND to the `case` statement in argument parsing:
-```bash
-loki|homogenization|outlier|filter|regression|all)
-    APP="${arg}" ;;
 ```
 
 ---
@@ -306,19 +280,16 @@ loki|homogenization|outlier|filter|regression|all)
 - `exceptions.hpp` -- full hierarchy
 - `version.hpp` -- `0.3.0`
 - `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
-- `logger.hpp / .cpp` -- Meyers singleton, file + stdout/stderr, macros
-- `config.hpp` -- all config structs including `PlotConfig` (updated this thread:
-  added `regressionResidualAcf`, `regressionResidualHist`, `regressionInfluence`,
-  `regressionLeverage` flags, all default `false`)
-- `configLoader.hpp / .cpp` -- JSON loader, `_parseRegression()`, `_parsePlots()`
-  (updated this thread: parses 4 new regression plot flags)
+- `logger.hpp / .cpp`
+- `config.hpp` -- all config structs including `PlotConfig` with 8 regression plot flags
+- `configLoader.hpp / .cpp`
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
 - `gapFiller.hpp / .cpp`
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
 - `descriptive.hpp / .cpp`
-- `filter.hpp / .cpp` -- movingAverage, EMA, WMA
+- `filter.hpp / .cpp`
 - `distributions.hpp / .cpp`
 - `hypothesis.hpp / .cpp`
 - `metrics.hpp / .cpp`
@@ -328,34 +299,39 @@ loki|homogenization|outlier|filter|regression|all)
 
 ### loki_core/math -- complete
 - `lsqResult.hpp`
-- `lsq.hpp / .cpp` -- LsqSolver: static solve(), weighted + IRLS (HUBER, BISQUARE)
+- `lsq.hpp / .cpp`
 - `designMatrix.hpp / .cpp`
-- `hatMatrix.hpp / .cpp` -- NEW (this thread): thin QR, leverages eager, full H lazy
-- `svd.hpp / .cpp` -- NEW (this thread): BDCSVD wrapper, truncate(), explainedVarianceRatio(),
-  pseudoinverse(), condition(), rank()
+- `hatMatrix.hpp / .cpp`
+- `svd.hpp` -- header-only (see SVD note below)
 
 ### loki_outlier -- complete
 ### loki_homogeneity -- complete
 ### loki_filter -- complete
 
-### loki_regression -- R1-R7 complete
+### loki_regression -- R1-R7 complete, R8 next
 
 #### Key design decisions
 - **X-axis convention**: `x = mjd - tRef` (days relative to first valid observation).
-- **`designMatrix`** stored in `RegressionResult` after every `fit()` -- required by
-  `RegressionDiagnostics::computeInfluence()` and `computeVif()`.
-- **`HatMatrix`** lives in `loki_core/math/` for reuse by future `HatMatrixDetector`.
-- **`SvdDecomposition`** lives in `loki_core/math/` for reuse by future `loki_svd` module.
-- **`CalibrationRegressor`** (TLS): residuals are orthogonal distances; `cofactorX` is empty;
-  prediction intervals are approximate.
-- **`RegressionDiagnostics`**: `computeAnova()`, `computeInfluence()`, `computeVif()`,
-  `computeBreuschPagan()`. All called in `main.cpp`; results logged and written to protocol.
-- **VIF threshold**: 10.0 (hardcoded); flagged indices reported in protocol.
-- **Cook's threshold**: `4/n`; leverage threshold: `2p/n`.
+- **`designMatrix`** stored in `RegressionResult` after every `fit()`.
+- **`HatMatrix`** and **`SvdDecomposition`** in `loki_core/math/` for reuse.
+- **`TrendEstimator`** does NOT inherit from `Regressor` -- returns `DecompositionResult`.
+  Handled separately in `main.cpp` with explicit branch on `RegressionMethodEnum::TREND`.
+  Prediction is NOT supported for `TrendEstimator`.
+- **`CalibrationRegressor`** (TLS): uses `Eigen::JacobiSVD` directly (not `SvdDecomposition`).
+- **`computeIntervals`** in `regressorUtils` takes explicit `xNew` vector for correct
+  `PredictionPoint::x` assignment -- critical for non-polynomial models (harmonic etc.)
+  where design matrix columns are not simply [1, x, x^2, ...].
+- **Prediction guard**: `MAX_PREDICTION_POINTS = 100'000` -- skips prediction with warning
+  if estimated point count exceeds limit (protects against ms-rate data + long horizon).
+- **Re-fit before predict()**: prediction in `main.cpp` creates a new regressor, re-fits,
+  then calls `predict()` -- necessary because `buildRegressor` returns a fresh object.
 - **Protocol**: `OUTPUT/PROTOCOLS/regression_[dataset]_[param]_protocol.txt`
-- **CSV**: `mjd;original;fitted;residual` (+ `trend;seasonal` for `TrendEstimator`)
+- **CSV fitted**: `mjd;original;fitted;residual` (+ `trend;seasonal` for `TrendEstimator`)
+- **CSV prediction**: `mjd;predicted;conf_low;conf_high;pred_low;pred_high`
+  conf_* = confidence interval for mean response (narrow for large n)
+  pred_* = prediction interval for future observations (includes sigma0, wider)
 
-#### RegressionResult fields (complete)
+#### RegressionResult fields
 ```cpp
 struct RegressionResult {
     Eigen::VectorXd  coefficients;
@@ -371,64 +347,143 @@ struct RegressionResult {
     std::string      modelName;
     TimeSeries       fitted;
     double           tRef;
-    Eigen::MatrixXd  designMatrix;   // <- added this thread
+    Eigen::MatrixXd  designMatrix;
 };
+```
+
+#### PredictionPoint fields
+```cpp
+struct PredictionPoint {
+    double x;         // mjd - tRef
+    double predicted;
+    double confLow;
+    double confHigh;
+    double predLow;
+    double predHigh;
+};
+```
+
+#### PlotConfig -- regression flags
+```cpp
+bool regressionOverlay       {true};
+bool regressionResiduals     {true};
+bool regressionCdfPlot       {false};
+bool regressionQqBands       {true};
+bool regressionResidualAcf   {false};
+bool regressionResidualHist  {false};
+bool regressionInfluence     {false};
+bool regressionLeverage      {false};
+// prediction plot reuses regressionOverlay flag -- shown when prediction is non-empty
 ```
 
 ---
 
-## NEXT THREAD: Build and Debug loki_regression
+## NEXT THREAD: R8 -- Levenberg-Marquardt Nonlinear Regression
 
-### What needs to happen at start of next thread
-1. Michal runs `./scripts/loki.sh build regression --copy-dlls`
-2. Pastes build errors into the thread
-3. Claude fixes systematically
+### Architecture decisions (agreed)
+- **`LmSolver`** lives in `loki_core/math/` (analogous to `LsqSolver`)
+- **`NonlinearRegressor`** in `loki_regression/` -- standalone, does NOT inherit `Regressor`
+  (different interface: requires model function + initial parameter guess)
+- **Jacobian**: numerical by default (finite differences), analytical optional for built-in models
+- **Built-in models** (selected via config enum):
+  - `EXPONENTIAL`: `y = a * exp(b*x)` -- nonlinear trend, climatological data
+  - `LOGISTIC`: `y = L / (1 + exp(-k*(x - x0)))` -- S-curve, velocity profiles (train data)
+  - `GAUSSIAN`: `y = A * exp(-((x-mu)^2) / (2*sigma^2))` -- isolated peaks
+  - `CUSTOM`: user-supplied `std::function<double(double, const Eigen::VectorXd&)>`
+- **Model function type**:
+  ```cpp
+  using ModelFn = std::function<double(double x, const Eigen::VectorXd& params)>;
+  ```
+- **Initial parameter estimates**: required from config or user -- LM is sensitive to
+  starting point; bad initial values -> non-convergence
 
-### Known issues to watch for (identified before build)
+### Config additions needed (config.hpp + configLoader.cpp)
+```cpp
+enum class NonlinearModelEnum { EXPONENTIAL, LOGISTIC, GAUSSIAN, CUSTOM };
 
-**1. `robustRegressor.cpp` and `trendEstimator.cpp` not updated**
-Both still missing `result.designMatrix = A` before `m_lastResult = result`.
-Same one-line fix as the other regressors. Michal needs to paste these files
-or Claude will ask for them.
+struct NonlinearConfig {
+    NonlinearModelEnum   model{NonlinearModelEnum::EXPONENTIAL};
+    Eigen::VectorXd      initialParams;   // starting point for LM
+    int                  maxIterations{100};
+    double               tolerance{1e-6};
+    double               lambdaInit{1e-3};
+    double               lambdaFactor{10.0};
+    double               confidenceLevel{0.95};
+};
+```
 
-**2. `computeIntervals()` with empty `cofactorX` (CalibrationRegressor)**
-`regressorUtils.cpp::computeIntervals()` likely uses `cofactorX` without
-checking if it's empty. For TLS, `cofactorX` is an empty matrix.
-Fix: guard `if (result.cofactorX.rows() > 0)` before interval computation,
-fall back to sigma0-only interval (`+/- t * sigma0`) if empty.
-
-**3. `plotRegression.cpp` -- `qqPlotWithBands` and `cdfPlot` signatures**
-`plotQqBands()` and `plotCdf()` call `plot.qqPlotWithBands(result.fitted, outPath)`
-and `plot.cdfPlot(result.fitted, outPath)`. The actual signatures of these methods
-in `plot.hpp` need to be verified -- they may take different arguments.
-
-**4. `plotResiduals()` -- residuals are `Eigen::VectorXd`, not `TimeSeries`**
-In `plotRegression.cpp::plotResiduals()`, residuals are written from
-`result.residuals[i]` (Eigen vector) but timestamps come from `result.fitted[i].time.mjd()`.
-This is correct in principle but verify the index alignment is right when
-`original` has NaN gaps (fitted is shorter than original).
-
-**5. `loki.sh` registration**
-`loki_regression` must be added to `loki.sh` before `./scripts/loki.sh run regression` works.
-
-**6. Root `CMakeLists.txt`**
-Must include `add_subdirectory(apps/loki_regression)` and
-`add_subdirectory(libs/loki_regression)` if not already present.
-
-**7. `loki_regression/CMakeLists.txt` -- `hatMatrix` and `svd` linkage**
-`regressionDiagnostics.cpp` uses `HatMatrix` from `loki_core/math/`.
-`calibrationRegressor.cpp` uses `SvdDecomposition` from `loki_core/math/`.
-Both link transitively via `loki_core` -- this should work, but verify that
-`hatMatrix.cpp` and `svd.cpp` are listed in `loki_core/CMakeLists.txt` sources.
-
-**8. `writeCsv` -- TrendEstimator decomposition**
-`trend` and `seasonal` columns are written as `NaN` placeholders. This is intentional
-for now -- full `DecompositionResult` CSV integration is deferred.
+### LmSolver design
+- Input: `ModelFn f`, `Eigen::VectorXd x`, `Eigen::VectorXd y`,
+         `Eigen::VectorXd p0` (initial params), `LmConfig`
+- Output: `LmResult` with converged params, residuals, Jacobian at solution,
+          sigma0, covariance matrix (for intervals)
+- Jacobian: numerical via central differences `(f(x, p+h) - f(x, p-h)) / (2h)`
+- Damping: standard Marquardt -- increase lambda on step rejection, decrease on acceptance
 
 ---
 
-## Config Structs -- RegressionConfig (config.hpp)
+## Known Issues and Workarounds
 
+### GCC 13 aggregate-init bug -- CRITICAL
+Any `Config` struct with enum member + default value CANNOT be a nested struct inside
+a class. Define outside with descriptive name, add `using` alias inside class.
+
+### Eigen BDCSVD linking bug -- CRITICAL
+`Eigen::BDCSVD` causes `undefined reference` errors when used in `.cpp` files compiled
+into static libraries on Windows/GCC. Two fixes applied:
+1. `SvdDecomposition` (`svd.hpp`) is **header-only** -- all methods inlined, no `svd.cpp`.
+2. `CalibrationRegressor` uses `Eigen::JacobiSVD` directly (not `SvdDecomposition`).
+Do NOT move `SvdDecomposition` back to a `.cpp` file. Do NOT use `BDCSVD` in any `.cpp`
+that gets compiled into a static library.
+
+### `computeIntervals` -- x assignment
+`PredictionPoint::x` must be set from the explicit `xNew` vector, NOT extracted from
+the design matrix row. For harmonic models `aRow[1] = sin(2*pi*t/T)`, not `t`.
+The `computeIntervals` signature requires `xNew` as a separate parameter.
+
+### Polynomial regression -- multicollinearity warning
+For high-degree polynomials (>= 4) on short series, VIF values in millions are expected
+due to natural correlation of power basis columns. This is NOT a bug -- it is an inherent
+property of the monomial basis. For high-degree fits, orthogonal polynomials (Legendre)
+would be needed. Current recommendation: use degree <= 3 for stable results.
+For sensor/train velocity data, polynomial regression is a poor physical model --
+consider logistic curve (NonlinearRegressor) or Kalman filter instead.
+
+### `TimeSeries` API
+- No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
+- `TimeSeries::append(const TimeStamp& time, double value, uint8_t flag = 0)`
+- `::TimeStamp` is NOT in `namespace loki` -- always qualify as `::TimeStamp`
+
+### `std::numbers::pi` instead of `M_PI`
+Use `std::numbers::pi` (C++20 `<numbers>`). `M_PI` is not standard on Windows/MinGW.
+IntelliSense may show false errors for `std::numbers::pi` -- set `"cppStandard": "c++20"`
+in `.vscode/c_cpp_properties.json` and reset IntelliSense database.
+
+### Logger macros
+- `LOKI_WARNING` (not `LOKI_WARN`)
+- `LOKI_INFO` accepts only a single string argument -- use concatenation
+
+### Gnuplot on Windows
+- Use `fwdSlash()` helper on all paths
+- Font: `'Sans,12'` (not `'Helvetica,12'`)
+- Terminal: `noenhanced` (prevents underscore subscript interpretation)
+- String concatenation in gnuplot commands does NOT work -- avoid `'Cook' + "'" + 's'`
+
+### `hypothesis.cpp` -- sign conversion
+Vector indexing with `int` requires `static_cast<std::size_t>()` throughout
+`shapiroWilkWZ()` to avoid `-Werror=sign-conversion`.
+
+### `distributions.cpp` -- `std::numbers::pi`
+Requires `#include <numbers>` at top of file.
+
+### `plot.cpp` -- shadowed variable
+Lambda inside `qqPlotWithBands` must use `oss` not `ss` (shadows outer `double ss`).
+
+---
+
+## Config Structs
+
+### RegressionConfig (config.hpp)
 ```cpp
 enum class RegressionMethodEnum {
     LINEAR, POLYNOMIAL, HARMONIC, TREND, ROBUST, CALIBRATION
@@ -456,64 +511,22 @@ struct RegressionConfig {
 };
 ```
 
-### PlotConfig -- regression flags (config.hpp)
-```cpp
-bool regressionOverlay       {true};
-bool regressionResiduals     {true};
-bool regressionCdfPlot       {false};
-bool regressionQqBands       {true};
-bool regressionResidualAcf   {false};  // new
-bool regressionResidualHist  {false};  // new
-bool regressionInfluence     {false};  // new
-bool regressionLeverage      {false};  // new
-```
-
----
-
-## Known Issues and Workarounds
-
-### GCC 13 aggregate-init bug -- CRITICAL
-Any `Config` struct that contains an enum member with a default value CANNOT
-be defined as a nested struct inside a class. Fix: define outside with descriptive
-names, add `using` aliases inside class.
-
-### `TimeSeries` API
-- No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
-- `TimeSeries::append(const TimeStamp& time, double value, uint8_t flag = 0)`
-- `::TimeStamp` is NOT in `namespace loki` -- always qualify as `::TimeStamp`
-
-### `std::numbers::pi` instead of `M_PI`
-Use `std::numbers::pi` (C++20 `<numbers>`). `M_PI` is not standard on Windows/MinGW.
-
-### Logger macros
-- `LOKI_WARNING` (not `LOKI_WARN`)
-- `LOKI_INFO` accepts only a single string argument -- use concatenation
-
-### `regressorUtils.hpp` location
-Lives in `include/loki/regression/` (not hidden in `src/`).
-
-### `loki_regression` CMake target name
-Library: `loki_regression`, Executable: `loki_regression_app` with
-`OUTPUT_NAME "loki_regression"`.
-
-### Gnuplot on Windows
-- Use `fwdSlash()` helper on all paths
-- Font: `'Sans,12'` (not `'Helvetica,12'`)
-- Terminal: `noenhanced` (prevents underscore subscript interpretation)
-
 ---
 
 ## Planned Future Work
 
-- **R8** -- Levenberg-Marquardt nonlinear LSQ (separate thread, later)
-- **`loki_kalman`** -- standalone Kalman filter module
+- **R8** -- Levenberg-Marquardt nonlinear LSQ (next thread -- see design above)
+- **`loki_kalman`** -- standalone Kalman filter; ideal for sensor/train velocity data
 - **`SplineFilter`** -- future addition to `loki_filter`
-- **`HatMatrixDetector`** (O4) -- leverage-based outlier detection in `loki_outlier`;
-  uses `HatMatrix` from `loki_core/math/`; does NOT inherit from `OutlierDetector` base
+- **`HatMatrixDetector`** (O4) -- leverage-based outlier detection in `loki_outlier`
 - **`loki_spectral`** -- FFT, prerequisite for HarmonicSeries
 - **`loki_arima`** -- AR, ARMA, ARIMA
-- **`loki_svd`** -- SSA, PCA decomposition; uses `SvdDecomposition` from `loki_core/math/`
+- **`loki_svd`** -- SSA, PCA; uses `SvdDecomposition` from `loki_core/math/`
+- **`loki_clustering`** -- k-means, DBSCAN; useful for segmenting train velocity profiles
+  (identify acceleration/cruise/braking phases) and climatological regime detection
 - Additional change point methods: SNHT Alexandersson, Pettitt, Buishand
+  NOTE: `snhtDetector` references in memory are from empty file attachments -- ignore them,
+  these detectors are not yet implemented.
 
 ---
 
@@ -524,10 +537,10 @@ Library: `loki_regression`, Executable: `loki_regression_app` with
 - Build directory `build/` is gitignored.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
-- `deseasonalizer.hpp` and `medianYearSeries.hpp` are in `loki_core/timeseries/`.
-- `metrics.hpp` is in `loki_core/stats/`.
 - `hatMatrix.hpp` and `svd.hpp` are in `loki_core/math/`.
+- `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
 - Plot output -> `OUTPUT/IMG/`, protocols -> `OUTPUT/PROTOCOLS/`, CSV -> `OUTPUT/CSV/`.
-- Temp files use `.tmp_` prefix and are deleted after gnuplot runs.
-- Time series input may have no periodic component (GNSS, non-climatological data).
-- Sampling rate varies -- detectors must not assume fixed time step.
+- Temp gnuplot files use `.tmp_` prefix and are deleted after gnuplot runs.
+- `regressorUtils.hpp` is in `include/loki/regression/` (not hidden in `src/`).
+- `loki_regression` CMake: library `loki_regression`, executable `loki_regression_app`
+  with `OUTPUT_NAME "loki_regression"`.

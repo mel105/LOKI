@@ -13,6 +13,7 @@ target_sources(loki_regression
         src/robustRegressor.cpp
         src/trendEstimator.cpp
         src/plotRegression.cpp
+        src/nonlinearRegressor.cpp
 )
 
 target_include_directories(loki_regression

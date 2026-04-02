@@ -47,7 +47,7 @@
             "max_fill_length": 0
         },
 
-        "method": "polynomial",
+        "method": "nonlinear",
 
         "polynomial_degree": 3,
 
@@ -63,6 +63,16 @@
         "confidence_level": 0.95,
         "significance_level": 0.05,
 
-        "cv_folds": 10
+        "cv_folds": 10,
+
+        "nonlinear": {
+            "model": "logistic",
+            "initial_params": [80.0, 0.1, 50.0],
+            "max_iterations": 300,
+            "grad_tol": 1e-8,
+            "step_tol": 1e-8,
+            "lambda_init": 1e-2,
+            "lambda_factor": 10.0
+        }
     }
 }

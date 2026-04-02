@@ -239,7 +239,36 @@ enum class RegressionMethodEnum {
     HARMONIC,
     TREND,
     ROBUST,
-    CALIBRATION
+    CALIBRATION,
+    NONLINEAR
+};
+
+// -----------------------------------------------------------------------------
+//  NonlinearModel
+// -----------------------------------------------------------------------------
+
+enum class NonlinearModelEnum {
+    EXPONENTIAL,  ///< a * exp(b * x)
+    LOGISTIC,     ///< L / (1 + exp(-k * (x - x0)))
+    GAUSSIAN      ///< A * exp(-((x - mu)^2) / (2 * sigma^2))
+};
+
+// -----------------------------------------------------------------------------
+//  NonlinearConfig  (defined outside RegressionConfig to avoid GCC 13 bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for NonlinearRegressor (Levenberg-Marquardt).
+ */
+struct NonlinearConfig {
+    NonlinearModelEnum model          {NonlinearModelEnum::EXPONENTIAL};
+    std::vector<double> initialParams {};   ///< Starting point for LM. Required.
+    int                maxIterations  {100};
+    double             gradTol        {1.0e-8};
+    double             stepTol        {1.0e-8};
+    double             lambdaInit     {1.0e-3};
+    double             lambdaFactor   {10.0};
+    double             confidenceLevel{0.95};
 };
 
 // -----------------------------------------------------------------------------
@@ -268,6 +297,7 @@ struct RegressionConfig {
     double                     confidenceLevel{0.95};   ///< For confidence/prediction intervals.
     double                     significanceLevel{0.05}; ///< For hypothesis tests in protocol.
     int                        cvFolds{10};             ///< K-fold CV folds [2, 100].
+    NonlinearConfig            nonlinear{};
 };
 
 // -----------------------------------------------------------------------------
