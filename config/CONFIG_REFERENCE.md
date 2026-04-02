@@ -20,6 +20,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 7. [loki_filter](#7-loki_filter)
 8. [loki_regression](#8-loki_regression)
 9. [loki_stationarity](#9-loki_stationarity)
+10. [loki_arima](#10-loki_arima)
 
 ---
 
@@ -1424,6 +1425,280 @@ The protocol contains:
             "enabled": true
         }
     },
+    "significance_level": 0.05
+}
+```
+
+## 10. loki_arima
+
+Default config: `config/arima.json`
+
+The ARIMA pipeline fits an ARIMA(p,d,q) or SARIMA(p,d,q)(P,D,Q)[s] model
+to a time series after gap filling and deseasonalization. It is the natural
+next step after `loki_stationarity` has confirmed stationarity and recommended
+a differencing order d.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller              -- fill NaN / missing values (linear)
+2. Deseasonalizer         -- subtract seasonal component
+3. Differencing           -- d ordinary + D seasonal (auto or configured)
+4. ArimaOrderSelector     -- grid search over [0..maxP] x [0..maxQ] (if autoOrder=true)
+5. ArimaFitter            -- CSS-HR two-step OLS (Hannan-Rissanen)
+6. Ljung-Box diagnostic   -- test residuals for white noise (logged only)
+7. ArimaForecaster        -- h-step-ahead forecast with 95% prediction intervals
+8. CSV export             -- mjd; original; residual; fitted; forecast; lower95; upper95
+9. Protocol               -- ORDER / COEFFICIENTS / DIAGNOSTICS / FORECAST
+10. Plots                 -- time series, ACF, PACF, histogram of model residuals
+```
+
+### Fitting method: CSS-HR
+
+The Conditional Sum of Squares (CSS) method via Hannan-Rissanen (HR)
+two-step approximation is used:
+
+**Step 1 -- Innovation proxy**: fit a high-order AR to the differenced
+series to obtain residual proxies for the unobserved innovations epsilon_t.
+AR order: `min(max(p + q + P + Q + 4, 10), n/4)`.
+
+**Step 2 -- Joint OLS**: assemble a regressor matrix from lagged y values
+(AR lags) and lagged epsilon proxies (MA lags), then solve via
+ColPivHouseholderQR. Intercept is always included.
+
+For SARIMA, lag indices follow the **multiplicative Box-Jenkins convention**:
+AR lags = `{i + j*s : i in 0..p, j in 0..P} \ {0}` (sorted unique set).
+MA lags analogous with q, Q. Cross-terms (e.g. lag s+1 for
+ARIMA(1,0,0)(1,0,0)[s]) are automatically included.
+
+### Information criteria
+
+Computed from the CSS log-likelihood approximation:
+
+```
+logLik = -n/2 * (log(2*pi*sigma2) + 1)
+AIC    = -2 * logLik + 2 * k
+BIC    = -2 * logLik + k * log(n)
+```
+
+where `k = |arLags| + |maLags| + 1` (number of AR coefficients + MA
+coefficients + intercept).
+
+Negative AIC/BIC values are normal for continuous data with small variance.
+Use AIC/BIC for **comparing models on the same series** -- the absolute value
+has no meaning; only differences matter.
+
+---
+
+### 10.1 arima.gap_fill_strategy / gap_fill_max_length
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `gap_fill_strategy` | string | `linear` | Gap filling strategy. Only `linear` is currently supported. |
+| `gap_fill_max_length` | int | `0` | Maximum gap length to fill (in samples). `0` = fill all gaps. |
+
+---
+
+### 10.2 arima.deseasonalization
+
+Subtracts a seasonal component before fitting. Same options as
+[outlier.deseasonalization](#51-outlierdeseasonalization).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `median_year` | Deseasonalization method: `median_year`, `moving_average`, `none`. |
+| `ma_window_size` | int | `1461` | Window in samples for `moving_average`. For 6-hourly data: 1461 = 1 year. |
+| `median_year_min_years` | int | `5` | Minimum years per slot for `median_year`. |
+
+---
+
+### 10.3 arima.auto_order / p / d / q / max_p / max_q / criterion
+
+Controls how the model order (p, d, q) is determined.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `auto_order` | bool | `true` | If true, select (p, q) by AIC/BIC grid search over [0..max_p] x [0..max_q]. |
+| `p` | int | `1` | AR order. Used only if `auto_order=false`. |
+| `d` | int | `-1` | Differencing order. `-1` = auto via StationarityAnalyzer. `0`, `1`, `2` = fixed. |
+| `q` | int | `0` | MA order. Used only if `auto_order=false`. |
+| `max_p` | int | `5` | Upper bound for p in grid search. |
+| `max_q` | int | `5` | Upper bound for q in grid search. |
+| `criterion` | string | `aic` | Order selection criterion: `aic` or `bic`. |
+
+> **On `d=-1` (auto)**: runs `StationarityAnalyzer` internally with default
+> settings (ADF + KPSS + PP). Uses `recommendedDiff` from the joint conclusion.
+> For more control over the stationarity tests, run `loki_stationarity` first
+> and set `d` manually from the protocol.
+
+> **On grid search**: the selector fits all `(max_p+1) * (max_q+1)` models via
+> CSS and selects the minimum AIC or BIC. Models that fail to fit are silently
+> skipped with a warning. ARIMA(0,d,0) is always included as the baseline.
+> Seasonal order (P, D, Q, s) is fixed during the grid search -- only (p, q)
+> varies.
+
+> **Common issue -- overfitting**: if the selected order is high (e.g. p=5,
+> q=5), check whether AR and MA coefficients partially cancel each other
+> (e.g. AR(4) large positive, MA(4) large negative). This indicates
+> near-cancellation of AR/MA polynomials, a sign of over-parameterisation.
+> Try setting `auto_order: false` with a smaller model.
+
+---
+
+### 10.4 arima.seasonal
+
+Controls the SARIMA seasonal component. Set `s=0` to disable SARIMA entirely
+(pure ARIMA). When `s > 0`, the multiplicative Box-Jenkins expansion is used.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `P` | int | `0` | Seasonal AR order. |
+| `D` | int | `0` | Seasonal differencing order. Applied before ordinary differencing. |
+| `Q` | int | `0` | Seasonal MA order. |
+| `s` | int | `0` | Seasonal period in samples. `0` = no seasonal component. |
+
+> **Lag index expansion** for SARIMA(p,d,q)(P,D,Q)[s]:
+> AR lags = `{i + j*s : i in {0..p}, j in {0..P}} \ {0}` (sorted unique).
+> For example, ARIMA(1,0,0)(1,0,0)[12] gives AR lags = {1, 12, 13}.
+> MA lags follow the same rule with q and Q.
+
+> **Common seasonal periods**:
+> - 6-hourly climatological data: `s=1461` (1 year = 1461 samples)
+> - Hourly data: `s=8760`
+> - Monthly data: `s=12`
+> - Daily data: `s=365`
+
+> **SARIMA vs deseasonalization**: if `strategy != none` in
+> `arima.deseasonalization`, the seasonal component is already removed before
+> fitting. In that case, SARIMA seasonal terms may be unnecessary. Use SARIMA
+> with `strategy: none` if you want the model to capture seasonality directly.
+
+---
+
+### 10.5 arima.fitter
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `css` | Fitting method. Only `css` is currently implemented. `mle` is reserved for future use. |
+| `max_iterations` | int | `200` | Reserved for future MLE use. |
+| `tol` | float | `1e-8` | Reserved for future MLE use. |
+
+---
+
+### 10.6 arima.compute_forecast / forecast_horizon / confidence_level
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `compute_forecast` | bool | `false` | Compute and export an h-step-ahead forecast. |
+| `forecast_horizon` | float | `0.0` | Forecast horizon in **days**. Converted to samples using the observed time step. |
+| `confidence_level` | float | `0.95` | Confidence level for prediction intervals. Currently fixed at 95% (1.96 sigma). |
+| `significance_level` | float | `0.05` | Alpha used for the Ljung-Box diagnostic and for StationarityAnalyzer when `d=-1`. |
+
+> **Forecast interpretation**: the point forecast is on the **differenced and
+> deseasonalized** series, not on the original observations. For climatological
+> residuals after deseasonalization and differencing, the long-run forecast
+> converges to zero (the mean of the stationary series). Prediction intervals
+> widen for the first ~p+q steps, then stabilise once the MA(inf) psi-weights
+> decay to zero.
+
+> **Prediction interval formula**:
+> `forecast_h +/- 1.96 * sqrt(sigma2 * sum_{j=0}^{h-1} psi_j^2)`
+> where psi_j are the MA(inf) coefficients computed from AR and MA polynomials.
+
+---
+
+### 10.7 CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `[stationId]_[componentName]_arima.csv`
+
+```
+mjd ; original ; residual ; fitted ; forecast ; lower95 ; upper95
+```
+
+| Column | Description |
+|---|---|
+| `mjd` | Modified Julian Date |
+| `original` | Raw loaded value |
+| `residual` | Deseasonalized value (input to ARIMA) |
+| `fitted` | Model fitted value on the differenced series |
+| `forecast` | `nan` for observed period; point forecast for future steps |
+| `lower95` | Lower 95% prediction interval bound |
+| `upper95` | Upper 95% prediction interval bound |
+
+> Observed rows have `nan` in forecast/lower95/upper95.
+> Forecast rows have `nan` in mjd/original/residual/fitted
+> (future timestamps are not available from the model).
+
+---
+
+### 10.8 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `[stationId]_[componentName]_arima.txt`
+
+Sections:
+- **MODEL ORDER**: ARIMA(p,d,q) or SARIMA(p,d,q)(P,D,Q)[s], method, n
+- **COEFFICIENTS**: intercept, AR coefficients with lag indices, MA coefficients
+- **DIAGNOSTICS**: sigma2, logLik, AIC, BIC
+- **FORECAST**: h-step point forecasts with 95% prediction intervals (if enabled)
+
+---
+
+### 10.9 Plots (arima pipeline)
+
+| Flag | Default | Description |
+|---|---|---|
+| `time_series` | `true` | Time series of deseasonalized residuals. |
+| `histogram` | `true` | Histogram of model residuals (after fitting). |
+| `acf` | `true` | ACF of model residuals -- should show no significant autocorrelation for a well-specified model. |
+| `pacf_plot` | `true` | PACF of model residuals. |
+
+> **Residual diagnostics**: for a well-specified ARIMA model, the model
+> residuals should be approximately white noise -- no significant spikes in
+> ACF/PACF beyond lag 0, histogram approximately normal, Ljung-Box p-value
+> above the significance level. Significant ACF/PACF spikes after fitting
+> indicate that the model order is too low.
+
+---
+
+### 10.10 Example config
+
+```json
+"arima": {
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0,
+
+    "deseasonalization": {
+        "strategy": "median_year",
+        "ma_window_size": 1461,
+        "median_year_min_years": 5
+    },
+
+    "auto_order": true,
+    "p": 1,
+    "d": -1,
+    "q": 0,
+    "max_p": 5,
+    "max_q": 5,
+    "criterion": "aic",
+
+    "seasonal": {
+        "P": 0,
+        "D": 0,
+        "Q": 0,
+        "s": 0
+    },
+
+    "fitter": {
+        "method": "css",
+        "max_iterations": 200,
+        "tol": 1e-8
+    },
+
+    "compute_forecast": false,
+    "forecast_horizon": 0.0,
+    "confidence_level": 0.95,
     "significance_level": 0.05
 }
 ```

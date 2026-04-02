@@ -77,15 +77,16 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
 
     const std::filesystem::path inputDir = cfg.workspace / "INPUT";
 
-    cfg.input       = _parseInput      (j.value("input",       json::object()), inputDir);
-    cfg.output      = _parseOutput     (j.value("output",      json::object()));
-    cfg.homogeneity = _parseHomogeneity(j.value("homogeneity", json::object()));
-    cfg.outlier     = _parseOutlier    (j.value("outlier",     json::object()));
-    cfg.filter      = _parseFilter     (j.value("filter",      json::object()));
-    cfg.regression  = _parseRegression (j.value("regression",  json::object()));
-    cfg.plots       = _parsePlots      (j.value("plots",       json::object()));
-    cfg.stats        = _parseStats         (j);
-    cfg.stationarity = _parseStationarity(j.value("stationarity", json::object()));
+    cfg.input        = _parseInput        (j.value("input",       json::object()), inputDir);
+    cfg.output       = _parseOutput       (j.value("output",      json::object()));
+    cfg.homogeneity  = _parseHomogeneity  (j.value("homogeneity", json::object()));
+    cfg.outlier      = _parseOutlier      (j.value("outlier",     json::object()));
+    cfg.filter       = _parseFilter       (j.value("filter",      json::object()));
+    cfg.regression   = _parseRegression   (j.value("regression",  json::object()));
+    cfg.plots        = _parsePlots        (j.value("plots",       json::object()));
+    cfg.stats        = _parseStats        (j);
+    cfg.stationarity = _parseStationarity (j.value("stationarity", json::object()));
+    cfg.arima        = _parseArima        (j.value("arima", json::object()));
 
     return cfg;
 }
@@ -658,6 +659,90 @@ StationarityConfig ConfigLoader::_parseStationarity(const nlohmann::json& j)
     if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
         throw ConfigException(
             "ConfigLoader: stationarity.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseArima
+// -----------------------------------------------------------------------------
+
+ArimaConfig ConfigLoader::_parseArima(const nlohmann::json& j)
+{
+    ArimaConfig cfg;
+
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",   "linear", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
+
+    if (j.contains("deseasonalization")) {
+        const auto& ds = j.at("deseasonalization");
+        cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "median_year", false);
+        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        1461,          false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,             false);
+    }
+
+    cfg.autoOrder = getOrDefault<bool>       (j, "auto_order", true,  false);
+    cfg.p         = getOrDefault<int>        (j, "p",          1,     false);
+    cfg.d         = getOrDefault<int>        (j, "d",          -1,    false);
+    cfg.q         = getOrDefault<int>        (j, "q",          0,     false);
+    cfg.maxP      = getOrDefault<int>        (j, "max_p",      5,     false);
+    cfg.maxQ      = getOrDefault<int>        (j, "max_q",      5,     false);
+    cfg.criterion = getOrDefault<std::string>(j, "criterion",  "aic", false);
+
+    if (cfg.criterion != "aic" && cfg.criterion != "bic") {
+        throw ConfigException(
+            "ConfigLoader: arima.criterion must be 'aic' or 'bic', got '"
+            + cfg.criterion + "'.");
+    }
+    if (cfg.d < -1 || cfg.d > 2) {
+        throw ConfigException(
+            "ConfigLoader: arima.d must be -1, 0, 1, or 2, got "
+            + std::to_string(cfg.d) + ".");
+    }
+    if (cfg.maxP < 0 || cfg.maxQ < 0) {
+        throw ConfigException(
+            "ConfigLoader: arima.max_p and max_q must be >= 0.");
+    }
+
+    if (j.contains("seasonal")) {
+        const auto& s = j.at("seasonal");
+        cfg.seasonal.P = getOrDefault<int>(s, "P", 0, false);
+        cfg.seasonal.D = getOrDefault<int>(s, "D", 0, false);
+        cfg.seasonal.Q = getOrDefault<int>(s, "Q", 0, false);
+        cfg.seasonal.s = getOrDefault<int>(s, "s", 0, false);
+        if (cfg.seasonal.s < 0) {
+            throw ConfigException(
+                "ConfigLoader: arima.seasonal.s must be >= 0, got "
+                + std::to_string(cfg.seasonal.s) + ".");
+        }
+    }
+
+    if (j.contains("fitter")) {
+        const auto& f = j.at("fitter");
+        cfg.fitter.method        = getOrDefault<std::string>(f, "method",         "css",    false);
+        cfg.fitter.maxIterations = getOrDefault<int>        (f, "max_iterations", 200,      false);
+        cfg.fitter.tol           = getOrDefault<double>     (f, "tol",            1.0e-8,   false);
+        if (cfg.fitter.method != "css") {
+            LOKI_WARNING("ConfigLoader: arima.fitter.method '" + cfg.fitter.method
+                         + "' not yet implemented -- will fall back to 'css'.");
+        }
+    }
+
+    cfg.computeForecast   = getOrDefault<bool>  (j, "compute_forecast",   false, false);
+    cfg.forecastHorizon   = getOrDefault<double>(j, "forecast_horizon",   0.0,   false);
+    cfg.confidenceLevel   = getOrDefault<double>(j, "confidence_level",   0.95,  false);
+    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05,  false);
+
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: arima.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
+    }
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: arima.significance_level must be in (0, 1), got "
             + std::to_string(cfg.significanceLevel) + ".");
     }
 

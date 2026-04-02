@@ -45,18 +45,19 @@ public:
 
 private:
 
-    static InputConfig        _parseInput        (const nlohmann::json& j,
+    static InputConfig        _parseInput         (const nlohmann::json& j,
                                                   const std::filesystem::path& inputDir);
-    static OutputConfig       _parseOutput       (const nlohmann::json& j);
-    static HomogeneityConfig  _parseHomogeneity  (const nlohmann::json& j);
-    static OutlierConfig      _parseOutlier      (const nlohmann::json& j);
-    static FilterConfig       _parseFilter       (const nlohmann::json& j);
-    static RegressionConfig   _parseRegression   (const nlohmann::json& j);
-    static PlotConfig         _parsePlots        (const nlohmann::json& j);
-    static StatsConfig         _parseStats         (const nlohmann::json& j);
-    static StationarityConfig  _parseStationarity  (const nlohmann::json& j);
-    static TimeFormat         _parseTimeFormat   (const std::string& s);
-    static MergeStrategy      _parseMergeStrategy(const std::string& s);
+    static OutputConfig       _parseOutput        (const nlohmann::json& j);
+    static HomogeneityConfig  _parseHomogeneity   (const nlohmann::json& j);
+    static OutlierConfig      _parseOutlier       (const nlohmann::json& j);
+    static FilterConfig       _parseFilter        (const nlohmann::json& j);
+    static RegressionConfig   _parseRegression    (const nlohmann::json& j);
+    static PlotConfig         _parsePlots         (const nlohmann::json& j);
+    static StatsConfig        _parseStats         (const nlohmann::json& j);
+    static StationarityConfig _parseStationarity  (const nlohmann::json& j);
+    static TimeFormat         _parseTimeFormat    (const std::string& s);
+    static MergeStrategy      _parseMergeStrategy (const std::string& s);
+    static ArimaConfig        _parseArima         (const nlohmann::json& j);
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
     static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,

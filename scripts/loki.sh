@@ -17,6 +17,7 @@
 #   filter           apps/loki_filter/loki_filter.exe
 #   regression       apps/loki_regression/loki_regression.exe
 #   stationarity     apps/loki_stationarity/loki_stationarity.exe
+#   arima            apps/loki_arima/loki_arima.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -72,6 +73,7 @@ declare -A APP_EXE=(
     [filter]="apps/loki_filter/loki_filter.exe"
     [regression]="apps/loki_regression/loki_regression.exe"
     [stationarity]="apps/loki_stationarity/loki_stationarity.exe"
+    [arima]="apps/loki_arima/loki_arima.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -80,6 +82,7 @@ declare -A APP_CONFIG=(
     [filter]="config/filter.json"
     [regression]="config/regression.json"
     [stationarity]="config/stationarity.json"
+    [arima]="config/arima.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -107,7 +110,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|all)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;

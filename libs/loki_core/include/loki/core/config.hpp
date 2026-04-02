@@ -436,21 +436,72 @@ struct StationarityConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  ArimaConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+struct ArimaFitterConfig {
+    std::string method        {"css"};   ///< Fitting method: "css" (MLE reserved for future).
+    int         maxIterations {200};     ///< Reserved for future MLE use.
+    double      tol           {1.0e-8}; ///< Reserved for future MLE use.
+};
+
+struct ArimaSarimaConfig {
+    int P{0};  ///< Seasonal AR order.
+    int D{0};  ///< Seasonal differencing order.
+    int Q{0};  ///< Seasonal MA order.
+    int s{0};  ///< Seasonal period in samples (0 = no seasonal component).
+};
+
+/**
+ * @brief Top-level configuration for the loki_arima pipeline.
+ */
+struct ArimaConfig {
+    // Gap filling
+    std::string  gapFillStrategy  {"linear"};
+    int          gapFillMaxLength {0};
+
+    // Deseasonalization (same options as stationarity)
+    DeseasonalizationConfig deseasonalization {};
+
+    // Order
+    bool         autoOrder {true};   ///< Auto-select (p,q) via AIC/BIC grid search.
+    int          p         {1};      ///< AR order (used if autoOrder=false).
+    int          d         {-1};     ///< Differencing order (-1 = auto from StationarityAnalyzer).
+    int          q         {0};      ///< MA order (used if autoOrder=false).
+    int          maxP      {5};      ///< Grid search upper bound for p.
+    int          maxQ      {5};      ///< Grid search upper bound for q.
+    std::string  criterion {"aic"};  ///< Order selection criterion: "aic" or "bic".
+
+    // Seasonal (SARIMA -- s=0 disables)
+    ArimaSarimaConfig seasonal {};
+
+    // Fitting
+    ArimaFitterConfig fitter {};
+
+    // Forecast
+    bool         computeForecast   {false};
+    double       forecastHorizon   {0.0};    ///< Forecast horizon in days.
+    double       confidenceLevel   {0.95};
+    double       significanceLevel {0.05};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
 struct AppConfig {
     std::filesystem::path workspace;
 
-    InputConfig       input;
-    OutputConfig      output;
-    PlotConfig        plots;
-    HomogeneityConfig homogeneity;
-    StatsConfig       stats;
-    OutlierConfig     outlier;
-    FilterConfig      filter;
+    InputConfig        input;
+    OutputConfig       output;
+    PlotConfig         plots;
+    HomogeneityConfig  homogeneity;
+    StatsConfig        stats;
+    OutlierConfig      outlier;
+    FilterConfig       filter;
     RegressionConfig   regression;
     StationarityConfig stationarity;
+    ArimaConfig        arima;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
