@@ -5,6 +5,7 @@ add_library(loki_arima STATIC
     src/arimaOrderSelector.cpp
     src/arimaForecaster.cpp
     src/arimaAnalyzer.cpp
+    src/plotArima.cpp
 )
 
 target_include_directories(loki_arima

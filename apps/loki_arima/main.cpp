@@ -10,6 +10,7 @@
 #include "loki/timeseries/medianYearSeries.hpp"
 #include "loki/arima/arimaAnalyzer.hpp"
 #include "loki/arima/arimaForecaster.hpp"
+#include "loki/arima/plotArima.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -436,11 +437,11 @@ int main(int argc, char* argv[])
                     LOKI_ERROR(std::string("Protocol failed: ") + ex.what());
                 }
 
-                // Step 7: Plots on deseasonalized residuals
+                // Step 7: Plots
                 try {
+                    // Generic plots on deseasonalized residuals via loki::Plot
                     loki::Plot corePlot(cfg);
 
-                    // Residual TimeSeries (deseasonalized)
                     loki::SeriesMetadata resMeta = ts.metadata();
                     resMeta.componentName += "_residuals";
                     loki::TimeSeries resSeries(resMeta);
@@ -451,28 +452,19 @@ int main(int argc, char* argv[])
                         resSeries.append(filled[i].time, v, filled[i].flag);
                     }
 
-                    // TimeSeries of model residuals (on differenced series, shorter)
-                    loki::SeriesMetadata modResMeta = ts.metadata();
-                    modResMeta.componentName += "_model_residuals";
-                    loki::TimeSeries modResSeries(modResMeta);
-                    const std::size_t nFit = arimaResult.residuals.size();
-                    // model residuals are aligned to the END of filled (after differencing drops first d obs)
-                    const std::size_t offset = filled.size() > nFit ? filled.size() - nFit : 0;
-                    modResSeries.reserve(nFit);
-                    for (std::size_t i = 0; i < nFit; ++i) {
-                        modResSeries.append(filled[offset + i].time,
-                                            arimaResult.residuals[i],
-                                            filled[offset + i].flag);
-                    }
+                    if (cfg.plots.timeSeries) corePlot.timeSeries(resSeries);
+                    if (cfg.plots.acf)        corePlot.acf(resSeries);
+                    if (cfg.plots.histogram)  corePlot.histogram(resSeries);
+                    if (cfg.plots.pacfPlot)   corePlot.pacf(resSeries);
 
-                    if (cfg.plots.timeSeries)  corePlot.timeSeries(resSeries);
-                    if (cfg.plots.histogram)   corePlot.histogram(modResSeries);
-                    if (cfg.plots.pacfPlot)    corePlot.pacf(modResSeries);
-                    if (cfg.plots.acf)         corePlot.acf(modResSeries);
+                    // ARIMA-specific plots (overlay, forecast, diagnostics panel)
+                    loki::arima::PlotArima arimaPlot(cfg);
+                    arimaPlot.plotAll(filled, residuals, arimaResult, fcResult, arimaCfg.forecastTail);
 
                 } catch (const loki::LOKIException& ex) {
                     LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
                 }
+
             } catch (const loki::LOKIException& ex) {
                 LOKI_ERROR("ARIMA pipeline failed for " + name + ": " + ex.what());
                 continue;

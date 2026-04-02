@@ -63,6 +63,11 @@ std::vector<double> ArimaForecaster::computePsiWeights(int horizon) const
         }
 
         psi[static_cast<std::size_t>(h)] = val;
+
+        // Clamp for numerical stability -- psi weights must decay for stationary series
+        if (std::abs(psi[static_cast<std::size_t>(h)]) > 1.0e6) {
+            psi[static_cast<std::size_t>(h)] = 0.0;
+        }
     }
 
     return psi;

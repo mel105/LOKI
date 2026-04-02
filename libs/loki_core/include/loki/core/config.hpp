@@ -375,6 +375,9 @@ struct PlotConfig {
 
     // -- Stationarity pipeline plots ------------------------------------------
     bool pacfPlot                {true};   ///< PACF of residuals with confidence band.
+    bool arimaOverlay            {true};   ///< Deseasonalized residuals + ARIMA fitted overlay.
+    bool arimaForecast          {false};   ///< Forecast plot with 95% prediction interval.
+    bool arimaDiagnostics        {true};   ///< Four-panel residual diagnostics (via loki::Plot).
 };
 
 // -----------------------------------------------------------------------------
@@ -481,6 +484,7 @@ struct ArimaConfig {
     // Forecast
     bool         computeForecast   {false};
     double       forecastHorizon   {0.0};    ///< Forecast horizon in days.
+    int          forecastTail      {1461};
     double       confidenceLevel   {0.95};
     double       significanceLevel {0.05};
 };

@@ -77,16 +77,16 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
 
     const std::filesystem::path inputDir = cfg.workspace / "INPUT";
 
-    cfg.input        = _parseInput        (j.value("input",       json::object()), inputDir);
-    cfg.output       = _parseOutput       (j.value("output",      json::object()));
-    cfg.homogeneity  = _parseHomogeneity  (j.value("homogeneity", json::object()));
-    cfg.outlier      = _parseOutlier      (j.value("outlier",     json::object()));
-    cfg.filter       = _parseFilter       (j.value("filter",      json::object()));
-    cfg.regression   = _parseRegression   (j.value("regression",  json::object()));
-    cfg.plots        = _parsePlots        (j.value("plots",       json::object()));
+    cfg.input        = _parseInput        (j.value("input",        json::object()), inputDir);
+    cfg.output       = _parseOutput       (j.value("output",       json::object()));
+    cfg.homogeneity  = _parseHomogeneity  (j.value("homogeneity",  json::object()));
+    cfg.outlier      = _parseOutlier      (j.value("outlier",      json::object()));
+    cfg.filter       = _parseFilter       (j.value("filter",       json::object()));
+    cfg.regression   = _parseRegression   (j.value("regression",   json::object()));
+    cfg.plots        = _parsePlots        (j.value("plots",        json::object()));
     cfg.stats        = _parseStats        (j);
     cfg.stationarity = _parseStationarity (j.value("stationarity", json::object()));
-    cfg.arima        = _parseArima        (j.value("arima", json::object()));
+    cfg.arima        = _parseArima        (j.value("arima",        json::object()));
 
     return cfg;
 }
@@ -503,6 +503,11 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("regression_residual_hist")) cfg.regressionResidualHist = e["regression_residual_hist"].get<bool>();
         if (e.contains("regression_influence"))     cfg.regressionInfluence    = e["regression_influence"].get<bool>();
         if (e.contains("regression_leverage"))      cfg.regressionLeverage     = e["regression_leverage"].get<bool>();
+
+        // Arima pipeline
+        if (e.contains("arima_overlay"))     cfg.arimaOverlay     = e["arima_overlay"].get<bool>();
+        if (e.contains("arima_forecast"))    cfg.arimaForecast    = e["arima_forecast"].get<bool>();
+        if (e.contains("arima_diagnostics")) cfg.arimaDiagnostics = e["arima_diagnostics"].get<bool>();
     }
 
     return cfg;
@@ -730,10 +735,11 @@ ArimaConfig ConfigLoader::_parseArima(const nlohmann::json& j)
         }
     }
 
-    cfg.computeForecast   = getOrDefault<bool>  (j, "compute_forecast",   false, false);
-    cfg.forecastHorizon   = getOrDefault<double>(j, "forecast_horizon",   0.0,   false);
-    cfg.confidenceLevel   = getOrDefault<double>(j, "confidence_level",   0.95,  false);
-    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05,  false);
+    cfg.computeForecast   = getOrDefault<bool>  (j, "compute_forecast",  false, false);
+    cfg.forecastTail      = getOrDefault<int>   (j, "forecast_tail",      1461, false);
+    cfg.forecastHorizon   = getOrDefault<double>(j, "forecast_horizon",    0.0, false);
+    cfg.confidenceLevel   = getOrDefault<double>(j, "confidence_level",   0.95, false);
+    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05, false);
 
     if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
         throw ConfigException(
