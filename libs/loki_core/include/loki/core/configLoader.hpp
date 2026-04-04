@@ -58,6 +58,7 @@ private:
     static TimeFormat         _parseTimeFormat    (const std::string& s);
     static MergeStrategy      _parseMergeStrategy (const std::string& s);
     static ArimaConfig        _parseArima         (const nlohmann::json& j);
+    static SsaConfig          _parseSsa           (const nlohmann::json& j);
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
     static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,

@@ -87,6 +87,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.stats        = _parseStats        (j);
     cfg.stationarity = _parseStationarity (j.value("stationarity", json::object()));
     cfg.arima        = _parseArima        (j.value("arima",        json::object()));
+    cfg.ssa          = _parseSsa          (j.value("ssa",          json::object()));
 
     return cfg;
 }
@@ -752,6 +753,144 @@ ArimaConfig ConfigLoader::_parseArima(const nlohmann::json& j)
             + std::to_string(cfg.significanceLevel) + ".");
     }
 
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseSsa
+// -----------------------------------------------------------------------------
+ 
+SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
+{
+    SsaConfig cfg;
+ 
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
+ 
+    if (j.contains("deseasonalization")) {
+        const auto& ds = j.at("deseasonalization");
+        cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "none", false);
+        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        1461,   false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,      false);
+    }
+ 
+    if (j.contains("window")) {
+        const auto& w = j.at("window");
+        cfg.window.windowLength     = getOrDefault<int>(w, "window_length",     0,     false);
+        cfg.window.period           = getOrDefault<int>(w, "period",            0,     false);
+        cfg.window.periodMultiplier = getOrDefault<int>(w, "period_multiplier", 2,     false);
+        cfg.window.maxWindowLength  = getOrDefault<int>(w, "max_window_length", 20000, false);
+ 
+        if (cfg.window.windowLength < 0) {
+            throw ConfigException(
+                "ConfigLoader: ssa.window.window_length must be >= 0, got "
+                + std::to_string(cfg.window.windowLength) + ".");
+        }
+        if (cfg.window.period < 0) {
+            throw ConfigException(
+                "ConfigLoader: ssa.window.period must be >= 0, got "
+                + std::to_string(cfg.window.period) + ".");
+        }
+        if (cfg.window.periodMultiplier < 1) {
+            throw ConfigException(
+                "ConfigLoader: ssa.window.period_multiplier must be >= 1, got "
+                + std::to_string(cfg.window.periodMultiplier) + ".");
+        }
+        if (cfg.window.maxWindowLength < 2) {
+            throw ConfigException(
+                "ConfigLoader: ssa.window.max_window_length must be >= 2, got "
+                + std::to_string(cfg.window.maxWindowLength) + ".");
+        }
+    }
+ 
+    if (j.contains("grouping")) {
+        const auto& g = j.at("grouping");
+        cfg.grouping.method            = getOrDefault<std::string>(g, "method",             "wcorr", false);
+        cfg.grouping.wcorrThreshold    = getOrDefault<double>     (g, "wcorr_threshold",    0.8,     false);
+        cfg.grouping.kmeansK           = getOrDefault<int>        (g, "kmeans_k",           0,       false);
+        cfg.grouping.varianceThreshold = getOrDefault<double>     (g, "variance_threshold", 0.95,    false);
+ 
+        const std::string& method = cfg.grouping.method;
+        if (method != "manual" && method != "wcorr" &&
+            method != "kmeans" && method != "variance") {
+            throw ConfigException(
+                "ConfigLoader: ssa.grouping.method must be one of "
+                "'manual', 'wcorr', 'kmeans', 'variance', got '" + method + "'.");
+        }
+ 
+        if (cfg.grouping.wcorrThreshold <= 0.0 || cfg.grouping.wcorrThreshold > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: ssa.grouping.wcorr_threshold must be in (0, 1], got "
+                + std::to_string(cfg.grouping.wcorrThreshold) + ".");
+        }
+        if (cfg.grouping.kmeansK < 0) {
+            throw ConfigException(
+                "ConfigLoader: ssa.grouping.kmeans_k must be >= 0, got "
+                + std::to_string(cfg.grouping.kmeansK) + ".");
+        }
+        if (cfg.grouping.varianceThreshold <= 0.0 || cfg.grouping.varianceThreshold > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: ssa.grouping.variance_threshold must be in (0, 1], got "
+                + std::to_string(cfg.grouping.varianceThreshold) + ".");
+        }
+ 
+        // Parse manual groups: {"trend": [0, 1], "annual": [2, 3, 4, 5], ...}
+        if (g.contains("manual_groups") && g.at("manual_groups").is_object()) {
+            for (const auto& [name, indices] : g.at("manual_groups").items()) {
+                std::vector<int> idx;
+                for (const auto& v : indices) {
+                    idx.push_back(v.get<int>());
+                }
+                cfg.grouping.manualGroups[name] = idx;
+            }
+        }
+    }
+ 
+    if (j.contains("reconstruction")) {
+        const auto& r = j.at("reconstruction");
+        cfg.reconstruction.method = getOrDefault<std::string>(r, "method", "diagonal_averaging", false);
+        const std::string& rm = cfg.reconstruction.method;
+        if (rm != "diagonal_averaging" && rm != "simple") {
+            throw ConfigException(
+                "ConfigLoader: ssa.reconstruction.method must be "
+                "'diagonal_averaging' or 'simple', got '" + rm + "'.");
+        }
+    }
+ 
+    cfg.computeWCorr       = getOrDefault<bool>  (j, "corr",              true,  false);
+    cfg.svdRank            = getOrDefault<int>   (j, "svd_rank",             40, false);
+    cfg.svdOversampling    = getOrDefault<int>   (j, "svd_oversampling",     10, false);
+    cfg.svdPowerIter       = getOrDefault<int>   (j, "svd_power_iter",        2, false);
+    cfg.wcorrMaxComponents = getOrDefault<int>   (j, "wcorr_max_components", 30, false);
+    cfg.significanceLevel  = getOrDefault<double>(j, "significance_level", 0.05, false);
+    cfg.forecastTail       = getOrDefault<int>   (j, "forecast_tail",      1461, false);
+ 
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: ssa.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+    if (cfg.svdRank < 0) {
+        throw ConfigException(
+            "ConfigLoader: ssa.svd_rank must be >= 0, got "
+            + std::to_string(cfg.svdRank) + ".");
+    }
+    if (cfg.svdOversampling < 0) {
+        throw ConfigException(
+            "ConfigLoader: ssa.svd_oversampling must be >= 0, got "
+            + std::to_string(cfg.svdOversampling) + ".");
+    }
+    if (cfg.svdPowerIter < 0) {
+        throw ConfigException(
+            "ConfigLoader: ssa.svd_power_iter must be >= 0, got "
+            + std::to_string(cfg.svdPowerIter) + ".");
+    }
+    if (cfg.wcorrMaxComponents < 0) {
+        throw ConfigException(
+            "ConfigLoader: ssa.wcorr_max_components must be >= 0, got "
+            + std::to_string(cfg.wcorrMaxComponents) + ".");
+    }
+ 
     return cfg;
 }
 

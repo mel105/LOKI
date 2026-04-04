@@ -31,6 +31,7 @@ add_subdirectory(libs/loki_filter)
 add_subdirectory(libs/loki_regression)
 add_subdirectory(libs/loki_stationarity)
 add_subdirectory(libs/loki_arima)
+add_subdirectory(libs/loki_ssa)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
@@ -40,6 +41,7 @@ add_subdirectory(apps/loki_filter)
 add_subdirectory(apps/loki_regression)
 add_subdirectory(apps/loki_stationarity)
 add_subdirectory(apps/loki_arima)
+add_subdirectory(apps/loki_ssa)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

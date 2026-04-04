@@ -20,11 +20,14 @@ target_sources(loki_core
         src/stats/filter.cpp
         src/stats/distributions.cpp
         src/stats/hypothesis.cpp
+        src/stats/wCorrelation.cpp
         src/math/lsq.cpp
         src/math/designMatrix.cpp
         src/math/hatMatrix.cpp
         src/math/lagMatrix.cpp
         src/math/lm.cpp
+        src/math/embedMatrix.cpp
+        src/math/randomizedSvd.cpp
 )
 
 target_include_directories(loki_core

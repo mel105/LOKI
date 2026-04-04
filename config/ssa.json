@@ -1,0 +1,73 @@
+{
+  "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3],
+        "merge_strategy": "separate"
+    },
+
+  "output": {
+    "log_level": "info"
+  },
+
+  "ssa": {
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0,
+
+    "deseasonalization": {
+      "strategy": "none",
+      "ma_window_size": 1461,
+      "median_year_min_years": 5
+    },
+
+    "window": {
+      "window_length": 365,
+      "period": 1461,
+      "period_multiplier": 1,
+      "max_window_length": 500
+    },
+
+    "grouping": {
+      "method": "variance",
+      "wcorr_threshold": 0.8,
+      "kmeans_k": 0,
+      "variance_threshold": 0.95,
+      "manual_groups": {
+        "trend": [0, 1],
+        "annual": [2, 3, 4, 5],
+        "noise": []
+      }
+    },
+
+    "reconstruction": {
+      "method": "diagonal_averaging"
+    },
+
+    "compute_wcorr": false,
+    "significance_level": 0.05,
+    "forecast_tail": 1461,
+    "svd_rank": 40,
+    "svd_oversampling": 10,
+    "svd_power_iter": 2,
+    "wcorr_max_components": 30
+  },
+
+  "plots": {
+    "output_format": "png",
+    "ssa_scree": true,
+    "ssa_wcorr": true,
+    "ssa_components": true,
+    "ssa_reconstruction": true
+  },
+
+  "stats": {
+    "enabled": true,
+    "nan_policy": "skip",
+    "hurst": false
+  }
+}

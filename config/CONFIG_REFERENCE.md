@@ -21,6 +21,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 8. [loki_regression](#8-loki_regression)
 9. [loki_stationarity](#9-loki_stationarity)
 10. [loki_arima](#10-loki_arima)
+11. [loki_ssa](#11-loki_ssa)
 
 ---
 
@@ -1701,4 +1702,391 @@ Sections:
     "confidence_level": 0.95,
     "significance_level": 0.05
 }
+```
+
+---
+
+## 11. loki_ssa
+
+Default config: `config/ssa.json`
+
+Singular Spectrum Analysis (SSA) decomposes a time series into interpretable
+components (trend, oscillations, noise) without assuming a parametric model.
+It is particularly suited for climatological and GNSS data with quasi-periodic
+structure and unknown spectral content.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller              -- fill missing values
+2. Deseasonalizer         -- subtract seasonal component (usually "none" for SSA)
+3. Trajectory matrix      -- embed series into K x L Hankel matrix
+4. SVD                    -- randomized or full eigendecomposition
+5. Diagonal averaging     -- reconstruct L elementary components
+6. W-correlation matrix   -- (optional) measure separability between components
+7. Grouper                -- assign eigentriples to named groups
+8. Reconstruction         -- sum components per group
+```
+
+> **SSA vs ARIMA**: SSA extracts structure non-parametrically; ARIMA models
+> residual autocorrelation parametrically. A typical workflow is to run SSA
+> first to extract trend and oscillations, then fit ARIMA to the SSA noise
+> component.
+
+> **Deseasonalization**: for SSA the default is `strategy: none` because SSA
+> captures the seasonal cycle as oscillatory eigentriples. If the seasonal
+> amplitude is very large relative to the trend, pre-subtracting the
+> median-year profile can improve trend extraction.
+
+---
+
+### 11.1 ssa.gap_fill_strategy / gap_fill_max_length
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `gap_fill_strategy` | string | `linear` | Gap filling strategy. Only `linear` is currently supported. |
+| `gap_fill_max_length` | int | `0` | Maximum gap length to fill (in samples). `0` = fill all gaps. |
+
+---
+
+### 11.2 ssa.deseasonalization
+
+Subtracts a seasonal component before SSA. Same options as
+[outlier.deseasonalization](#51-outlierdeseasonalization).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `none` | Deseasonalization method: `none`, `median_year`, `moving_average`. |
+| `ma_window_size` | int | `1461` | Window in samples for `moving_average`. For 6-hourly data: 1461 = 1 year. |
+| `median_year_min_years` | int | `5` | Minimum years per slot for `median_year`. |
+
+> **Recommendation**: use `strategy: none` for SSA. SSA handles seasonality
+> through its oscillatory eigentriples. Pre-deseasonalization is only useful
+> when the seasonal amplitude completely dominates the signal and masks the
+> trend in the scree plot.
+
+---
+
+### 11.3 ssa.window
+
+Controls the window length L -- the number of columns of the trajectory
+(Hankel) matrix. L is the most important SSA parameter.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `window_length` | int | `0` | Explicit window length in samples. `0` = auto-select. |
+| `period` | int | `0` | Dominant period in samples. Used in auto-selection when `window_length=0`. |
+| `period_multiplier` | int | `2` | Multiplier for auto L: `L = period * period_multiplier`. |
+| `max_window_length` | int | `20000` | Safety cap on auto-selected L. Critical for high-rate data (ms resolution). |
+
+#### Auto-selection logic
+
+```
+if window_length > 0 (explicit):
+    validate: window_length >= 2 and window_length <= n/2
+              and window_length <= max_window_length
+    if any constraint violated: warning + fallback to auto
+
+if window_length == 0 (auto):
+    if period > 0:
+        L = period * period_multiplier
+    else:
+        L = n / 2
+    L = min(L, max_window_length, n/2)
+    L = max(L, 2)
+```
+
+> **Choice of L**: L should be a multiple of the dominant period for clean
+> separation of trend and oscillatory components. For 6-hourly climatological
+> data: `period=1461` (1 year), `period_multiplier=1` gives L=1461. Using
+> `period_multiplier=2` gives L=2922 which captures longer inter-annual cycles
+> but increases computation time significantly.
+
+> **Performance warning**: computation time scales as O(K * L * r) for
+> randomized SVD and O(n * L * r) for diagonal averaging, where K = n - L + 1
+> and r = `svd_rank`. For large L (> 1000) and long series (n > 10000),
+> always set `svd_rank` explicitly (see section 11.5).
+
+> **Common window lengths by data type**:
+>
+> | Data type | Resolution | Recommended L |
+> |---|---|---|
+> | Climatological / IWV | 6h | 365 (quarter-year) to 1461 (1 year) |
+> | Climatological / IWV | 1h | 2190 (quarter-year) to 8760 (1 year) |
+> | GNSS coordinates | 1s | 30362 (draconitic period 351.4 days) |
+> | Train / vehicle sensors | ms | set `max_window_length` explicitly |
+
+---
+
+### 11.4 ssa.grouping
+
+Controls how eigentriples are assigned to named groups after decomposition.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `wcorr` | Grouping strategy. See options below. |
+| `wcorr_threshold` | float | `0.8` | W-correlation threshold for hierarchical cut (`wcorr` method). |
+| `kmeans_k` | int | `0` | Number of clusters for `kmeans`. `0` = auto via silhouette score. |
+| `variance_threshold` | float | `0.95` | Cumulative variance fraction for `variance` method. |
+| `manual_groups` | object | `{}` | Name -> index list map for `manual` method. |
+
+#### Grouping methods
+
+| Value | Description | When to use |
+|---|---|---|
+| `wcorr` | Hierarchical clustering on w-correlation distance matrix (average linkage). Groups with w-corr above `wcorr_threshold` are merged. | Default. Mathematically correct SSA grouping. Requires `compute_wcorr: true`. |
+| `manual` | User specifies eigentriple indices explicitly in `manual_groups`. An empty index list acts as catch-all for unassigned eigentriples. | When the spectral structure is known (e.g. from a prior scree plot). |
+| `kmeans` | K-means on [variance fraction, zero-crossing rate] feature vector per eigentriple. | Exploratory analysis. |
+| `variance` | Keep the first k eigentriples explaining `variance_threshold` of captured variance; remainder becomes "noise". | Fast baseline. |
+
+> **On `wcorr` grouping**: pairs of eigentriples belonging to the same
+> oscillation have nearly equal eigenvalues and high mutual w-correlation
+> (close to 1). Well-separated pairs (low w-correlation) should be kept in
+> separate groups. A threshold of 0.8 is a good starting point; lower it to
+> 0.6-0.7 for noisier data.
+
+> **On `manual` grouping**: use the scree plot and w-correlation heatmap from
+> a first run to identify oscillatory pairs, then assign them manually.
+> Example: if the scree plot shows a dominant F0 (trend) and pairs at
+> [1,2], [3,4], assign:
+> ```json
+> "manual_groups": {
+>     "trend":  [0],
+>     "annual": [1, 2],
+>     "semi":   [3, 4],
+>     "noise":  []
+> }
+> ```
+> The empty `"noise"` list captures all remaining eigentriples.
+
+> **Oscillatory pairs**: in SSA, a periodic component of frequency f appears
+> as a pair of eigentriples with nearly equal eigenvalues. The pair shares the
+> same frequency but is 90 degrees out of phase. They must be grouped together
+> to reconstruct the oscillation correctly.
+
+---
+
+### 11.5 ssa.reconstruction
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `diagonal_averaging` | Reconstruction method. See options below. |
+
+| Value | Description |
+|---|---|
+| `diagonal_averaging` | Standard SSA reconstruction. Anti-diagonal averaging of each elementary matrix `E_i = sv_i * u_i * v_i^T`. Mathematically correct. Use for all final results. |
+| `simple` | Fast approximation. Takes the first column of each trajectory window. Less accurate but faster for exploration. |
+
+> Use `diagonal_averaging` for all production runs. `simple` is only useful
+> for quick exploration of very large datasets.
+
+---
+
+### 11.6 ssa.svd_rank / svd_oversampling / svd_power_iter
+
+Controls the randomized SVD algorithm (Halko et al. 2011).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `svd_rank` | int | `40` | Number of eigentriples to compute. `0` = full eigendecomposition of C = X^T*X (only feasible for small L). |
+| `svd_oversampling` | int | `10` | Extra columns in the random projection for accuracy. Working rank = `svd_rank + svd_oversampling`. |
+| `svd_power_iter` | int | `2` | Subspace power iterations. More iterations improve accuracy for slowly decaying spectra at the cost of extra matrix multiplications. |
+
+> **On `svd_rank`**: for climatological data you rarely need more than 40-60
+> eigentriples. The trend is almost always in F0 (or F0+F1), and the dominant
+> annual cycle is in the first 2-4 pairs. Set `svd_rank` to cover the
+> components of interest plus a safety margin for the grouper.
+
+> **On `svd_rank=0` (full decomposition)**: uses `SelfAdjointEigenSolver` on
+> the L x L covariance matrix C = X^T * X. Feasible only for small L (< 500).
+> For L=1461 this takes tens of minutes. Use randomized SVD (`svd_rank > 0`)
+> for all practical cases.
+
+> **On accuracy**: the randomized SVD error for singular value i is bounded by
+> O(sigma_{k+1}) where sigma_{k+1} is the next singular value after the
+> computed rank. For climatological data with fast spectral decay (large gap
+> between F0 and F1...) the approximation is excellent. Increase
+> `svd_power_iter` to 3-4 if the scree plot shows unexpectedly noisy variance
+> fractions.
+
+> **Performance guide** (approximate, 6h climatological data, n=36524):
+>
+> | L | svd_rank | SVD time | Diag avg time | Total |
+> |---|---|---|---|---|
+> | 365 | 40 | ~70s | ~70s | ~2.5 min |
+> | 365 | 20 | ~35s | ~35s | ~1 min |
+> | 1461 | 40 | ~5 min | ~5 min | ~10 min |
+
+---
+
+### 11.7 ssa.compute_wcorr / wcorr_max_components
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `compute_wcorr` | bool | `true` | Compute the w-correlation matrix. Required for `grouping.method=wcorr`. |
+| `wcorr_max_components` | int | `30` | Maximum number of components used in the w-correlation matrix. `0` = all `svd_rank` components. |
+
+> **W-correlation matrix**: an r x r matrix W where W[i][j] in [0,1] measures
+> how separable components i and j are. Values close to 1 mean the components
+> are well-separated (should be in different groups). Values close to 0 mean
+> strong mixing (should be grouped together). The heatmap plot visualises this.
+
+> **Performance**: w-correlation is O(r^2 * n). For r=30, n=36524: ~33M
+> weighted inner products -- fast (< 1 second). For r=100 it becomes
+> O(100^2 * 36524) = 365M ops which takes several seconds. Keep
+> `wcorr_max_components` at 30-50 in practice; the high-index eigentriples
+> are noise and their w-correlations are not informative for grouping.
+
+> **Disable for speed**: set `compute_wcorr: false` to skip this step
+> entirely. In that case `grouping.method=wcorr` will fail -- use `variance`
+> or `manual` instead.
+
+---
+
+### 11.8 ssa.significance_level / forecast_tail
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `significance_level` | float | `0.05` | Reserved for future hypothesis tests on SSA components. |
+| `forecast_tail` | int | `1461` | Number of observed samples shown before the forecast region in the reconstruction plot. In samples. |
+
+---
+
+### 11.9 CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `[stationId]_[componentName]_ssa.csv`
+
+```
+mjd ; original ; trend ; noise ; [group_1 ; group_2 ; ...]
+```
+
+| Column | Description |
+|---|---|
+| `mjd` | Modified Julian Date |
+| `original` | Gap-filled (and optionally deseasonalized) series value |
+| `trend` | Reconstruction of the group named "trend". `nan` if no such group. |
+| `noise` | Reconstruction of the group named "noise". `nan` if no such group. |
+| `[group name]` | One column per additional group (e.g. `annual`, `signal`, `group_1`). |
+
+> Column order: `trend` and `noise` always appear in positions 3 and 4.
+> Additional groups follow in the order they appear in `result.groups`
+> (sorted by descending variance fraction).
+
+---
+
+### 11.10 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `[stationId]_[componentName]_ssa.txt`
+
+Sections:
+- **Header**: series name, n, L, K, grouping method
+- **EIGENVALUES**: first 20 eigenvalues with variance fraction and cumulative
+- **GROUPS**: group name, variance fraction, eigentriple index list
+
+---
+
+### 11.11 Plots (ssa pipeline)
+
+| Flag | Default | Description |
+|---|---|---|
+| `ssa_scree` | `true` | Eigenvalue spectrum (log scale, bar chart) with cumulative variance curve. Dashed line at 95% cumulative variance. |
+| `ssa_wcorr` | `true` | W-correlation matrix heatmap (r x r). White = well-separated, dark blue = strongly mixed. |
+| `ssa_components` | `true` | First N elementary reconstructed components vs MJD (stacked panels). N controlled by `nComponents` in `plotAll()`. |
+| `ssa_reconstruction` | `true` | Original series (grey) + per-group reconstructions overlaid. Noise group shown in separate bottom panel. |
+
+> **Reading the scree plot**: a large gap between F0 and F1 indicates a
+> dominant trend. Pairs of bars with similar height indicate oscillatory
+> components. A flat tail indicates noise. The 95% dashed line helps decide
+> how many components to retain.
+
+> **Reading the w-correlation heatmap**: blocks of high correlation along the
+> diagonal indicate groups of related eigentriples. Off-diagonal high
+> correlations indicate pairs (oscillations). Ideally, the matrix shows
+> isolated blocks for the trend, each oscillatory pair, and noise.
+
+---
+
+### 11.12 Example config
+
+```json
+"ssa": {
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0,
+
+    "deseasonalization": {
+        "strategy": "none",
+        "ma_window_size": 1461,
+        "median_year_min_years": 5
+    },
+
+    "window": {
+        "window_length": 0,
+        "period": 1461,
+        "period_multiplier": 1,
+        "max_window_length": 20000
+    },
+
+    "grouping": {
+        "method": "variance",
+        "wcorr_threshold": 0.8,
+        "kmeans_k": 0,
+        "variance_threshold": 0.95,
+        "manual_groups": {
+            "trend":  [0],
+            "annual": [1, 2, 3, 4],
+            "noise":  []
+        }
+    },
+
+    "reconstruction": {
+        "method": "diagonal_averaging"
+    },
+
+    "svd_rank": 40,
+    "svd_oversampling": 10,
+    "svd_power_iter": 2,
+
+    "compute_wcorr": true,
+    "wcorr_max_components": 30,
+
+    "significance_level": 0.05,
+    "forecast_tail": 1461
+}
+```
+
+#### Recommended starting configurations
+
+**Fast exploration** (under 1 minute for 25 years of 6h data):
+```json
+"window":   { "window_length": 365 },
+"grouping": { "method": "variance", "variance_threshold": 0.95 },
+"svd_rank": 20,
+"compute_wcorr": false
+```
+
+**Standard analysis** (2-3 minutes):
+```json
+"window":   { "window_length": 365, "period": 1461, "period_multiplier": 1 },
+"grouping": { "method": "wcorr", "wcorr_threshold": 0.8 },
+"svd_rank": 40,
+"compute_wcorr": true,
+"wcorr_max_components": 30
+```
+
+**Manual grouping after scree inspection**:
+```json
+"window":   { "window_length": 1461 },
+"grouping": {
+    "method": "manual",
+    "manual_groups": {
+        "trend":  [0],
+        "annual": [1, 2],
+        "semi":   [3, 4],
+        "noise":  []
+    }
+},
+"svd_rank": 20,
+"compute_wcorr": false
 ```

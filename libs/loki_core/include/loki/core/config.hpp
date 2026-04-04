@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "loki/core/logger.hpp"
 #include "loki/core/nanPolicy.hpp"
@@ -378,6 +379,12 @@ struct PlotConfig {
     bool arimaOverlay            {true};   ///< Deseasonalized residuals + ARIMA fitted overlay.
     bool arimaForecast          {false};   ///< Forecast plot with 95% prediction interval.
     bool arimaDiagnostics        {true};   ///< Four-panel residual diagnostics (via loki::Plot).
+
+    // -- SSA pipeline plots ---------------------------------------------------
+    bool ssaScree         {true};   ///< Eigenvalue scree plot with cumulative variance.
+    bool ssaWCorr         {true};   ///< W-correlation matrix heatmap.
+    bool ssaComponents    {true};   ///< First N elementary components vs time.
+    bool ssaReconstruction{true};   ///< Original + group reconstructions overlay.
 };
 
 // -----------------------------------------------------------------------------
@@ -490,6 +497,48 @@ struct ArimaConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  SsaConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+ 
+struct SsaWindowConfig {
+    int windowLength    {0};      ///< Explicit window length in samples. 0 = auto.
+    int period          {0};      ///< Dominant period in samples (0 = unknown).
+    int periodMultiplier{2};      ///< L = period * multiplier when auto and period > 0.
+    int maxWindowLength {20000};  ///< Safety cap on auto-selected L (critical for high-rate data).
+};
+ 
+struct SsaGroupingConfig {
+    std::string method            {"wcorr"}; ///< "manual" | "wcorr" | "kmeans" | "variance"
+    double      wcorrThreshold    {0.8};     ///< W-corr threshold for hierarchical cut (wcorr method).
+    int         kmeansK           {0};       ///< Number of clusters (0 = auto via silhouette).
+    double      varianceThreshold {0.95};    ///< Cumulative variance kept (variance method).
+    std::map<std::string, std::vector<int>> manualGroups; ///< Name -> eigentriple indices (manual method).
+};
+ 
+struct SsaReconstructionConfig {
+    std::string method {"diagonal_averaging"}; ///< "diagonal_averaging" | "simple"
+};
+ 
+/**
+ * @brief Top-level configuration for the loki_ssa pipeline.
+ */
+struct SsaConfig {
+    std::string             gapFillStrategy    {"linear"};
+    int                     gapFillMaxLength   {0};
+    DeseasonalizationConfig deseasonalization  {};      ///< Usually "none" -- SSA handles seasonality.
+    SsaWindowConfig         window             {};
+    SsaGroupingConfig       grouping           {};
+    SsaReconstructionConfig reconstruction     {};
+    bool                    computeWCorr       {true};
+    int                     svdRank            {40};   ///< Randomized SVD rank. 0 = full eigendecomposition.
+    int                     svdOversampling    {10};   ///< Extra columns for randomized SVD accuracy.
+    int                     svdPowerIter       {2};    ///< Subspace power iterations for randomized SVD.
+    int                     wcorrMaxComponents {30};   ///< Max components used in w-corr matrix. 0 = all.
+    double                  significanceLevel  {0.05};
+    int                     forecastTail       {1461}; ///< Samples shown before forecast in plot.
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -506,6 +555,7 @@ struct AppConfig {
     RegressionConfig   regression;
     StationarityConfig stationarity;
     ArimaConfig        arima;
+    SsaConfig          ssa;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

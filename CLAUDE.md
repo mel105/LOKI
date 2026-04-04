@@ -125,7 +125,8 @@ All plot output files follow this naming convention:
 [program]_[dataset]_[parameter]_[plottype].[format]
 ```
 
-- **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression` | `stationarity` | `arima`
+- **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression` |
+                `stationarity` | `arima` | `ssa` | `decomposition`
 - **dataset** : input filename stem without extension
 - **parameter** : series `componentName` from metadata
 - **plottype** : descriptive short name
@@ -135,9 +136,10 @@ All plot output files follow this naming convention:
 - Temporary data files use `.tmp_` prefix and are deleted immediately after gnuplot runs.
 - Gnuplot on Windows requires forward slashes -- use `fwdSlash()` helper on all paths.
 - gnuplot terminal: `pngcairo noenhanced font 'Sans,12'`
-- `qqPlotWithBands` and `cdfPlot` in `loki::Plot` expect `std::string` stem (not full path).
 - All new plot types are added to `loki::Plot` (plot.hpp/cpp in loki_core) -- never use
   Gnuplot directly in app-layer code. The Gnuplot API is `gp("command")`, no `<<` operator.
+- Module-specific plotters live in their own module,
+  delegate generic plots (ACF, histogram, QQ) to `loki::Plot::residualDiagnostics()`.
 
 ---
 
@@ -159,7 +161,11 @@ loki_regression       (depends on loki_core only)
 
 loki_stationarity     (depends on loki_core only)
 
-loki_arima            (depends on loki_core + loki_stationarity)  <- NEXT
+loki_arima            (depends on loki_core + loki_stationarity)  <- COMPLETE
+
+loki_ssa              (depends on loki_core only)                  <- COMPLETE
+
+loki_decomposition    (depends on loki_core only)                  <- NEXT
 ```
 
 ### Rules
@@ -185,41 +191,46 @@ loki/
 |   +-- loki_filter/
 |   +-- loki_regression/
 |   +-- loki_stationarity/
-|   +-- loki_arima/                   <- NEXT
+|   +-- loki_arima/
+|   +-- loki_ssa/
+|   +-- loki_decomposition/              <- NEXT
 |       +-- CMakeLists.txt
 |       +-- main.cpp
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
 |   |       +-- core/         (exceptions, version, config, configLoader, logger, nanPolicy)
-|   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer, medianYearSeries)
-|   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics)
+|   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer,
+|   |       |                  medianYearSeries)
+|   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
+|   |       |                  wCorrelation)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
-|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm, lagMatrix)
+|   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
+|   |                          lagMatrix, embedMatrix, randomizedSvd)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
 |   +-- loki_regression/
 |   +-- loki_stationarity/
-|   +-- loki_arima/                   <- NEXT
+|   +-- loki_arima/
+|   +-- loki_ssa/
+|   +-- loki_decomposition/              <- NEXT
 |       +-- CMakeLists.txt
-|       +-- include/loki/arima/
-|       |   +-- arimaResult.hpp
-|       |   +-- arimaFitter.hpp
-|       |   +-- arimaOrderSelector.hpp
-|       |   +-- arimaForecaster.hpp
-|       |   +-- arimaAnalyzer.hpp
+|       +-- include/loki/decomposition/
+|       |   +-- decompositionResult.hpp
+|       |   +-- classicalDecomposer.hpp/.cpp
+|       |   +-- stlDecomposer.hpp/.cpp
+|       |   +-- decompositionAnalyzer.hpp/.cpp
+|       |   +-- plotDecomposition.hpp/.cpp
 |       +-- src/
-|           +-- arimaFitter.cpp
-|           +-- arimaOrderSelector.cpp
-|           +-- arimaForecaster.cpp
-|           +-- arimaAnalyzer.cpp
 +-- tests/
 +-- config/
 |   +-- outlier.json
 |   +-- regression.json
 |   +-- stationarity.json
-|   +-- arima.json                    <- NEXT
+|   +-- arima.json
+|   +-- ssa.json
+|   +-- decomposition.json               <- NEXT
 +-- scripts/
 |   +-- loki.sh
 +-- docs/
@@ -242,14 +253,14 @@ loki/
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
 ```bash
-./scripts/loki.sh build arima --copy-dlls
-./scripts/loki.sh run arima
+./scripts/loki.sh build ssa --copy-dlls
+./scripts/loki.sh run ssa
 ./scripts/loki.sh test --rebuild
 ```
 
 ### CMake target name collision
-Executable: `loki_arima_app` with `OUTPUT_NAME "loki_arima"`.
-Same pattern for all other apps.
+Executable: `loki_ssa_app` with `OUTPUT_NAME "loki_ssa"`.
+Same pattern for all other apps: `loki_decomposition_app` with `OUTPUT_NAME "loki_decomposition"`.
 
 ### Runtime DLLs (Windows)
 `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`
@@ -272,27 +283,26 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `logger.hpp / .cpp`
 - `config.hpp` -- all config structs including `PlotConfig`, `NonlinearConfig`,
                   `OutlierConfig` with `HatMatrixSection`, `StationarityConfig`
-                  with `AdfConfig`, `KpssConfig`, `PpConfig`
+                  with `AdfConfig`, `KpssConfig`, `PpConfig`,
+                  `ArimaConfig` with `ArimaFitterConfig`, `ArimaSarimaConfig`,
+                  `SsaConfig` with `SsaWindowConfig`, `SsaGroupingConfig`,
+                  `SsaReconstructionConfig`
 - `configLoader.hpp / .cpp`
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
 - `gapFiller.hpp / .cpp`
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
-- `descriptive.hpp / .cpp` -- including `acf()`, `pacf()` (Yule-Walker/Eigen LDLT),
-                               `diff()`, `laggedDiff()`
-- `filter.hpp / .cpp`
-- `distributions.hpp / .cpp` -- normalCdf/Quantile, tCdf/Quantile,
-                                 chi2Cdf/Quantile, fCdf,
-                                 `adfCriticalValue()` (MacKinnon 1994),
-                                 `kpssCriticalValue()` (Kwiatkowski et al. 1992)
-- `hypothesis.hpp / .cpp` -- jarqueBera, shapiroWilk, kolmogorovSmirnov,
-                              runsTest, durbinWatson, `ljungBox()`
+- `descriptive.hpp / .cpp`
+- `filter.hpp / .cpp` -- MovingAverageFilter, EmaFilter, KernelFilter, LoessFilter,
+                          SavitzkyGolayFilter, WeightedMovingAverageFilter
+- `distributions.hpp / .cpp`
+- `hypothesis.hpp / .cpp`
 - `metrics.hpp / .cpp`
+- `wCorrelation.hpp / .cpp` -- w-correlation matrix for SSA
 - `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
-- `gnuplot.hpp / .cpp` -- RAII pipe wrapper, API: `gp("command")` only, no `<<`
-- `plot.hpp / .cpp` -- including `cdfPlot`, `qqPlotWithBands`, `residualDiagnostics`,
-                        `pacf()` (new, stationarity-specific)
+- `gnuplot.hpp / .cpp`
+- `plot.hpp / .cpp`
 
 ### loki_core/math -- complete
 - `lsqResult.hpp`
@@ -300,300 +310,120 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `designMatrix.hpp / .cpp`
 - `hatMatrix.hpp / .cpp`
 - `svd.hpp` -- header-only (BDCSVD linking bug workaround)
-- `lm.hpp / .cpp` -- Levenberg-Marquardt solver
-- `lagMatrix.hpp / .cpp` -- AR(p) lag design matrix
+- `lm.hpp / .cpp`
+- `lagMatrix.hpp / .cpp`
+- `embedMatrix.hpp / .cpp` -- Hankel trajectory matrix for SSA
+- `randomizedSvd.hpp / .cpp` -- Halko et al. (2011) randomized truncated SVD
 
 ### loki_outlier -- complete (O1-O4)
 ### loki_homogeneity -- complete
 ### loki_filter -- complete
 ### loki_regression -- complete (R1-R8, including nonlinear/LM)
-
 ### loki_stationarity -- complete
-- `stationarityResult.hpp` -- `TestResult`, `StationarityResult`
-- `stationarityUtils.hpp` -- header-only `detail::neweyWestVariance()` (Bartlett kernel,
-                              auto bandwidth), shared between KPSS and PP
-- `adfTest.hpp / .cpp` -- ADF test, OLS via Eigen LDLT, AIC/BIC/fixed lag selection,
-                           Schwert (1989) auto-lag, MacKinnon (1994) critical values
-- `kpssTest.hpp / .cpp` -- KPSS test, eta statistic, Newey-West, Kwiatkowski (1992) cv
-- `ppTest.hpp / .cpp` -- PP Z(t) statistic, Newey-West correction on DF t-ratio,
-                          uses `XtX` (not `XtXinv`) in correction term (critical!),
-                          MacKinnon (1994) critical values
-- `stationarityAnalyzer.hpp / .cpp` -- orchestrator, majority vote ADF+PP vs KPSS,
-                                        `buildConclusion()` with newlines between tests
+### loki_arima -- complete
+
+### loki_ssa -- complete (S1-S5)
+- `embedMatrix.hpp/.cpp` in `loki_core/math/`
+- `wCorrelation.hpp/.cpp` in `loki_core/stats/`
+- `randomizedSvd.hpp/.cpp` in `loki_core/math/`
+- `ssaResult.hpp` -- `SsaGroup`, `SsaResult`
+- `ssaGrouper.hpp/.cpp` -- manual, wcorr (average linkage), kmeans, variance methods
+- `ssaReconstructor.hpp/.cpp` -- diagonal averaging + simple (public API, not used in pipeline)
+- `ssaAnalyzer.hpp/.cpp` -- orchestrator: window resolution, trajectory matrix,
+                             randomized SVD / full eigendecomposition, vectorized
+                             diagonal averaging, w-correlation, grouping, reconstruction
+- `plotSsa.hpp/.cpp` -- scree plot, w-corr heatmap, stacked component multiplot,
+                         reconstruction overlay
+- `apps/loki_ssa/main.cpp` -- full pipeline
 
 ---
 
-## NEXT THREAD: loki_arima
+## NEXT THREAD: loki_decomposition
 
-### Motivation
-ARIMA modelling is the natural next step after stationarity testing.
-We have all prerequisites: `lagMatrix`, `pacf`, `acf`, `ljungBox`, `diff`,
-`StationarityAnalyzer` for auto-d, and `lm` for future MLE fitting.
+### What classical decomposition is
+Additive decomposition of a time series into three components:
+```
+Y[t] = T[t] + S[t] + R[t]
+```
+where T = trend, S = seasonal, R = residual.
 
-### Primary use case
-Climatological data (6h/1h resolution) with strong serial dependence after
-deseasonalization. ARIMA characterises the residual autocorrelation structure
-and enables forecasting. SARIMA extends this to data with a remaining seasonal
-component.
+Two methods planned:
+- **Classical**: MovingAverage trend + MedianYear seasonal (fast, simple)
+- **STL** (Cleveland et al. 1990): LOESS trend + LOESS-smoothed seasonal,
+  iterative with robustness weights (accurate, handles outliers)
 
-### loki_core additions for ARIMA thread
+### Relation to existing modules
+- **vs SSA**: SSA is non-parametric and data-driven; decomposition assumes
+  a fixed additive structure with a known period. Both complement each other.
+- **vs loki_filter**: `LoessFilter` and `MovingAverageFilter` from `loki_core`
+  are reused directly -- no new core additions needed for Classical.
+- **vs Deseasonalizer**: `Deseasonalizer` in `loki_core` does Y-S only and
+  does not return T separately. `DecompositionAnalyzer` supersedes it for
+  the decomposition use case.
 
-No new core files needed -- all building blocks exist. The ARIMA thread
-uses existing: `lagMatrix`, `lsq`, `lm`, `pacf`, `acf`, `ljungBox`, `diff`.
+### Key open question before implementation
+- Does `LoessFilter` in `loki_core/stats/filter.hpp` support **external
+  robustness weights**? STL requires weighted LOESS in the outer iteration.
+  If not, we need to either extend `LoessFilter` or implement a private
+  weighted LOESS inside `stlDecomposer.cpp`.
 
-### ArimaResult (arimaResult.hpp)
+### Planned module files
+```
+libs/loki_decomposition/include/loki/decomposition/
+    decompositionResult.hpp      -- DecompositionResult {trend, seasonal, residual, method}
+    classicalDecomposer.hpp/.cpp -- MA trend + per-slot seasonal mean/median
+    stlDecomposer.hpp/.cpp       -- STL: iterative LOESS trend + seasonal
+    decompositionAnalyzer.hpp/.cpp -- orchestrator: gap fill, decompose, log, output
+    plotDecomposition.hpp/.cpp   -- 3-panel: original+trend, seasonal, residual
+```
 
+### DecompositionConfig design (to add to config.hpp)
 ```cpp
-struct ArimaOrder {
-    int p{0};   // AR order
-    int d{0};   // differencing order
-    int q{0};   // MA order
+enum class DecompositionMethodEnum { CLASSICAL, STL };
+
+struct ClassicalDecompositionConfig {
+    std::string trendFilter  {"moving_average"}; // "moving_average" only for now
+    std::string seasonalType {"median"};          // "mean" | "median"
 };
 
-struct SarimaOrder {
-    int P{0};   // seasonal AR order
-    int D{0};   // seasonal differencing order
-    int Q{0};   // seasonal MA order
-    int s{0};   // seasonal period in samples (0 = no SARIMA)
+struct StlDecompositionConfig {
+    int    nInner      {2};    // inner loop iterations
+    int    nOuter      {1};    // outer loop (robustness) iterations
+    int    sDegree     {1};    // LOESS degree for seasonal smoother
+    int    tDegree     {1};    // LOESS degree for trend smoother
+    double sBandwidth  {0.0};  // 0 = auto (1/period)
+    double tBandwidth  {0.0};  // 0 = auto (based on n and period)
 };
 
-struct ArimaResult {
-    ArimaOrder              order;
-    SarimaOrder             seasonal;
-    std::vector<double>     arCoeffs;     // phi_1 .. phi_p
-    std::vector<double>     maCoeffs;     // theta_1 .. theta_q
-    double                  intercept{0.0};
-    double                  sigma2{0.0};  // residual variance
-    double                  logLik{0.0};
-    double                  aic{0.0};
-    double                  bic{0.0};
-    std::vector<double>     residuals;
-    std::vector<double>     fitted;
-    std::size_t             n{0};
-    std::string             method;       // "css" | "mle"
-};
-
-struct ForecastResult {
-    std::vector<double> forecast;
-    std::vector<double> lower95;
-    std::vector<double> upper95;
-    int                 horizon{0};
+struct DecompositionConfig {
+    std::string                  gapFillStrategy  {"linear"};
+    int                          gapFillMaxLength {0};
+    DecompositionMethodEnum      method  {DecompositionMethodEnum::CLASSICAL};
+    int                          period  {1461};  // in samples
+    ClassicalDecompositionConfig classical{};
+    StlDecompositionConfig       stl     {};
+    double                       significanceLevel{0.05};
 };
 ```
 
-### ArimaFitter (arimaFitter.hpp / .cpp)
+### PlotDecomposition -- planned plots
+| Plot | Flag | Description |
+|---|---|---|
+| Overlay | `decompOverlay` | Original + trend overlaid |
+| 3-panel | `decompPanels` | Trend / Seasonal / Residual stacked panels |
+| Residual diagnostics | `decompDiagnostics` | Delegate to `loki::Plot::residualDiagnostics()` |
 
-```cpp
-class ArimaFitter {
-public:
-    struct Config {
-        ArimaOrder  order     {};
-        SarimaOrder seasonal  {};
-        std::string method    {"css"};   // "css" | "mle"
-        int         maxIter   {200};
-        double      tol       {1.0e-8};
-    };
-    using Config = ArimaFitterConfig;  // outside class, GCC 13 rule
-
-    explicit ArimaFitter(Config cfg = {});
-    ArimaResult fit(const std::vector<double>& y) const;
-
-private:
-    Config m_cfg;
-    ArimaResult fitCss(const std::vector<double>& y) const;  // CSS via OLS on AR part
-    ArimaResult fitMle(const std::vector<double>& y) const;  // MLE via L-M (future)
-};
+### Files to request at loki_decomposition thread start
 ```
-
-### ArimaOrderSelector (arimaOrderSelector.hpp / .cpp)
-
-```cpp
-// Selects optimal (p, q) by AIC/BIC grid search over [0..maxP] x [0..maxQ].
-// d is determined externally from StationarityAnalyzer or config.
-// Uses CSS fitting for speed during grid search.
-class ArimaOrderSelector {
-public:
-    struct Config {
-        int         maxP      {5};
-        int         maxQ      {5};
-        std::string criterion {"aic"};  // "aic" | "bic"
-        std::string method    {"css"};
-    };
-    explicit ArimaOrderSelector(Config cfg = {});
-    ArimaOrder select(const std::vector<double>& y, int d) const;
-};
+libs/loki_core/include/loki/stats/filter.hpp      <- LoessFilter signature + weight support?
+libs/loki_core/src/stats/filter.cpp               <- first ~80 lines (LoessFilter structure)
+libs/loki_core/include/loki/timeseries/deseasonalizer.hpp  <- what already exists
+libs/loki_core/include/loki/timeseries/medianYearSeries.hpp <- valueAt() signature
+libs/loki_core/include/loki/core/config.hpp       <- current state (post-SSA)
+libs/loki_core/src/core/configLoader.cpp          <- last 80 lines (_parseSsa pattern)
+libs/loki_arima/CMakeLists.txt                    <- CMake pattern
+apps/loki_arima/CMakeLists.txt                    <- app CMake pattern
 ```
-
-### ArimaForecaster (arimaForecaster.hpp / .cpp)
-
-```cpp
-class ArimaForecaster {
-public:
-    explicit ArimaForecaster(const ArimaResult& result);
-    ForecastResult forecast(int horizon) const;
-};
-```
-
-### ArimaAnalyzer (arimaAnalyzer.hpp / .cpp)
-
-```cpp
-// Top-level orchestrator. Calls stationarity -> order selection -> fit -> diagnose.
-class ArimaAnalyzer {
-public:
-    using Config = ArimaConfig;   // from config.hpp
-    explicit ArimaAnalyzer(Config cfg = {});
-    ArimaResult analyze(const std::vector<double>& y) const;
-};
-```
-
-### ArimaConfig (to add to config.hpp)
-
-```cpp
-struct ArimaFitterConfig {
-    std::string method         {"css"};   // "css" | "mle"
-    int         maxIterations  {200};
-    double      tol            {1.0e-8};
-};
-
-struct ArimaSarimaConfig {
-    int P{0}, D{0}, Q{0}, s{0};          // 0 = no seasonal component
-};
-
-struct ArimaConfig {
-    // Gap filling
-    std::string  gapFillStrategy  {"linear"};
-    int          gapFillMaxLength {0};
-
-    // Deseasonalization (same options as stationarity)
-    DeseasonalizationConfig deseasonalization {};
-
-    // Order
-    bool         autoOrder  {true};    // auto-select p,q via AIC/BIC
-    int          p          {1};       // AR order (used if autoOrder=false)
-    int          d          {-1};      // differencing (-1 = auto from stationarity)
-    int          q          {0};       // MA order (used if autoOrder=false)
-    int          maxP       {5};       // grid search upper bound
-    int          maxQ       {5};
-    std::string  criterion  {"aic"};   // "aic" | "bic"
-
-    // Seasonal (SARIMA -- s=0 disables)
-    ArimaSarimaConfig seasonal {};
-
-    // Fitting
-    ArimaFitterConfig fitter {};
-
-    // Forecast
-    bool         computeForecast   {false};
-    double       forecastHorizon   {0.0};    // days
-    double       confidenceLevel   {0.95};
-    double       significanceLevel {0.05};
-};
-```
-
-### Pipeline in apps/loki_arima/main.cpp
-
-```
-1. Load series (DataManager)
-2. GapFiller
-3. Deseasonalizer (median_year / moving_average / none)
-4. If d == -1: run StationarityAnalyzer -> use recommendedDiff as d
-5. Apply differencing (diff() x d times)
-6. ArimaOrderSelector::select() -> best (p, q) if autoOrder=true
-7. ArimaFitter::fit() -> ArimaResult
-8. LjungBox on residuals (diagnostic, log result)
-9. ArimaForecaster::forecast() if computeForecast=true
-10. Log results + AIC/BIC/sigma2/coefficients
-11. CSV: mjd; original; residual; fitted; forecast (NaN where not available)
-12. Protocol: ORDER/COEFFICIENTS/DIAGNOSTICS/FORECAST
-13. Plots: timeSeries of residuals, ACF/PACF of model residuals,
-           forecast plot (if enabled)
-```
-
-### CSS fitting approach (first implementation)
-
-AR part fitted via `lagMatrix` + OLS (existing `lsq`).
-MA part approximated via innovation recursion (Hannan-Rissanen two-step):
-1. Fit high-order AR to get innovations (residuals)
-2. Use lagged innovations as regressors for MA part
-3. Joint OLS on AR+MA regressors
-
-This avoids nonlinear optimisation for the initial implementation.
-MLE via Levenberg-Marquardt (`lm.hpp`) can be added as `method: "mle"` later.
-
-### Files to request at thread start
-- `libs/loki_core/include/loki/math/lagMatrix.hpp`
-- `libs/loki_core/src/math/lagMatrix.cpp`
-- `libs/loki_core/include/loki/math/lsq.hpp`
-- `libs/loki_core/include/loki/math/lsqResult.hpp`
-- `libs/loki_core/include/loki/math/lm.hpp`
-- `libs/loki_core/include/loki/stats/descriptive.hpp`
-- `libs/loki_core/include/loki/stats/hypothesis.hpp`
-- `libs/loki_core/include/loki/core/config.hpp`
-- `libs/loki_core/src/core/configLoader.cpp`
-- `libs/loki_core/CMakeLists.txt`
-- `libs/loki_stationarity/include/loki/stationarity/stationarityAnalyzer.hpp`
-- `libs/loki_stationarity/include/loki/stationarity/stationarityResult.hpp`
-- `apps/loki_stationarity/main.cpp` (pipeline pattern reference)
-- `libs/loki_stationarity/CMakeLists.txt` (CMake pattern reference)
-
----
-
-## Domain Knowledge -- Use Cases
-
-LOKI is used across three domains with different characteristics.
-This informs module priority and parameter choices.
-
-### Climatological data (6h / 1h resolution)
-- Strong annual and sub-annual seasonal cycle
-- Long-range memory (Hurst > 0.5 typical)
-- Change points from instrument changes, station relocations
-- Recommended deseasonalization: `median_year`
-- Typical `ma_window_size`: 1461 (6h, 1 year) or 8760 (1h, 1 year)
-- Typical `min_segment_points`: 600+ for change point detection
-- `significance_level`: 0.01 recommended for dense data
-- ARIMA: SARIMA may be needed if seasonal residuals remain after deseasonalization
-
-### GNSS data (coordinates / velocities, seconds resolution)
-- Draconitic period: 351.4 days (use `period: 351.4` in regression)
-- Multipath, antenna phase centre variations
-- Step-like change points from equipment changes
-- Kalman filter is the natural processing tool (future `loki_kalman`)
-- Lomb-Scargle for uneven sampling (future `loki_spectral`)
-
-### Train sensor data (radar / odometric velocities, ms resolution)
-- No seasonal component (`deseasonalization: none`)
-- Distinct journey phases: acceleration -> cruise -> braking
-- Logistic regression for velocity profile modelling (already in `loki_regression`)
-- DBSCAN / k-means for phase segmentation (future `loki_clustering`)
-- Kalman filter for sensor fusion (radar + odometry, future `loki_kalman`)
-- No ARIMA needed; focus on `loki_kalman` and `loki_clustering`
-
----
-
-## Module Roadmap (priority order)
-
-| Priority | Module | Primary use case | Key dependency |
-|---|---|---|---|
-| 1 | `loki_arima` | Climatological residual modelling, forecasting | stationarity, lagMatrix, lsq |
-| 2 | `loki_kalman` | GNSS processing, train sensor fusion | loki_core only |
-| 3 | `loki_svd` | SSA/PCA for climatological trend extraction | svd.hpp (already in core) |
-| 4 | `loki_spectral` | FFT + Lomb-Scargle for GNSS draconitic, climate periods | loki_core only |
-| 5 | `loki_clustering` | Train phase segmentation (DBSCAN, k-means) | loki_core only |
-| 6 | `loki_qc` | Quality control, gap flagging, automated reporting | loki_outlier |
-| 7 | `loki_decomposition` | Classical STL-like trend/seasonal/residual decomposition | loki_core only |
-
-### Notes on loki_kalman
-- Standalone module, no dependency on other loki modules
-- State vector: position/velocity for GNSS; velocity/acceleration for train
-- Extended Kalman Filter (EKF) for nonlinear motion models
-- Sensor fusion: multiple measurement sources with different noise covariances
-- High priority because it serves both GNSS and train domains
-
-### Notes on loki_svd
-- `SvdDecomposition` in `loki_core/math/svd.hpp` already prepared (header-only)
-- SSA (Singular Spectrum Analysis): embed -> SVD -> reconstruct
-- Separate application from `loki_decomposition` (different mathematical approach)
-- Key for extracting trend + quasi-periodic components without parametric model
 
 ---
 
@@ -605,11 +435,12 @@ a class. Define outside with descriptive name, add `using` alias inside class.
 
 ### Eigen BDCSVD linking bug -- CRITICAL
 `Eigen::BDCSVD` causes `undefined reference` errors when used in `.cpp` files compiled
-into static libraries on Windows/GCC. Two fixes applied:
-1. `SvdDecomposition` (`svd.hpp`) is **header-only** -- all methods inlined, no `svd.cpp`.
-2. `CalibrationRegressor` uses `Eigen::JacobiSVD` directly (not `SvdDecomposition`).
-Do NOT move `SvdDecomposition` back to a `.cpp` file. Do NOT use `BDCSVD` in any `.cpp`
-that gets compiled into a static library.
+into static libraries on Windows/GCC. Workarounds in place:
+1. `SvdDecomposition` (`svd.hpp`) is **header-only**.
+2. `CalibrationRegressor` uses `Eigen::JacobiSVD` directly.
+3. `SsaAnalyzer` uses `Eigen::JacobiSVD` inside `randomizedSvd.cpp` (small matrix,
+   safe) and `SelfAdjointEigenSolver` for the full eigendecomposition path.
+Do NOT use `BDCSVD` in any `.cpp` compiled into a static library.
 
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
@@ -624,110 +455,117 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - `LOKI_INFO` accepts only a single string argument -- use concatenation
 
 ### Gnuplot on Windows
-- API: `gp("command")` -- no `<<` operator, no `flush()`, no `fwdSlash()`
-- All new plot types go into `loki::Plot` (plot.hpp/cpp) -- never use Gnuplot
-  directly in app-layer code
+- API: `gp("command")` -- no `<<` operator
+- All module-specific plotters use local `fwdSlash()` helper (static private method)
 - Font: `'Sans,12'` (not `'Helvetica,12'`)
-- Terminal: `noenhanced` (prevents underscore subscript interpretation)
-- `plot.cpp` needs `#include "loki/stats/descriptive.hpp"` for `pacf()` access
+- Terminal: `noenhanced`
+
+### SSA performance -- key learnings
+- JacobiSVD on K x L trajectory matrix (K=35000, L=1461) takes hours -- never use
+- SelfAdjointEigenSolver on C = X^T*X (L x L): X^T*X multiplication is O(K*L^2),
+  also too slow for L=1461
+- **Solution**: randomized SVD (Halko et al. 2011) in `randomizedSvd.hpp/.cpp`
+  computes first k singular vectors in O(K*L*k) -- seconds for k=40
+- Diagonal averaging: O(n*L*r) -- vectorized via Eigen segment dot products
+- W-correlation: O(r^2*n) -- limit via `wcorr_max_components` (default 30)
+- For 6h climatological data (n=36524): L=365, k=40 -> ~2.5 min total
+
+### SsaConfig fields (post-SSA thread additions)
+```
+svd_rank            int   40   -- randomized SVD rank (0 = full eigendecomposition)
+svd_oversampling    int   10   -- extra columns for accuracy
+svd_power_iter      int    2   -- subspace power iterations
+wcorr_max_components int  30   -- limit w-corr computation to first N components
+```
 
 ### `distributions.hpp` namespace
 Functions are in `loki::stats::` -- e.g. `loki::stats::chi2Quantile(p, df)`.
-`tQuantile` takes `double df` (not int).
 
 ### PP test -- critical implementation note
-The correction term uses `XtX(levelCol, levelCol)` -- the normal equations matrix,
-NOT `XtXinv(levelCol, levelCol)`. Using the inverse causes the statistic to explode
-to large positive values (e.g. +1051 instead of -38). This was a confirmed bug
-fixed in the stationarity thread.
+The correction term uses `XtX(levelCol, levelCol)` -- NOT `XtXinv`. Confirmed.
 
-### lagMatrix.cpp -- must be in loki_core CMakeLists.txt
-`lagMatrix.cpp` must be listed in `libs/loki_core/CMakeLists.txt` sources.
+### lagMatrix.cpp / embedMatrix.cpp / wCorrelation.cpp / randomizedSvd.cpp
+All must be listed in `libs/loki_core/CMakeLists.txt` sources.
 
-### loki.sh -- unknown app guard
-The argument parser in `loki.sh` raises an error for unknown app names:
-```bash
-*) if [[ "${arg}" == *.json ]]; then CONFIG_OVERRIDE="${arg}"
-   elif [[ "${arg}" != --* ]]; then
-       echo "[LOKI] ERROR: Unknown argument '${arg}'." >&2
-       echo "       Known apps: ${!APP_EXE[*]}" >&2
-       exit 1
-   fi ;;
-```
-This prevents silently running the wrong app when the name is mistyped.
+### loki.sh -- app registration
+Register new apps in the APP_EXE map: `["decomposition"]="loki_decomposition_app"`
 
 ---
 
-## Config Structs
+## Config Structs (current state)
 
-### StationarityConfig (config.hpp) -- complete
+### SsaConfig (config.hpp) -- complete
 ```cpp
-struct AdfConfig { std::string trendType{"constant"}; int maxLags{-1};
-                   std::string lagSelection{"aic"}; double significanceLevel{0.05}; };
-struct KpssConfig { std::string trendType{"level"}; int lags{-1};
-                    double significanceLevel{0.05}; };
-struct PpConfig   { std::string trendType{"constant"}; int lags{-1};
-                    double significanceLevel{0.05}; };
-struct StationarityDifferencingConfig { bool apply{false}; int order{1}; };
-struct StationarityTestsConfig { bool adfEnabled{true}; bool kpssEnabled{true};
-    bool ppEnabled{true}; bool runsTestEnabled{true};
-    AdfConfig adf{}; KpssConfig kpss{}; PpConfig pp{}; };
-struct StationarityConfig {
-    DeseasonalizationConfig        deseasonalization{};
-    StationarityDifferencingConfig differencing{};
-    StationarityTestsConfig        tests{};
-    double                         significanceLevel{0.05};
+struct SsaWindowConfig {
+    int windowLength{0}; int period{0}; int periodMultiplier{2}; int maxWindowLength{20000};
+};
+struct SsaGroupingConfig {
+    std::string method{"wcorr"}; double wcorrThreshold{0.8}; int kmeansK{0};
+    double varianceThreshold{0.95};
+    std::map<std::string, std::vector<int>> manualGroups;
+};
+struct SsaReconstructionConfig { std::string method{"diagonal_averaging"}; };
+struct SsaConfig {
+    std::string gapFillStrategy{"linear"}; int gapFillMaxLength{0};
+    DeseasonalizationConfig deseasonalization{};
+    SsaWindowConfig window{}; SsaGroupingConfig grouping{};
+    SsaReconstructionConfig reconstruction{};
+    bool computeWCorr{true};
+    int svdRank{40}; int svdOversampling{10}; int svdPowerIter{2};
+    int wcorrMaxComponents{30};
+    double significanceLevel{0.05}; int forecastTail{1461};
 };
 ```
 
-### ArimaConfig (config.hpp) -- NEXT THREAD
-See design above in "NEXT THREAD: loki_arima" section.
-
-### HatMatrixSection (config.hpp)
+### PlotConfig SSA additions (config.hpp) -- complete
 ```cpp
-struct HatMatrixSection { int arOrder{5}; double significanceLevel{0.05}; bool enabled{true}; };
-```
-
-### NonlinearConfig (config.hpp)
-```cpp
-enum class NonlinearModelEnum { EXPONENTIAL, LOGISTIC, GAUSSIAN };
-struct NonlinearConfig { NonlinearModelEnum model{NonlinearModelEnum::EXPONENTIAL};
-    std::vector<double> initialParams{}; int maxIterations{100};
-    double gradTol{1.0e-8}; double stepTol{1.0e-8};
-    double lambdaInit{1.0e-3}; double lambdaFactor{10.0}; double confidenceLevel{0.95}; };
+bool ssaScree         {true};
+bool ssaWCorr         {true};
+bool ssaComponents    {true};
+bool ssaReconstruction{true};
 ```
 
 ---
 
 ## Statistical / Domain Key Learnings
 
-- x-axis convention for regression: `x = mjd - tRef` for numerical stability
-- AR order selection: PACF cuts off at lag p for AR(p) -- use PACF, not ACF
-- ACF cuts off at lag q for MA(q) -- use ACF for MA order selection
-- For 6h climatological data: `min_segment_points >= 600` for change point detection
-- `significance_level = 0.01` recommended for hat_matrix with dense data
-- KPSS is very sensitive to change points and trends -- a single undetected shift
-  can cause eta >> critical value (e.g. 15.7 vs 0.46). This is expected behaviour.
-- PP test: `Z(t) = tAlpha * (s/lambda) - correction` where correction uses
-  `XtX_{gamma,gamma}` (normal equations), NOT `XtXinv`. Confirmed bug source.
-- ADF and PP should give consistent signs; large discrepancy indicates numerical issue
-- For climatological residuals after deseasonalization: ADF/PP typically reject unit
-  root, but KPSS may still reject stationarity due to change points or long memory.
-  Correct workflow: homogenize first, then test stationarity.
-- ARIMA for train data: not recommended (no stationarity, etapy jazdy dominate).
-  Use Kalman filter + clustering instead.
+- SSA window L should be a multiple of the dominant period for clean separation
+- SSA grouping: eigentriples belonging to the same oscillation appear as pairs
+  with nearly equal eigenvalues -- w-correlation identifies these correctly
+- For ms-resolution data: always set `maxWindowLength` explicitly
 - Draconitic period for GNSS: 351.4 days (not 365.25)
+- For 6h climatological data: L=365 (quarter-year) is a good starting point;
+  L=1461 (1 year) gives better separation but is slower
+- Variance fractions from randomized SVD are relative to captured variance
+  (sum of first r eigenvalues), not total variance of the series
+- Classical decomposition period in samples: 1461 for 6h data, 365 for daily,
+  8760 for hourly
+
+---
+
+## Module Roadmap (priority order)
+
+| Priority | Module | Primary use case | Status |
+|---|---|---|---|
+| 1 | `loki_arima` | Climatological residual modelling, forecasting | COMPLETE |
+| 2 | `loki_ssa` | SSA decomposition: trend + oscillations + noise | COMPLETE |
+| 3 | `loki_decomposition` | Classical + STL trend/seasonal/residual decomposition | NEXT |
+| 4 | `loki_kalman` | GNSS processing, train sensor fusion | planned |
+| 5 | `loki_spectral` | FFT + Lomb-Scargle for period identification | planned |
+| 6 | `loki_clustering` | Train phase segmentation (DBSCAN, k-means) | planned |
+| 7 | `loki_qc` | Quality control, gap flagging, automated reporting | planned |
 
 ---
 
 ## Approach & Patterns
 
 - **Thread-based workflow:** Each conversation handles a specific milestone.
-  Always begins with "Working on LOKI -- see CLAUDE.md" + attached CLAUDE.md + relevant source files.
+  Always begins with "Working on LOKI -- see CLAUDE.md" + attached CLAUDE.md +
+  relevant source files.
 - **Design-first:** Discuss architecture and approve signatures before any implementation.
 - **Iterative debugging:** Build errors shared in chunks; systematic resolution.
 - **Documentation artifacts:** Each thread concludes with updated CLAUDE.md and
-  relevant reference docs (CONFIG_REFERENCE.md section).
+  CONFIG_REFERENCE.md section.
 - **Config philosophy:** JSON configs kept clean; all documentation in CONFIG_REFERENCE.md.
 - **Output conventions:** Protocols -> `OUTPUT/PROTOCOLS/`; plots -> `OUTPUT/IMG/`;
   CSV -> `OUTPUT/CSV/`; logs -> `OUTPUT/LOG/`.
@@ -740,7 +578,8 @@ struct NonlinearConfig { NonlinearModelEnum model{NonlinearModelEnum::EXPONENTIA
 - CSV: `OUTPUT/CSV/`
 - Logs: `OUTPUT/LOG/`
 - Plot naming: `[program]_[dataset]_[parameter]_[plottype].[format]`
-- Program prefix: `core` | `homogeneity` | `outlier` | `filter` | `regression` | `stationarity` | `arima`
+- Program prefix: `core` | `homogeneity` | `outlier` | `filter` | `regression` |
+                  `stationarity` | `arima` | `ssa` | `decomposition`
 - CSV delimiter: semicolon (`;`)
 
 ---
@@ -751,13 +590,18 @@ struct NonlinearConfig { NonlinearModelEnum model{NonlinearModelEnum::EXPONENTIA
 - Build directory `build/` is gitignored.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
-- `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp` are in `loki_core/math/`.
+- `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp`, `embedMatrix.hpp`,
+  `randomizedSvd.hpp` are in `loki_core/math/`.
+- `wCorrelation.hpp` is in `loki_core/stats/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
-- `lagMatrix.cpp` MUST be listed in `libs/loki_core/CMakeLists.txt` sources.
-- `loki_stationarity` CMake: library `loki_stationarity`, executable
-  `loki_stationarity_app` with `OUTPUT_NAME "loki_stationarity"`.
-- `loki_arima` CMake: library `loki_arima`, executable
-  `loki_arima_app` with `OUTPUT_NAME "loki_arima"`.
-- Classical decomposition (`loki_decomposition`) and SVD-based SSA (`loki_svd`)
-  are separate applications serving different mathematical purposes.
-- `window` parameters in filters are in samples, not time units.
+- `embedMatrix.cpp`, `wCorrelation.cpp`, `randomizedSvd.cpp`, `lagMatrix.cpp`
+  MUST be listed in `libs/loki_core/CMakeLists.txt` sources.
+- `loki_ssa` CMake: library `loki_ssa`, executable `loki_ssa_app`
+  with `OUTPUT_NAME "loki_ssa"`.
+- `loki_decomposition` CMake: library `loki_decomposition`, executable
+  `loki_decomposition_app` with `OUTPUT_NAME "loki_decomposition"`.
+- `window` parameters in filters and SSA are in samples, not time units.
+- `SsaReconstructor` exists as public API but is not used in the main pipeline --
+  `SsaAnalyzer` performs reconstruction inline for efficiency.
+- Classical decomposition and SSA are separate applications serving different
+  mathematical purposes -- do not merge them.
