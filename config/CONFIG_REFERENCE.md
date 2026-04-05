@@ -22,6 +22,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 9. [loki_stationarity](#9-loki_stationarity)
 10. [loki_arima](#10-loki_arima)
 11. [loki_ssa](#11-loki_ssa)
+1. [loki_decomposition](#12-loki_decomposition)
 
 ---
 
@@ -2089,4 +2090,289 @@ Sections:
 },
 "svd_rank": 20,
 "compute_wcorr": false
+```
+
+12. [loki_decomposition](#12-loki_decomposition)
+
+---
+
+## 12. loki_decomposition
+
+**Program:** `loki_decomposition.exe`
+**Default config:** `config/decomposition.json`
+
+Decomposes a time series into three additive components:
+
+```
+Y[t] = T[t] + S[t] + R[t]
+```
+
+where T = trend, S = seasonal, R = residual. Two methods are available:
+Classical (fast, parametric) and STL (iterative LOESS, robust to outliers).
+
+The section key in the JSON file is `"decomposition"`.
+
+---
+
+### 12.1 decomposition.method / period
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `classical` | Decomposition algorithm. See options below. |
+| `period` | int | `1461` | Period of the seasonal component **in samples**. Must be >= 2. |
+| `gap_fill_strategy` | string | `linear` | Gap filling applied before decomposition. `linear`, `forward_fill`, or `mean`. |
+| `gap_fill_max_length` | int | `0` | Maximum gap length to fill (samples). `0` = unlimited. |
+| `significance_level` | float | `0.05` | Reserved for future hypothesis tests on residuals. |
+
+| Value | Description |
+|---|---|
+| `classical` | Centered moving-average trend + per-slot seasonal median/mean. Fast, no iteration, no parameters to tune. |
+| `stl` | Seasonal-Trend decomposition using LOESS (Cleveland et al. 1990). Iterative, robust to outliers, more accurate seasonal extraction. Slower than Classical. |
+
+> **Choosing `period`**: the period must be expressed in **samples**, not in
+> time units. Common values:
+>
+> | Sampling rate | 1 year | 1 day |
+> |---|---|---|
+> | 6-hourly | 1461 | 4 |
+> | Daily | 365 | 1 |
+> | Hourly | 8760 | 24 |
+> | Monthly | 12 | — |
+>
+> For GNSS data with draconitic periodicity use 351.4 days converted to
+> samples. For irregular sampling use the median number of samples per cycle.
+
+> **Choosing `method`**: use `classical` for a quick first look or when the
+> seasonal amplitude is stable over time. Use `stl` when the seasonal pattern
+> changes slowly over the record, when there are outliers that should not
+> contaminate the seasonal estimate, or when a smoother trend is needed.
+
+---
+
+### 12.2 decomposition.classical
+
+Settings for the Classical decomposition path. Ignored when `method = stl`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `trend_filter` | string | `moving_average` | Trend estimator. Only `moving_average` is currently implemented. |
+| `seasonal_type` | string | `median` | Slot aggregation method. `median` or `mean`. |
+
+| Value | Description |
+|---|---|
+| `median` | Each seasonal slot is estimated as the median of all detrended values at that phase. Robust to occasional large anomalies. Recommended for climatological data. |
+| `mean` | Each seasonal slot is estimated as the mean. Slightly smoother, but sensitive to outliers. Use when the series has already been cleaned. |
+
+> **How the Classical trend works**: a centered moving average of width =
+> `period` is applied to the series. The NaN values at the first and last
+> `period/2` samples (edge effect) are filled by the nearest valid value
+> (bfill/ffill). The seasonal component is then computed from the detrended
+> residuals Y - T by aggregating all values that fall in the same phase slot
+> (index mod period) and normalising so that the sum over one full period
+> equals zero.
+
+> **When `seasonal_type = median` vs `mean`**: for 6h climatological data
+> spanning 25 years, each slot contains ~25 values. The median is almost
+> as efficient as the mean and protects against years with anomalous conditions
+> (e.g. a volcanic eruption year that shifts all summer values). Use `mean`
+> only when the input has already been outlier-cleaned.
+
+---
+
+### 12.3 decomposition.stl
+
+Settings for the STL decomposition path. Ignored when `method = classical`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `n_inner` | int | `2` | Inner loop iterations (seasonal + trend pass per outer step). Must be >= 1. |
+| `n_outer` | int | `1` | Outer robustness iterations. `0` = no robustness weighting (equivalent to non-robust STL). |
+| `s_degree` | int | `1` | Local polynomial degree for the seasonal LOESS smoother. `1` or `2`. |
+| `t_degree` | int | `1` | Local polynomial degree for the trend LOESS smoother. `1` or `2`. |
+| `s_bandwidth` | float | `0.0` | Seasonal LOESS bandwidth as a fraction of subseries length. `0.0` = auto (1.5 / period). |
+| `t_bandwidth` | float | `0.0` | Trend LOESS bandwidth as a fraction of series length. `0.0` = auto (1.5 * period / n). |
+
+> **Inner loop (`n_inner`)**: each inner iteration refines both the seasonal
+> and trend estimates. Two iterations are almost always sufficient; the
+> difference between 2 and 5 is negligible for typical climatological data.
+> Values of 1 are acceptable for fast exploration.
+
+> **Outer loop (`n_outer`)**: each outer iteration recomputes bisquare
+> robustness weights from the current residuals. Points with large residuals
+> (outliers, extreme events) receive low weight and are downweighted in the
+> LOESS fits. `n_outer = 0` gives non-robust STL (same seasonal amplitude
+> as Classical). `n_outer = 1` is sufficient for data with occasional
+> anomalies. Use `n_outer = 3` for data with frequent outliers or step changes.
+
+> **Bandwidths**: the auto-selected bandwidths are:
+> - `s_bandwidth = 1.5 / period` -- each subseries uses 1.5 cycle-lengths of
+>   neighbours. This gives smooth inter-annual evolution of the seasonal shape.
+> - `t_bandwidth = 1.5 * period / n` -- the trend smoother spans ~1.5 periods.
+>   For 25 years of 6h data this is approximately 1.5 years.
+>
+> To get a stiffer (less smooth) trend, increase `t_bandwidth`. To allow the
+> seasonal shape to evolve more rapidly over years, decrease `s_bandwidth`.
+> Both must be in (0, 1] if set manually.
+
+> **Degree**: `s_degree = 1` (linear local fit) is appropriate for all
+> practical cases. `s_degree = 2` (quadratic) can improve accuracy when the
+> seasonal shape has sharp curvature (e.g. temperature at high latitudes)
+> at the cost of higher computation time.
+
+---
+
+### 12.4 Interpreting the decomposition output
+
+**Protocol variance explained** (example from a 25-year 6h climatological series):
+
+```
+Trend    : 25.51 %
+Seasonal : 27.40 %
+Residual : 47.58 %
+```
+
+The variance fractions are computed as `(std of component)^2 / (std of original)^2`.
+They do not sum to 100 % in general because the components are not orthogonal.
+
+> **Residual dominates (> 40 %)**: this is normal and expected for
+> climatological data at sub-daily resolution. Synoptical variability (weather
+> systems, frontal passages) operates on timescales of days to weeks and
+> cannot be captured by the trend or the annual seasonal component. A large
+> residual is a physical property of the data, not a sign of a poor model.
+
+> **Trend and Seasonal have similar variance**: this indicates a well-developed
+> annual cycle that is comparable in amplitude to the long-term variability.
+> Typical for temperature, pressure, and humidity at mid-latitudes.
+
+> **Residual panel has visible structure**: if the residual panel shows a
+> periodic pattern or a slow drift, the model is incomplete. Consider switching
+> to STL (which can capture a slowly evolving seasonal shape) or running
+> `loki_ssa` on the residual to identify remaining oscillatory components.
+
+> **Residual panel looks like white noise**: the decomposition is complete.
+> The residual is suitable for input to `loki_arima` or stationarity testing
+> with `loki_stationarity`.
+
+---
+
+### 12.5 Relationship to other LOKI modules
+
+| Module | Role in relation to decomposition |
+|---|---|
+| `loki_filter` | Can estimate the trend alone (moving average, LOESS). Use when only the trend is needed without a seasonal component. |
+| `loki_ssa` | Non-parametric data-driven decomposition. Does not assume a fixed period. Better for multi-scale oscillations. Slower. Use after Classical/STL to analyse the residual. |
+| `loki_arima` | Suitable input: the residual R[t] from decomposition, if it is approximately stationary. |
+| `loki_stationarity` | Use on the residual R[t] to verify that trend and seasonal have been fully removed before ARIMA modelling. |
+| `loki_homogeneity` | Run on the residual R[t] for change point detection. The decomposed residual is more stationary and gives fewer false detections than the raw series. |
+
+---
+
+### 12.6 CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `decomposition_[dataset]_[component].csv`
+
+```
+time_mjd ; original ; trend ; seasonal ; residual
+```
+
+| Column | Description |
+|---|---|
+| `time_mjd` | Modified Julian Date of each observation |
+| `original` | Gap-filled input series value |
+| `trend` | Estimated trend component T[t] |
+| `seasonal` | Estimated seasonal component S[t] |
+| `residual` | Remainder R[t] = original - trend - seasonal |
+
+---
+
+### 12.7 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `decomposition_[dataset]_[component].txt`
+
+Sections:
+- **Header**: dataset, component, method, period, N
+- **Algorithm parameters**: trend filter and seasonal type (Classical) or n_inner, n_outer, degrees (STL)
+- **Component statistics**: mean and std for original, trend, seasonal, residual
+- **Variance explained**: variance fraction of each component relative to original
+
+---
+
+### 12.8 Plots (decomposition pipeline)
+
+| Flag | Default | Description |
+|---|---|---|
+| `decomp_overlay` | `true` | Original series (grey) with trend overlaid (red). Shows how well the trend follows the long-term evolution. |
+| `decomp_panels` | `true` | 3-panel stacked figure: trend (top), seasonal (middle), residual (bottom). Standard decomposition visualisation. |
+| `decomp_diagnostics` | `false` | 4-panel residual diagnostics: residuals vs index, Normal Q-Q plot with 95% confidence bands, histogram with normal fit, and ACF of residuals. |
+
+> **Reading the panels plot**: the trend panel should show a smooth
+> long-term signal without rapid oscillations. The seasonal panel should show
+> a stable repeating pattern. If the seasonal amplitude changes visibly over
+> time, STL with `n_outer >= 1` will give a better fit. The residual panel
+> should be centred on zero with no visible trend or periodic structure.
+
+> **Enable `decomp_diagnostics`** when you intend to use the residual as input
+> to ARIMA or stationarity tests. The ACF panel reveals whether any periodic
+> structure remains, and the Q-Q plot indicates whether the residuals are
+> approximately Gaussian.
+
+---
+
+### 12.9 Example config
+
+```json
+"decomposition": {
+    "method": "classical",
+    "period": 1461,
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0,
+
+    "classical": {
+        "trend_filter": "moving_average",
+        "seasonal_type": "median"
+    },
+
+    "stl": {
+        "n_inner": 2,
+        "n_outer": 1,
+        "s_degree": 1,
+        "t_degree": 1,
+        "s_bandwidth": 0.0,
+        "t_bandwidth": 0.0
+    },
+
+    "significance_level": 0.05
+}
+```
+
+#### Recommended starting configurations
+
+**Classical -- quick first look** (seconds for any dataset size):
+```json
+"method": "classical",
+"period": 1461,
+"classical": { "seasonal_type": "median" }
+```
+
+**STL -- robust, slowly evolving seasonality** (minutes for 25 years of 6h data):
+```json
+"method": "stl",
+"period": 1461,
+"stl": { "n_inner": 2, "n_outer": 3 }
+```
+
+**STL -- faster, non-robust** (for pre-cleaned data):
+```json
+"method": "stl",
+"period": 1461,
+"stl": { "n_inner": 1, "n_outer": 0 }
+```
+
+**Daily data (1 year = 365 samples)**:
+```json
+"method": "classical",
+"period": 365,
+"classical": { "seasonal_type": "median" }
 ```

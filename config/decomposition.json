@@ -1,0 +1,49 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "decomposition": {
+        "method": "classical",
+        "period": 1461,
+        "gap_fill_strategy": "linear",
+        "gap_fill_max_length": 0,
+
+        "classical": {
+            "trend_filter": "moving_average",
+            "seasonal_type": "median"
+        },
+
+        "stl": {
+            "n_inner": 2,
+            "n_outer": 1,
+            "s_degree": 1,
+            "t_degree": 1,
+            "s_bandwidth": 0.0,
+            "t_bandwidth": 0.0
+        },
+
+        "significance_level": 0.05
+    },
+
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "decomp_overlay": true,
+            "decomp_panels": true,
+            "decomp_diagnostics": false
+        }
+    }
+}

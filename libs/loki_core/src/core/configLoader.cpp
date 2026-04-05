@@ -88,6 +88,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.stationarity = _parseStationarity (j.value("stationarity", json::object()));
     cfg.arima        = _parseArima        (j.value("arima",        json::object()));
     cfg.ssa          = _parseSsa          (j.value("ssa",          json::object()));
+    cfg.decomposition = _parseDecomposition(j.value("decomposition", json::object()));
 
     return cfg;
 }
@@ -156,9 +157,9 @@ OutputConfig ConfigLoader::_parseOutput(const nlohmann::json& j)
     OutputConfig cfg;
     const std::string levelStr = getOrDefault<std::string>(j, "log_level", "info", false);
     if      (levelStr == "debug")   { cfg.logLevel = LogLevel::DEBUG;   }
-    else if (levelStr == "info")    { cfg.logLevel = LogLevel::INFO;     }
-    else if (levelStr == "warning") { cfg.logLevel = LogLevel::WARNING;  }
-    else if (levelStr == "error")   { cfg.logLevel = LogLevel::ERROR;    }
+    else if (levelStr == "info")    { cfg.logLevel = LogLevel::INFO;    }
+    else if (levelStr == "warning") { cfg.logLevel = LogLevel::WARNING; }
+    else if (levelStr == "error")   { cfg.logLevel = LogLevel::ERROR;   }
     else {
         LOKI_WARNING("Config 'output.log_level' unknown value '" + levelStr + "' -- using 'info'.");
         cfg.logLevel = LogLevel::INFO;
@@ -218,11 +219,11 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 
     if (j.contains("detection")) {
         const auto& d = j.at("detection");
-        cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",    0.05,  false);
-        cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",  0.2,   false);
-        cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true, false);
-        cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",    60,    false);
-        cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",  "",    false);
+        cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",     0.05,  false);
+        cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",   0.2,   false);
+        cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true,  false);
+        cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",     60,    false);
+        cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",   "",    false);
     }
 
     return cfg;
@@ -509,6 +510,17 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("arima_overlay"))     cfg.arimaOverlay     = e["arima_overlay"].get<bool>();
         if (e.contains("arima_forecast"))    cfg.arimaForecast    = e["arima_forecast"].get<bool>();
         if (e.contains("arima_diagnostics")) cfg.arimaDiagnostics = e["arima_diagnostics"].get<bool>();
+
+        // SSA pipeline
+        if (e.contains("ssa_scree"))          cfg.ssaScree         = e["ssa_scree"].get<bool>();
+        if (e.contains("ssa_wcorr"))          cfg.ssaWCorr         = e["ssa_wcorr"].get<bool>();
+        if (e.contains("ssa_components"))     cfg.ssaComponents    = e["ssa_components"].get<bool>();
+        if (e.contains("ssa_reconstruction")) cfg.ssaReconstruction = e["ssa_reconstruction"].get<bool>();
+
+        // Decomposition pipeline
+        if (e.contains("decomp_overlay"))     cfg.decompOverlay     = e["decomp_overlay"].get<bool>();
+        if (e.contains("decomp_panels"))      cfg.decompPanels      = e["decomp_panels"].get<bool>();
+        if (e.contains("decomp_diagnostics")) cfg.decompDiagnostics = e["decomp_diagnostics"].get<bool>();
     }
 
     return cfg;
@@ -601,7 +613,6 @@ StationarityConfig ConfigLoader::_parseStationarity(const nlohmann::json& j)
     if (j.contains("tests")) {
         const auto& t = j.at("tests");
 
-        // Top-level test enable flags
         if (t.contains("adf")) {
             const auto& a = t.at("adf");
             cfg.tests.adfEnabled             = getOrDefault<bool>        (a, "enabled",            true,       false);
@@ -759,28 +770,28 @@ ArimaConfig ConfigLoader::_parseArima(const nlohmann::json& j)
 // -----------------------------------------------------------------------------
 //  Private: _parseSsa
 // -----------------------------------------------------------------------------
- 
+
 SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
 {
     SsaConfig cfg;
- 
+
     cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear", false);
     cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
- 
+
     if (j.contains("deseasonalization")) {
         const auto& ds = j.at("deseasonalization");
         cfg.deseasonalization.strategy          = getOrDefault<std::string>(ds, "strategy",              "none", false);
         cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        1461,   false);
         cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,      false);
     }
- 
+
     if (j.contains("window")) {
         const auto& w = j.at("window");
         cfg.window.windowLength     = getOrDefault<int>(w, "window_length",     0,     false);
         cfg.window.period           = getOrDefault<int>(w, "period",            0,     false);
         cfg.window.periodMultiplier = getOrDefault<int>(w, "period_multiplier", 2,     false);
         cfg.window.maxWindowLength  = getOrDefault<int>(w, "max_window_length", 20000, false);
- 
+
         if (cfg.window.windowLength < 0) {
             throw ConfigException(
                 "ConfigLoader: ssa.window.window_length must be >= 0, got "
@@ -802,14 +813,14 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
                 + std::to_string(cfg.window.maxWindowLength) + ".");
         }
     }
- 
+
     if (j.contains("grouping")) {
         const auto& g = j.at("grouping");
         cfg.grouping.method            = getOrDefault<std::string>(g, "method",             "wcorr", false);
         cfg.grouping.wcorrThreshold    = getOrDefault<double>     (g, "wcorr_threshold",    0.8,     false);
         cfg.grouping.kmeansK           = getOrDefault<int>        (g, "kmeans_k",           0,       false);
         cfg.grouping.varianceThreshold = getOrDefault<double>     (g, "variance_threshold", 0.95,    false);
- 
+
         const std::string& method = cfg.grouping.method;
         if (method != "manual" && method != "wcorr" &&
             method != "kmeans" && method != "variance") {
@@ -817,7 +828,7 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
                 "ConfigLoader: ssa.grouping.method must be one of "
                 "'manual', 'wcorr', 'kmeans', 'variance', got '" + method + "'.");
         }
- 
+
         if (cfg.grouping.wcorrThreshold <= 0.0 || cfg.grouping.wcorrThreshold > 1.0) {
             throw ConfigException(
                 "ConfigLoader: ssa.grouping.wcorr_threshold must be in (0, 1], got "
@@ -833,7 +844,7 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
                 "ConfigLoader: ssa.grouping.variance_threshold must be in (0, 1], got "
                 + std::to_string(cfg.grouping.varianceThreshold) + ".");
         }
- 
+
         // Parse manual groups: {"trend": [0, 1], "annual": [2, 3, 4, 5], ...}
         if (g.contains("manual_groups") && g.at("manual_groups").is_object()) {
             for (const auto& [name, indices] : g.at("manual_groups").items()) {
@@ -845,7 +856,7 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
             }
         }
     }
- 
+
     if (j.contains("reconstruction")) {
         const auto& r = j.at("reconstruction");
         cfg.reconstruction.method = getOrDefault<std::string>(r, "method", "diagonal_averaging", false);
@@ -856,7 +867,7 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
                 "'diagonal_averaging' or 'simple', got '" + rm + "'.");
         }
     }
- 
+
     cfg.computeWCorr       = getOrDefault<bool>  (j, "corr",              true,  false);
     cfg.svdRank            = getOrDefault<int>   (j, "svd_rank",             40, false);
     cfg.svdOversampling    = getOrDefault<int>   (j, "svd_oversampling",     10, false);
@@ -864,7 +875,7 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
     cfg.wcorrMaxComponents = getOrDefault<int>   (j, "wcorr_max_components", 30, false);
     cfg.significanceLevel  = getOrDefault<double>(j, "significance_level", 0.05, false);
     cfg.forecastTail       = getOrDefault<int>   (j, "forecast_tail",      1461, false);
- 
+
     if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
         throw ConfigException(
             "ConfigLoader: ssa.significance_level must be in (0, 1), got "
@@ -890,7 +901,103 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
             "ConfigLoader: ssa.wcorr_max_components must be >= 0, got "
             + std::to_string(cfg.wcorrMaxComponents) + ".");
     }
- 
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseDecomposition
+// -----------------------------------------------------------------------------
+
+DecompositionConfig ConfigLoader::_parseDecomposition(const nlohmann::json& j)
+{
+    DecompositionConfig cfg;
+
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",   "linear", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
+
+    const std::string method = getOrDefault<std::string>(j, "method", "classical", false);
+    if      (method == "classical") cfg.method = DecompositionMethodEnum::CLASSICAL;
+    else if (method == "stl")       cfg.method = DecompositionMethodEnum::STL;
+    else {
+        LOKI_WARNING("ConfigLoader: decomposition.method unknown value '"
+                     + method + "' -- using 'classical'.");
+        cfg.method = DecompositionMethodEnum::CLASSICAL;
+    }
+
+    cfg.period = getOrDefault<int>(j, "period", 1461, false);
+    if (cfg.period < 2) {
+        throw ConfigException(
+            "ConfigLoader: decomposition.period must be >= 2, got "
+            + std::to_string(cfg.period) + ".");
+    }
+
+    if (j.contains("classical")) {
+        const auto& c = j.at("classical");
+        cfg.classical.trendFilter  = getOrDefault<std::string>(c, "trend_filter",  "moving_average", false);
+        cfg.classical.seasonalType = getOrDefault<std::string>(c, "seasonal_type", "median",         false);
+
+        if (cfg.classical.trendFilter != "moving_average") {
+            LOKI_WARNING("ConfigLoader: decomposition.classical.trend_filter '"
+                         + cfg.classical.trendFilter
+                         + "' not recognised -- using 'moving_average'.");
+            cfg.classical.trendFilter = "moving_average";
+        }
+        if (cfg.classical.seasonalType != "median" && cfg.classical.seasonalType != "mean") {
+            throw ConfigException(
+                "ConfigLoader: decomposition.classical.seasonal_type must be "
+                "'median' or 'mean', got '" + cfg.classical.seasonalType + "'.");
+        }
+    }
+
+    if (j.contains("stl")) {
+        const auto& s = j.at("stl");
+        cfg.stl.nInner     = getOrDefault<int>   (s, "n_inner",      2,   false);
+        cfg.stl.nOuter     = getOrDefault<int>   (s, "n_outer",      1,   false);
+        cfg.stl.sDegree    = getOrDefault<int>   (s, "s_degree",     1,   false);
+        cfg.stl.tDegree    = getOrDefault<int>   (s, "t_degree",     1,   false);
+        cfg.stl.sBandwidth = getOrDefault<double>(s, "s_bandwidth",  0.0, false);
+        cfg.stl.tBandwidth = getOrDefault<double>(s, "t_bandwidth",  0.0, false);
+
+        if (cfg.stl.nInner < 1) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.n_inner must be >= 1, got "
+                + std::to_string(cfg.stl.nInner) + ".");
+        }
+        if (cfg.stl.nOuter < 0) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.n_outer must be >= 0, got "
+                + std::to_string(cfg.stl.nOuter) + ".");
+        }
+        if (cfg.stl.sDegree != 1 && cfg.stl.sDegree != 2) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.s_degree must be 1 or 2, got "
+                + std::to_string(cfg.stl.sDegree) + ".");
+        }
+        if (cfg.stl.tDegree != 1 && cfg.stl.tDegree != 2) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.t_degree must be 1 or 2, got "
+                + std::to_string(cfg.stl.tDegree) + ".");
+        }
+        if (cfg.stl.sBandwidth < 0.0 || cfg.stl.sBandwidth > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.s_bandwidth must be in [0, 1], got "
+                + std::to_string(cfg.stl.sBandwidth) + ".");
+        }
+        if (cfg.stl.tBandwidth < 0.0 || cfg.stl.tBandwidth > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: decomposition.stl.t_bandwidth must be in [0, 1], got "
+                + std::to_string(cfg.stl.tBandwidth) + ".");
+        }
+    }
+
+    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05, false);
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: decomposition.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
     return cfg;
 }
 

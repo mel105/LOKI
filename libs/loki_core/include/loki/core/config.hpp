@@ -385,6 +385,11 @@ struct PlotConfig {
     bool ssaWCorr         {true};   ///< W-correlation matrix heatmap.
     bool ssaComponents    {true};   ///< First N elementary components vs time.
     bool ssaReconstruction{true};   ///< Original + group reconstructions overlay.
+
+    // -- Decomposition pipeline plots -----------------------------------------
+    bool decompOverlay     {true};   ///< Original series with trend overlaid.
+    bool decompPanels      {true};   ///< 3-panel stacked: trend / seasonal / residual.
+    bool decompDiagnostics {false};  ///< Residual diagnostics (ACF, histogram, QQ).
 };
 
 // -----------------------------------------------------------------------------
@@ -499,14 +504,14 @@ struct ArimaConfig {
 // -----------------------------------------------------------------------------
 //  SsaConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
 // -----------------------------------------------------------------------------
- 
+
 struct SsaWindowConfig {
     int windowLength    {0};      ///< Explicit window length in samples. 0 = auto.
     int period          {0};      ///< Dominant period in samples (0 = unknown).
     int periodMultiplier{2};      ///< L = period * multiplier when auto and period > 0.
     int maxWindowLength {20000};  ///< Safety cap on auto-selected L (critical for high-rate data).
 };
- 
+
 struct SsaGroupingConfig {
     std::string method            {"wcorr"}; ///< "manual" | "wcorr" | "kmeans" | "variance"
     double      wcorrThreshold    {0.8};     ///< W-corr threshold for hierarchical cut (wcorr method).
@@ -514,11 +519,11 @@ struct SsaGroupingConfig {
     double      varianceThreshold {0.95};    ///< Cumulative variance kept (variance method).
     std::map<std::string, std::vector<int>> manualGroups; ///< Name -> eigentriple indices (manual method).
 };
- 
+
 struct SsaReconstructionConfig {
     std::string method {"diagonal_averaging"}; ///< "diagonal_averaging" | "simple"
 };
- 
+
 /**
  * @brief Top-level configuration for the loki_ssa pipeline.
  */
@@ -539,6 +544,49 @@ struct SsaConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  DecompositionConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/// Decomposition method selection.
+enum class DecompositionMethodEnum {
+    CLASSICAL, ///< Moving-average trend + per-slot seasonal median/mean.
+    STL        ///< Cleveland et al. (1990): iterative LOESS trend + seasonal.
+};
+
+/**
+ * @brief Configuration for the classical decomposition path.
+ */
+struct ClassicalDecompositionConfig {
+    std::string trendFilter  {"moving_average"}; ///< Trend estimator. "moving_average" only for now.
+    std::string seasonalType {"median"};          ///< Slot aggregation: "median" | "mean".
+};
+
+/**
+ * @brief Configuration for the STL decomposition path.
+ */
+struct StlDecompositionConfig {
+    int    nInner     {2};    ///< Inner loop iterations (trend + seasonal passes per outer step).
+    int    nOuter     {1};    ///< Outer (robustness) iterations. 0 = no robustness weighting.
+    int    sDegree    {1};    ///< Local polynomial degree for seasonal LOESS smoother.
+    int    tDegree    {1};    ///< Local polynomial degree for trend LOESS smoother.
+    double sBandwidth {0.0};  ///< Seasonal LOESS bandwidth fraction. 0 = auto (1.5 / period).
+    double tBandwidth {0.0};  ///< Trend LOESS bandwidth fraction. 0 = auto (1.5 * period / n).
+};
+
+/**
+ * @brief Top-level configuration for the loki_decomposition pipeline.
+ */
+struct DecompositionConfig {
+    std::string                  gapFillStrategy   {"linear"};
+    int                          gapFillMaxLength  {0};
+    DecompositionMethodEnum      method            {DecompositionMethodEnum::CLASSICAL};
+    int                          period            {1461};  ///< Period in samples.
+    ClassicalDecompositionConfig classical         {};
+    StlDecompositionConfig       stl               {};
+    double                       significanceLevel {0.05};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -556,6 +604,7 @@ struct AppConfig {
     StationarityConfig stationarity;
     ArimaConfig        arima;
     SsaConfig          ssa;
+    DecompositionConfig decomposition;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
