@@ -20,6 +20,7 @@
 #   arima            apps/loki_arima/loki_arima.exe
 #   ssa              apps/loki_ssa/loki_ssa.exe
 #   decomposition    apps/loki_ssa/loki_decomposition.exe
+#   spectral         apps/loki_ssa/loki_spectral.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -78,6 +79,7 @@ declare -A APP_EXE=(
     [arima]="apps/loki_arima/loki_arima.exe"
     [ssa]="apps/loki_ssa/loki_ssa.exe"
     [decomposition]="apps/loki_decomposition/loki_decomposition.exe"
+    [spectral]="apps/loki_spectral/loki_spectral.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -89,6 +91,7 @@ declare -A APP_CONFIG=(
     [arima]="config/arima.json"
     [ssa]="config/ssa.json"
     [decomposition]="config/decomposition.json"
+    [spectral]="config/spectral.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -116,7 +119,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|all)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;

@@ -89,6 +89,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.arima        = _parseArima        (j.value("arima",        json::object()));
     cfg.ssa          = _parseSsa          (j.value("ssa",          json::object()));
     cfg.decomposition = _parseDecomposition(j.value("decomposition", json::object()));
+    cfg.spectral      = _parseSpectral     (j.value("spectral",      json::object()));
 
     return cfg;
 }
@@ -521,7 +522,19 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("decomp_overlay"))     cfg.decompOverlay     = e["decomp_overlay"].get<bool>();
         if (e.contains("decomp_panels"))      cfg.decompPanels      = e["decomp_panels"].get<bool>();
         if (e.contains("decomp_diagnostics")) cfg.decompDiagnostics = e["decomp_diagnostics"].get<bool>();
+
+        // Spectral pipeline (readable from "enabled" block)
+        if (e.contains("spectral_psd"))         cfg.spectralPsd         = e["spectral_psd"].get<bool>();
+        if (e.contains("spectral_peaks"))       cfg.spectralPeaks       = e["spectral_peaks"].get<bool>();
+        if (e.contains("spectral_spectrogram")) cfg.spectralSpectrogram = e["spectral_spectrogram"].get<bool>();
     }
+
+    // Spectral flags at top level of "plots" block (used by spectral.json)
+    if (j.contains("spectral_psd"))         cfg.spectralPsd         = j["spectral_psd"].get<bool>();
+    if (j.contains("spectral_peaks"))       cfg.spectralPeaks       = j["spectral_peaks"].get<bool>();
+    if (j.contains("spectral_amplitude"))   cfg.spectralAmplitude   = j["spectral_amplitude"].get<bool>();
+    if (j.contains("spectral_phase"))       cfg.spectralPhase       = j["spectral_phase"].get<bool>();
+    if (j.contains("spectral_spectrogram")) cfg.spectralSpectrogram = j["spectral_spectrogram"].get<bool>();
 
     return cfg;
 }
@@ -995,6 +1008,125 @@ DecompositionConfig ConfigLoader::_parseDecomposition(const nlohmann::json& j)
     if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
         throw ConfigException(
             "ConfigLoader: decomposition.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseSpectral
+// -----------------------------------------------------------------------------
+
+SpectralConfig ConfigLoader::_parseSpectral(const nlohmann::json& j)
+{
+    SpectralConfig cfg;
+
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
+
+    const std::string method = getOrDefault<std::string>(j, "method", "auto", false);
+    if (method != "auto" && method != "fft" && method != "lomb_scargle") {
+        LOKI_WARNING("ConfigLoader: spectral.method unknown value '"
+                     + method + "' -- using 'auto'.");
+        cfg.method = "auto";
+    } else {
+        cfg.method = method;
+    }
+
+    if (j.contains("fft")) {
+        const auto& f = j.at("fft");
+        cfg.fft.windowFunction = getOrDefault<std::string>(f, "window_function", "hann", false);
+        const std::vector<std::string> validWindows =
+            {"hann", "hamming", "blackman", "flattop", "rectangular"};
+        bool windowValid = false;
+        for (const auto& w : validWindows) {
+            if (cfg.fft.windowFunction == w) { windowValid = true; break; }
+        }
+        if (!windowValid) {
+            LOKI_WARNING("ConfigLoader: spectral.fft.window_function '"
+                         + cfg.fft.windowFunction + "' not recognised -- using 'hann'.");
+            cfg.fft.windowFunction = "hann";
+        }
+        cfg.fft.welch         = getOrDefault<bool>  (f, "welch",          false, false);
+        cfg.fft.welchSegments = getOrDefault<int>   (f, "welch_segments", 8,     false);
+        cfg.fft.welchOverlap  = getOrDefault<double>(f, "welch_overlap",  0.5,   false);
+        if (cfg.fft.welchSegments < 2) {
+            throw ConfigException(
+                "ConfigLoader: spectral.fft.welch_segments must be >= 2, got "
+                + std::to_string(cfg.fft.welchSegments) + ".");
+        }
+        if (cfg.fft.welchOverlap < 0.0 || cfg.fft.welchOverlap >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: spectral.fft.welch_overlap must be in [0, 1), got "
+                + std::to_string(cfg.fft.welchOverlap) + ".");
+        }
+    }
+
+    if (j.contains("lomb_scargle")) {
+        const auto& ls = j.at("lomb_scargle");
+        cfg.lombScargle.oversampling = getOrDefault<double>(ls, "oversampling",  4.0,   false);
+        cfg.lombScargle.fastNfft     = getOrDefault<bool>  (ls, "fast_nfft",     false, false);
+        cfg.lombScargle.fapThreshold = getOrDefault<double>(ls, "fap_threshold", 0.01,  false);
+        if (cfg.lombScargle.oversampling < 1.0) {
+            throw ConfigException(
+                "ConfigLoader: spectral.lomb_scargle.oversampling must be >= 1.0, got "
+                + std::to_string(cfg.lombScargle.oversampling) + ".");
+        }
+        if (cfg.lombScargle.fapThreshold <= 0.0 || cfg.lombScargle.fapThreshold >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: spectral.lomb_scargle.fap_threshold must be in (0, 1), got "
+                + std::to_string(cfg.lombScargle.fapThreshold) + ".");
+        }
+    }
+
+    if (j.contains("spectrogram")) {
+        const auto& sg = j.at("spectrogram");
+        cfg.spectrogram.enabled        = getOrDefault<bool>  (sg, "enabled",          false, false);
+        cfg.spectrogram.windowLength   = getOrDefault<int>   (sg, "window_length",    1461,  false);
+        cfg.spectrogram.overlap        = getOrDefault<double>(sg, "overlap",          0.5,   false);
+        cfg.spectrogram.focusPeriodMin = getOrDefault<double>(sg, "focus_period_min", 0.0,   false);
+        cfg.spectrogram.focusPeriodMax = getOrDefault<double>(sg, "focus_period_max", 0.0,   false);
+        if (cfg.spectrogram.windowLength < 4) {
+            throw ConfigException(
+                "ConfigLoader: spectral.spectrogram.window_length must be >= 4, got "
+                + std::to_string(cfg.spectrogram.windowLength) + ".");
+        }
+        if (cfg.spectrogram.overlap < 0.0 || cfg.spectrogram.overlap >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: spectral.spectrogram.overlap must be in [0, 1), got "
+                + std::to_string(cfg.spectrogram.overlap) + ".");
+        }
+        if (cfg.spectrogram.focusPeriodMax > 0.0 &&
+            cfg.spectrogram.focusPeriodMax <= cfg.spectrogram.focusPeriodMin) {
+            throw ConfigException(
+                "ConfigLoader: spectral.spectrogram.focus_period_max must be > "
+                "focus_period_min when both are non-zero.");
+        }
+    }
+
+    if (j.contains("peaks")) {
+        const auto& pk = j.at("peaks");
+        cfg.peaks.topN          = getOrDefault<int>   (pk, "top_n",           10,  false);
+        cfg.peaks.minPeriodDays = getOrDefault<double>(pk, "min_period_days",  0.0, false);
+        cfg.peaks.maxPeriodDays = getOrDefault<double>(pk, "max_period_days",  0.0, false);
+        if (cfg.peaks.topN < 1) {
+            throw ConfigException(
+                "ConfigLoader: spectral.peaks.top_n must be >= 1, got "
+                + std::to_string(cfg.peaks.topN) + ".");
+        }
+        if (cfg.peaks.maxPeriodDays > 0.0 &&
+            cfg.peaks.maxPeriodDays <= cfg.peaks.minPeriodDays) {
+            throw ConfigException(
+                "ConfigLoader: spectral.peaks.max_period_days must be > min_period_days "
+                "when both are non-zero.");
+        }
+    }
+
+    cfg.significanceLevel = getOrDefault<double>(j, "significance_level", 0.05, false);
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: spectral.significance_level must be in (0, 1), got "
             + std::to_string(cfg.significanceLevel) + ".");
     }
 

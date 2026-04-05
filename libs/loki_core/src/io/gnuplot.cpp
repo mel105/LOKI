@@ -28,9 +28,9 @@ using namespace loki;
 Gnuplot::Gnuplot()
 {
 #ifdef _WIN32
-    m_pipe = _popen("gnuplot -persist", "w");
+    m_pipe = _popen("gnuplot", "w");
 #else
-    m_pipe = popen("gnuplot -persist", "w");
+    m_pipe = popen("gnuplot", "w");
 #endif
 
     if (!m_pipe) {

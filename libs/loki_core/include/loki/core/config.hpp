@@ -390,6 +390,13 @@ struct PlotConfig {
     bool decompOverlay     {true};   ///< Original series with trend overlaid.
     bool decompPanels      {true};   ///< 3-panel stacked: trend / seasonal / residual.
     bool decompDiagnostics {false};  ///< Residual diagnostics (ACF, histogram, QQ).
+
+    // -- Spectral pipeline plots ----------------------------------------------
+    bool spectralPsd         {true};   ///< PSD / periodogram plot (log-log or log-linear).
+    bool spectralPeaks       {true};   ///< Annotated dominant peaks on PSD plot.
+    bool spectralAmplitude   {false};  ///< Amplitude spectrum |X[k]| (linear scale).
+    bool spectralPhase       {false};  ///< Phase spectrum atan2(Im,Re) in radians (FFT only).
+    bool spectralSpectrogram {false};  ///< 2-D time-frequency heatmap (STFT).
 };
 
 // -----------------------------------------------------------------------------
@@ -587,6 +594,63 @@ struct DecompositionConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  SpectralConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Configuration for the FFT / Welch PSD path.
+ */
+struct SpectralFftConfig {
+    std::string windowFunction {"hann"};  ///< "hann" | "hamming" | "blackman" | "flattop" | "rectangular"
+    bool        welch          {false};   ///< Enable Welch averaged PSD.
+    int         welchSegments  {8};       ///< Number of overlapping segments for Welch method.
+    double      welchOverlap   {0.5};     ///< Segment overlap fraction [0, 1).
+};
+
+/**
+ * @brief Configuration for the Lomb-Scargle periodogram path.
+ */
+struct SpectralLombScargleConfig {
+    double oversampling {4.0};    ///< Frequency grid oversampling factor.
+    bool   fastNfft     {false};  ///< Use NFFT approximation for n >= 100k (Press & Rybicki 1989).
+    double fapThreshold {0.01};   ///< FAP significance threshold for peak reporting.
+};
+
+/**
+ * @brief Configuration for the STFT spectrogram.
+ */
+struct SpectralSpectrogramConfig {
+    bool   enabled        {false};
+    int    windowLength   {1461};  ///< STFT window in samples.
+    double overlap        {0.5};   ///< Window overlap fraction [0, 1).
+    double focusPeriodMin {0.0};   ///< Zoom lower bound in days (0 = no zoom).
+    double focusPeriodMax {0.0};   ///< Zoom upper bound in days (0 = no zoom).
+};
+
+/**
+ * @brief Configuration for peak detection and reporting.
+ */
+struct SpectralPeakConfig {
+    int    topN          {10};   ///< Number of top peaks to report.
+    double minPeriodDays {0.0};  ///< Ignore peaks below this period in days (0 = no limit).
+    double maxPeriodDays {0.0};  ///< Ignore peaks above this period in days (0 = no limit).
+};
+
+/**
+ * @brief Top-level configuration for the loki_spectral pipeline.
+ */
+struct SpectralConfig {
+    std::string                gapFillStrategy  {"linear"};
+    int                        gapFillMaxLength {0};
+    std::string                method           {"auto"};  ///< "auto" | "fft" | "lomb_scargle"
+    SpectralFftConfig          fft              {};
+    SpectralLombScargleConfig  lombScargle      {};
+    SpectralSpectrogramConfig  spectrogram      {};
+    SpectralPeakConfig         peaks            {};
+    double                     significanceLevel{0.05};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -605,6 +669,7 @@ struct AppConfig {
     ArimaConfig        arima;
     SsaConfig          ssa;
     DecompositionConfig decomposition;
+    SpectralConfig      spectral;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

@@ -1,0 +1,57 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [
+            0,
+            1
+        ],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [
+            3
+        ],
+        "merge_strategy": "separate"
+    },
+    "output": {
+        "log_level": "info"
+    },
+    "plots": {
+        "output_format": "png",
+        "spectral_psd": true,
+        "spectral_peaks": true,
+        "spectral_amplitude": true,
+        "spectral_phase": true,
+        "spectral_spectrogram": true
+    },
+    "spectral": {
+        "gap_fill_strategy": "linear",
+        "gap_fill_max_length": 0,
+        "method": "auto",
+        "fft": {
+            "window_function": "hann",
+            "welch": false,
+            "welch_segments": 8,
+            "welch_overlap": 0.5
+        },
+        "lomb_scargle": {
+            "oversampling": 4.0,
+            "fast_nfft": false,
+            "fap_threshold": 0.01
+        },
+        "spectrogram": {
+            "enabled": true,
+            "window_length": 1461,
+            "overlap": 0.75,
+            "focus_period_min": 30.0,
+            "focus_period_max": 500.0
+        },
+        "peaks": {
+            "top_n": 10,
+            "min_period_days": 1.0,
+            "max_period_days": 400.0
+        },
+        "significance_level": 0.05
+    }
+}
