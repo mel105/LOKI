@@ -397,6 +397,15 @@ struct PlotConfig {
     bool spectralAmplitude   {false};  ///< Amplitude spectrum |X[k]| (linear scale).
     bool spectralPhase       {false};  ///< Phase spectrum atan2(Im,Re) in radians (FFT only).
     bool spectralSpectrogram {false};  ///< 2-D time-frequency heatmap (STFT).
+
+     // -- Kalman pipeline plots ------------------------------------------------
+    bool kalmanOverlay     {true};   ///< Original + filtered + (smoothed) + confidence band.
+    bool kalmanInnovations {true};   ///< Innovations vs time with +/-2sigma envelope.
+    bool kalmanGain        {false};  ///< Kalman gain K[t][0] vs time.
+    bool kalmanUncertainty {false};  ///< Filter/smoother std dev sqrt(P[t]) vs time.
+    bool kalmanForecast    {true};   ///< Forecast with prediction interval (if steps > 0).
+    bool kalmanDiagnostics {false};  ///< 4-panel residual diagnostics (ACF, QQ, histogram).
+
 };
 
 // -----------------------------------------------------------------------------
@@ -651,25 +660,67 @@ struct SpectralConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  KalmanConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+ 
+/**
+ * @brief Noise covariance estimation settings for the Kalman filter.
+ */
+struct KalmanNoiseConfig {
+    std::string estimation    {"manual"}; ///< "manual" | "heuristic" | "em"
+    double      Q             {1.0};      ///< Process noise variance (manual mode).
+    double      R             {1.0};      ///< Measurement noise variance (manual mode).
+    double      smoothingFactor{10.0};   ///< Q = R / smoothingFactor (heuristic mode).
+    double      QInit         {1.0};      ///< Initial Q for EM.
+    double      RInit         {1.0};      ///< Initial R for EM.
+    int         emMaxIter     {100};      ///< Maximum EM iterations.
+    double      emTol         {1.0e-6};   ///< EM convergence tolerance (relative log-likelihood).
+};
+ 
+/**
+ * @brief Forecast settings for the Kalman pipeline.
+ */
+struct KalmanForecastConfig {
+    int    steps          {0};    ///< Prediction steps beyond last observation (0 = no forecast).
+    double confidenceLevel{0.95}; ///< Confidence level for prediction interval.
+};
+ 
+// KalmanNoiseConfig and KalmanForecastConfig defined above (GCC 13 pattern).
+ 
+/**
+ * @brief Top-level configuration for the loki_kalman pipeline.
+ */
+struct KalmanConfig {
+    std::string          gapFillStrategy  {"auto"};  ///< "auto"|"linear"|"median_year"|"none"
+    int                  gapFillMaxLength {0};        ///< Max gap length to fill (0 = unlimited).
+    std::string          model            {"local_level"}; ///< "local_level"|"local_trend"|"constant_velocity"
+    KalmanNoiseConfig    noise            {};
+    std::string          smoother         {"rts"};    ///< "none" | "rts"
+    KalmanForecastConfig forecast         {};
+    double               significanceLevel{0.05};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
 struct AppConfig {
     std::filesystem::path workspace;
 
-    InputConfig        input;
-    OutputConfig       output;
-    PlotConfig         plots;
-    HomogeneityConfig  homogeneity;
-    StatsConfig        stats;
-    OutlierConfig      outlier;
-    FilterConfig       filter;
-    RegressionConfig   regression;
-    StationarityConfig stationarity;
-    ArimaConfig        arima;
-    SsaConfig          ssa;
+    InputConfig         input;
+    OutputConfig        output;
+    PlotConfig          plots;
+    HomogeneityConfig   homogeneity;
+    StatsConfig         stats;
+    OutlierConfig       outlier;
+    FilterConfig        filter;
+    RegressionConfig    regression;
+    StationarityConfig  stationarity;
+    ArimaConfig         arima;
+    SsaConfig           ssa;
     DecompositionConfig decomposition;
     SpectralConfig      spectral;
+    KalmanConfig        kalman;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

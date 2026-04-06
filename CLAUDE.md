@@ -126,7 +126,7 @@ All plot output files follow this naming convention:
 ```
 
 - **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression` |
-                `stationarity` | `arima` | `ssa` | `decomposition` | `spectral`
+                `stationarity` | `arima` | `ssa` | `decomposition` | `spectral` | `kalman`
 - **dataset** : input filename stem without extension
 - **parameter** : series `componentName` from metadata
 - **plottype** : descriptive short name
@@ -142,6 +142,16 @@ All plot output files follow this naming convention:
   delegate generic plots (ACF, histogram, QQ) to `loki::Plot::residualDiagnostics()`.
 - `Plot::residualDiagnostics()` is a **non-static member method** -- always instantiate
   `Plot corePlot(m_cfg)` and call `corePlot.residualDiagnostics(residuals, fittedValues, title)`.
+- **CRITICAL -- gnuplot pipe and tmp files**: Do NOT write data to a tmp file and then
+  immediately open a gnuplot pipe to read it. On Windows/MINGW64 the OS buffer may not
+  be flushed before gnuplot opens the file. Use gnuplot inline data (`plot '-'`) for
+  PSD, amplitude, phase, and other single-dataset plots. Only use tmp files for formats
+  that cannot be sent inline (e.g. `nonuniform matrix` for spectrograms) -- in that case
+  call `ofs.flush(); ofs.close();` explicitly before opening the Gnuplot object.
+- **gnuplot `-persist` flag is REMOVED** from `gnuplot.cpp`. The constructor now calls
+  `gnuplot` without `-persist`. This eliminates zombie gnuplot processes on Windows that
+  cause race conditions with tmp files in subsequent runs. This change does not affect
+  any existing modules (all LOKI plotters generate files, never interactive windows).
 
 ---
 
@@ -169,7 +179,9 @@ loki_ssa              (depends on loki_core only)                  <- COMPLETE
 
 loki_decomposition    (depends on loki_core only)                  <- COMPLETE
 
-loki_spectral         (depends on loki_core only)                  <- NEXT
+loki_spectral         (depends on loki_core only)                  <- COMPLETE
+
+loki_kalman           (depends on loki_core only)                  <- NEXT
 ```
 
 ### Rules
@@ -200,7 +212,8 @@ loki/
 |   +-- loki_arima/
 |   +-- loki_ssa/
 |   +-- loki_decomposition/
-|   +-- loki_spectral/              <- NEXT
+|   +-- loki_spectral/
+|   +-- loki_kalman/                <- NEXT
 |       +-- CMakeLists.txt
 |       +-- main.cpp
 +-- libs/
@@ -222,16 +235,18 @@ loki/
 |   +-- loki_arima/
 |   +-- loki_ssa/
 |   +-- loki_decomposition/
-|   +-- loki_spectral/              <- NEXT
+|   +-- loki_spectral/
+|   +-- loki_kalman/                <- NEXT
 |       +-- CMakeLists.txt
-|       +-- include/loki/spectral/
-|       |   +-- spectralResult.hpp
-|       |   +-- fftAnalyzer.hpp/.cpp
-|       |   +-- lombScargle.hpp/.cpp
-|       |   +-- peakDetector.hpp/.cpp
-|       |   +-- spectrogramAnalyzer.hpp/.cpp
-|       |   +-- spectralAnalyzer.hpp/.cpp
-|       |   +-- plotSpectral.hpp/.cpp
+|       +-- include/loki/kalman/
+|       |   +-- kalmanModel.hpp
+|       |   +-- kalmanModelBuilder.hpp
+|       |   +-- kalmanFilter.hpp/.cpp
+|       |   +-- rtsSmoother.hpp/.cpp
+|       |   +-- emEstimator.hpp/.cpp
+|       |   +-- kalmanResult.hpp
+|       |   +-- kalmanAnalyzer.hpp/.cpp
+|       |   +-- plotKalman.hpp/.cpp
 |       +-- src/
 +-- tests/
 +-- config/
@@ -241,7 +256,8 @@ loki/
 |   +-- arima.json
 |   +-- ssa.json
 |   +-- decomposition.json
-|   +-- spectral.json               <- NEXT
+|   +-- spectral.json
+|   +-- kalman.json                 <- NEXT
 +-- scripts/
 |   +-- loki.sh
 +-- docs/
@@ -257,10 +273,8 @@ loki/
 | `nlohmann_json` | 3.11.3 | Configuration files |
 | `Catch2` | 3.5.2 | Unit and integration tests |
 
-**No new external dependencies for `loki_spectral`.** FFT is implemented
-as a self-contained Cooley-Tukey radix-2 algorithm in `fftAnalyzer.cpp`.
-Lomb-Scargle is a direct O(n*f) implementation with optional O(n log n)
-NFFT approximation, both self-contained.
+**No new external dependencies for `loki_kalman`.** Kalman filter matrices
+use `Eigen::MatrixXd` / `Eigen::VectorXd`. All algorithms are self-contained.
 
 ---
 
@@ -269,13 +283,13 @@ NFFT approximation, both self-contained.
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
 ```bash
-./scripts/loki.sh build spectral --copy-dlls
-./scripts/loki.sh run spectral
+./scripts/loki.sh build kalman --copy-dlls
+./scripts/loki.sh run kalman
 ./scripts/loki.sh test --rebuild
 ```
 
 ### CMake target name collision
-Executable: `loki_spectral_app` with `OUTPUT_NAME "loki_spectral"`.
+Executable: `loki_kalman_app` with `OUTPUT_NAME "loki_kalman"`.
 Same pattern for all apps: library target != executable target name.
 
 ### Runtime DLLs (Windows)
@@ -304,24 +318,25 @@ target_include_directories(loki_core SYSTEM PUBLIC
                   `SsaConfig` with `SsaWindowConfig`, `SsaGroupingConfig`,
                   `SsaReconstructionConfig`,
                   `DecompositionConfig` with `ClassicalDecompositionConfig`,
-                  `StlDecompositionConfig`
-- `configLoader.hpp / .cpp` -- `_parseDecomposition()` added
+                  `StlDecompositionConfig`,
+                  `SpectralConfig` with `SpectralFftConfig`,
+                  `SpectralLombScargleConfig`, `SpectralSpectrogramConfig`,
+                  `SpectralPeakConfig`
+- `configLoader.hpp / .cpp` -- `_parseSpectral()` added
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
 - `gapFiller.hpp / .cpp`
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
 - `descriptive.hpp / .cpp`
-- `filter.hpp / .cpp` (stats) -- `movingAverage`, `exponentialMovingAverage`,
-                                  `weightedMovingAverage` (free functions, not filters)
+- `filter.hpp / .cpp` (stats)
 - `distributions.hpp / .cpp`
 - `hypothesis.hpp / .cpp`
 - `metrics.hpp / .cpp`
-- `wCorrelation.hpp / .cpp` -- w-correlation matrix for SSA
+- `wCorrelation.hpp / .cpp`
 - `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
-- `gnuplot.hpp / .cpp`
-- `plot.hpp / .cpp` -- `Plot::residualDiagnostics(residuals, fittedValues, title)` is
-                        a non-static member method; always instantiate `Plot corePlot(cfg)`
+- `gnuplot.hpp / .cpp` -- `-persist` flag REMOVED (see plot rules above)
+- `plot.hpp / .cpp`
 
 ### loki_core/math -- complete
 - `lsqResult.hpp`
@@ -329,272 +344,250 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `designMatrix.hpp / .cpp`
 - `hatMatrix.hpp / .cpp`
 - `svd.hpp` -- header-only (BDCSVD linking bug workaround)
-- `lm.hpp / .cpp` -- LmSolver for Levenberg-Marquardt; `ModelFn = std::function<double(double, const Eigen::VectorXd&)>`
+- `lm.hpp / .cpp`
 - `lagMatrix.hpp / .cpp`
-- `embedMatrix.hpp / .cpp` -- Hankel trajectory matrix for SSA
-- `randomizedSvd.hpp / .cpp` -- Halko et al. (2011) randomized truncated SVD
+- `embedMatrix.hpp / .cpp`
+- `randomizedSvd.hpp / .cpp`
 
 ### loki_outlier -- complete (O1-O4)
-
-**O1-O3: standard detectors** -- `IqrDetector`, `MadDetector`, `ZScoreDetector`,
-all inherit from `OutlierDetector` base. Used via `OutlierCleaner`.
-
-**O4: HatMatrixDetector** -- COMPLETE. Does NOT inherit from `OutlierDetector`
-(fundamentally different interface). Implemented in `loki_outlier` but integrated
-directly in `apps/loki_outlier/main.cpp` via a separate processing branch.
-
-Key facts about `HatMatrixDetector`:
-- Class: `loki::outlier::HatMatrixDetector` in `hatMatrixDetector.hpp`
-- Config: `HatMatrixDetectorConfig` (outside class, GCC 13 pattern)
-  - `arOrder` (int, default 5) -- AR lag order p
-  - `significanceLevel` (double, default 0.05)
-- Result: `HatMatrixResult` struct:
-  - `outlierIndices` -- indices into original series (offset by arOrder)
-  - `leverages` -- Eigen::VectorXd, length = n - arOrder
-  - `threshold` -- chi2Quantile(1-alpha, p) / n
-  - `arOrder`, `n`, `nOutliers`
-- Input: `std::vector<double>` residuals (NaN-free)
-- Algorithm: DEH method (Hau & Tong 1989) -- AR(p) lag matrix -> hat matrix
-  diagonal -> chi-squared threshold
-- Integration in `main.cpp`: separate `if (method == "hat_matrix")` branch,
-  converts result to `OutlierResult` via `toOutlierResult()` helper for
-  reuse of existing plot methods
-
 ### loki_homogeneity -- complete
 ### loki_stationarity -- complete
-
 ### loki_filter -- complete
-All filters inherit from `loki::Filter` base class (pure virtual `apply()` + `name()`).
-Located in `libs/loki_filter/include/loki/filter/`.
-
-Complete filter set:
-- `MovingAverageFilter` -- centered MA, bfill/ffill edges
-- `EmaFilter` -- exponential MA (causal, no edge NaN)
-- `WeightedMovingAverageFilter` -- user-supplied kernel weights
-- `KernelSmoother` -- Epanechnikov / Gaussian / Uniform / Triangular kernels
-- `LoessFilter` -- locally weighted polynomial (degree 1 or 2), optional IRLS robustness
-- `SavitzkyGolayFilter` -- polynomial convolution, precomputed coefficients, asymmetric edge handling
-- `FilterWindowAdvisor` -- auto bandwidth estimation (Silverman MAD, Silverman, ACF peak)
-- `PlotFilter` -- diagnostic plots for filter pipeline
-- `FilterResult` struct: `{filtered, residuals, filterName, effectiveWindow, effectiveBandwidth}`
-
-**SplineFilter** -- planned future addition (cubic spline smoothing). Not yet implemented.
-Will live in `loki_filter` alongside existing filters.
-
 ### loki_regression -- complete (R1-R8)
-
-Complete regressor set:
-- `LinearRegressor`, `PolynomialRegressor`, `HarmonicRegressor`, `TrendEstimator`
-- `RobustRegressor` (IRLS), `CalibrationRegressor` (TLS via SVD)
-- `NonlinearRegressor` (R8) -- Levenberg-Marquardt, COMPLETE
-
-Key facts about `NonlinearRegressor`:
-- Does NOT inherit from `Regressor` base (incompatible interface)
-- Built-in models (via `NonlinearModelEnum`):
-  - `EXPONENTIAL`: f(x, [a,b]) = a * exp(b*x)
-  - `LOGISTIC`: f(x, [L,k,x0]) = L / (1 + exp(-k*(x-x0)))
-  - `GAUSSIAN`: f(x, [A,mu,sigma]) = A * exp(-((x-mu)^2)/(2*sigma^2))
-- Custom model via constructor: `NonlinearRegressor(cfg, modelFn, p0)`
-  where `ModelFn = std::function<double(double, const Eigen::VectorXd&)>`
-- `fit(ts)` returns `RegressionResult` (pipeline consistent)
-- `predict(xNew)` returns `vector<PredictionPoint>` with delta-method intervals
-- x-axis convention: `x = mjd - tRef` (same as all other regressors)
-- Jacobian: numerical via central differences
-- `result.converged` flag -- check and log warning if false
-
 ### loki_arima -- complete
 ### loki_ssa -- complete (S1-S5)
 ### loki_decomposition -- complete
 
-Key facts about `loki_decomposition`:
-- `ClassicalDecomposer`: MA trend (bfill/ffill edges via GapFiller) + modulo-period slot median/mean
-- `StlDecomposer`: private weighted LOESS (no dependency on loki_filter),
-  bisquare outer robustness weights, inner/outer loop structure per Cleveland (1990)
-- `DecompositionAnalyzer`: orchestrator, uses `DataManager` for loading
-- `PlotDecomposition`: `plotOverlay`, `plotPanels`, `plotDiagnostics`
-  (diagnostics delegates to `Plot corePlot(cfg); corePlot.residualDiagnostics(...)`)
-- Seasonal normalization: slot values normalized so sum over one period = 0
-- Period is always in **samples** (not time units)
+### loki_spectral -- COMPLETE
+
+All files implemented and validated on 6h climatological data (n=36524, 25 years).
+
+```
+libs/loki_spectral/include/loki/spectral/
+    spectralResult.hpp       -- SpectralPeak, SpectralResult, SpectrogramResult
+                                SpectralResult now includes amplitudes and phases vectors
+    fftAnalyzer.hpp/.cpp     -- Cooley-Tukey radix-2 FFT, Welch PSD, 5 window functions
+                                FftFrame internal struct carries freq+power+amplitude+phase
+    lombScargle.hpp/.cpp     -- Lomb-Scargle periodogram, Baluev (2008) FAP
+                                amplitudes = sqrt(power); phases empty for L-S
+    peakDetector.hpp/.cpp    -- local maxima, noise floor (median), FAP filter, top-N
+    spectrogramAnalyzer.hpp/.cpp -- STFT sliding window, focus period zoom
+    spectralAnalyzer.hpp/.cpp    -- orchestrator: gap fill, method select, peaks, plots, protocol
+    plotSpectral.hpp/.cpp        -- PSD, amplitude, phase, spectrogram plots
+```
+
+Key facts about `loki_spectral`:
+- Method auto-selection: < 5% steps exceed 1.1x median -> FFT, else Lomb-Scargle
+- FFT: self-contained Cooley-Tukey radix-2, zero-padding to next pow2
+- Amplitude spectrum: `|X[k]| / window_sum` (physical units, same as input signal)
+- Phase spectrum: `atan2(Im, Re)`, only plotted where amplitude > 1% of max
+- Welch: overlapping segments, averaged PSD; reduces variance, loses frequency resolution
+- Lomb-Scargle FAP: Baluev (2008) analytic approximation
+- Spectrogram: STFT with `nonuniform matrix` gnuplot format; focus period zoom
+- **Plot flags** in `plots` section (NOT inside `"enabled"` sub-object):
+  `spectral_psd`, `spectral_peaks`, `spectral_amplitude`, `spectral_phase`,
+  `spectral_spectrogram`
+- **Inline gnuplot data** used for PSD/amplitude/phase (no tmp files for these)
+- **Tmp file** used only for spectrogram (nonuniform matrix format)
+
+PlotConfig spectral fields (config.hpp):
+```cpp
+bool spectralPsd         {true};
+bool spectralPeaks       {true};
+bool spectralAmplitude   {false};
+bool spectralPhase       {false};
+bool spectralSpectrogram {false};
+```
+
+loki.sh registration:
+```
+["spectral"]="loki_spectral_app"
+```
 
 ---
 
-## NEXT THREAD: loki_spectral
+## NEXT THREAD: loki_kalman
 
-### What loki_spectral does
-Spectral analysis of time series: identifies dominant frequencies/periods,
-estimates power spectral density, and detects statistically significant peaks.
-Handles both uniformly and non-uniformly sampled series.
+### What loki_kalman does
+Kalman filter pipeline for state estimation, smoothing, prediction, and
+uncertainty quantification. Handles single-parameter time series from
+climatological, GNSS, and train sensor data at any sampling rate.
 
-### Method selection
-```json
-"spectral": {
-    "method": "auto"
-}
-```
+Three filter variants: standard linear Kalman filter, RTS backward smoother
+(Rauch-Tung-Striebel), and EM-based noise covariance estimation.
+Extended KF and UKF are planned for a later thread.
 
-| Value | Behaviour |
+### Primary use cases
+- **TROPO** (IWV, tropospheric delay): slow-varying signal + fast noise.
+  Local level or local trend model. 6h resolution. Prediction: hours to days.
+- **TRAIN** (velocity from pulse encoder or Doppler radar via RS485):
+  state = [velocity, acceleration]. ms resolution.
+  Prediction: 0.1 -- 1 second.
+
+### State space models (built-in)
+
+| Model | State vector | F matrix | H matrix | Best for |
+|---|---|---|---|---|
+| `local_level` | `[x]` | `[1]` | `[1]` | IWV, troposfera, slowly varying signals |
+| `local_trend` | `[x, x_dot]` | `[[1,dt],[0,1]]` | `[1,0]` | GNSS coordinates with drift |
+| `constant_velocity` | `[v, a]` | `[[1,dt],[0,1]]` | `[1,0]` | Train velocity (measured directly) |
+
+Note: `local_trend` and `constant_velocity` have identical F/H structure but
+different physical interpretation and default Q/R values.
+
+### Noise estimation methods
+
+| Method | Description |
 |---|---|
-| `"auto"` | Inspects the series: if uniformly sampled (< 5% of samples exceed 1.1x median step) -> FFT, otherwise -> Lomb-Scargle |
-| `"fft"` | Always FFT. Requires gap-free input (GapFiller runs first). Warning logged if gaps remain. |
-| `"lomb_scargle"` | Always Lomb-Scargle. Works on non-uniform and gappy series directly. |
+| `manual` | User specifies Q and R directly in JSON |
+| `heuristic` | R = var(measurements), Q = R / smoothing_factor |
+| `em` | EM algorithm: iterates Kalman forward + RTS backward to maximize log-likelihood |
+
+EM M-step update equations:
+```
+Q_new = (1/T) * sum( P[t|T] + (x[t|T] - F*x[t-1|T]) * (...)^T )
+R_new = (1/T) * sum( (y[t] - H*x[t|T])^2 + H*P[t|T]*H^T )
+```
 
 ### Planned module files
 ```
-libs/loki_spectral/include/loki/spectral/
-    spectralResult.hpp          -- SpectralResult, SpectralPeak, SpectrogramResult
-    fftAnalyzer.hpp/.cpp        -- Cooley-Tukey radix-2 FFT, Welch PSD, windowing
-    lombScargle.hpp/.cpp        -- Lomb-Scargle periodogram + FAP
-    peakDetector.hpp/.cpp       -- peak finding, significance ranking, top-N output
-    spectrogramAnalyzer.hpp/.cpp -- STFT sliding-window spectrogram
-    spectralAnalyzer.hpp/.cpp   -- orchestrator: method selection, gap fill, output
-    plotSpectral.hpp/.cpp       -- PSD plot, periodogram, spectrogram heatmap
+libs/loki_kalman/include/loki/kalman/
+    kalmanModel.hpp          -- KalmanModel struct: F, H, Q, R, x0, P0 (all Eigen matrices)
+    kalmanModelBuilder.hpp   -- factory methods: localLevel(), localTrend(),
+                                constantVelocity(dt); builds KalmanModel from scalars
+    kalmanFilter.hpp/.cpp    -- forward pass: predict() + update() + run()
+    rtsSmoother.hpp/.cpp     -- RTS backward smoother: smooth(KalmanResult)
+    emEstimator.hpp/.cpp     -- EM for Q/R: iterate forward+backward until convergence
+    kalmanResult.hpp         -- KalmanResult struct (see below)
+    kalmanAnalyzer.hpp/.cpp  -- orchestrator: gap fill, build model, run, smooth, plot, protocol
+    plotKalman.hpp/.cpp      -- all plots (inline gnuplot data, no tmp files)
 ```
 
-### Key data structures (to design in thread)
+### KalmanResult struct
 ```cpp
-struct SpectralPeak {
-    double periodDays;      // period in days (primary output for protocols)
-    double freqCpd;         // frequency in cycles per day
-    double power;           // normalised power [0, 1]
-    double fap;             // false alarm probability (Lomb-Scargle only)
-    int    rank;            // 1 = strongest peak
-};
-
-struct SpectralResult {
-    std::vector<double>      frequencies;  // cycles per day
-    std::vector<double>      power;        // PSD or normalised periodogram
-    std::vector<SpectralPeak> peaks;       // sorted by power descending
-    std::string              method;       // "fft" | "lomb_scargle"
-    double                   samplingStepDays;
-};
-
-struct SpectrogramResult {
-    std::vector<double> times;        // MJD of each window centre
-    std::vector<double> frequencies;  // cycles per day
-    std::vector<std::vector<double>> power;  // power[time][freq]
+struct KalmanResult {
+    std::vector<double> times;             // MJD
+    std::vector<double> original;          // raw measurements (with NaN for gaps)
+    std::vector<double> filteredState;     // x_hat[t|t]  (first component of state)
+    std::vector<double> filteredStd;       // sqrt(P[t|t][0,0])
+    std::vector<double> smoothedState;     // x_hat[t|T]  (RTS, empty if smoother off)
+    std::vector<double> smoothedStd;       // sqrt(P[t|T][0,0])
+    std::vector<double> predictedState;    // x_hat[t|t-1]
+    std::vector<double> innovations;       // y[t] - H * x_hat[t|t-1]
+    std::vector<double> innovationStd;     // sqrt(S[t])
+    std::vector<double> gains;             // K[t][0] (first row of Kalman gain)
+    std::vector<double> forecastState;     // predict_steps steps beyond last obs
+    std::vector<double> forecastStd;       // growing uncertainty
+    double              logLikelihood;     // sum of log N(innovation; 0, S)
+    double              estimatedQ;        // from EM or manual
+    double              estimatedR;        // from EM or manual
+    std::string         modelName;         // "local_level" | "local_trend" | "constant_velocity"
+    std::string         noiseMethod;       // "manual" | "heuristic" | "em"
 };
 ```
 
-### FFT implementation plan
-- Self-contained Cooley-Tukey radix-2 in `fftAnalyzer.cpp` (no external library)
-- Zero-padding to next power of 2 for efficiency
-- Windowing functions: Hann (default), Hamming, Blackman, Flat-top, Rectangular
-  Applied before FFT to reduce spectral leakage
-- Output: single-sided PSD in units of (amplitude^2 / frequency)
-- Welch method: overlapping segments, averaged PSD, reduces variance
-
-### Lomb-Scargle implementation plan
-- Direct O(n * nFreq) implementation for n < 100k
-- NFFT approximation (Press & Rybicki 1989) for n >= 100k -- toggleable via
-  `"fast_ls": true` in JSON config
-- FAP (False Alarm Probability) via analytic formula (Baluev 2008) --
-  more accurate than bootstrap for large n
-- Frequency grid: from f_min = 1/(T_total) to f_max = 1/(2 * median_step),
-  oversampling factor configurable (default 4)
-
-### Spectrogram plan
-- STFT: sliding window FFT with configurable overlap
-- `window_length` and `overlap` in JSON (in samples)
-- `focus_period_min` / `focus_period_max` for frequency zoom (in days)
-- Output: 2D power matrix -> gnuplot heatmap (pm3d)
-- Use case examples:
-  - Detect amplitude modulation of annual cycle (climate)
-  - Detect frequency shifts / phase slips in sensor data
-  - Identify when a periodic signal appears or disappears
-
-### Peak detection plan
-- Local maxima in PSD/periodogram above noise floor
-- Noise floor: median of PSD (robust to peaks)
-- Configurable: `top_n_peaks` (default 10), `min_period_days`, `max_period_days`
-- FAP threshold for Lomb-Scargle: `fap_threshold` (default 0.01)
-- Protocol output: ranked table of top N peaks with period, frequency, power, FAP
-
-### SpectralConfig design (to add to config.hpp)
+### KalmanConfig design (to add to config.hpp)
 ```cpp
-struct SpectralFftConfig {
-    std::string windowFunction {"hann"};   // "hann"|"hamming"|"blackman"|"flattop"|"rectangular"
-    bool        welch          {false};    // enable Welch averaged PSD
-    int         welchSegments  {8};        // number of overlapping segments for Welch
-    double      welchOverlap   {0.5};      // segment overlap fraction
+struct KalmanNoiseConfig {
+    std::string estimation {"manual"};  // "manual" | "heuristic" | "em"
+    double      Q          {1.0};       // process noise variance (manual)
+    double      R          {1.0};       // measurement noise variance (manual)
+    double      smoothingFactor {10.0}; // R/Q ratio for heuristic: Q = R/factor
+    double      QInit      {1.0};       // initial Q for EM
+    double      RInit      {1.0};       // initial R for EM
+    int         emMaxIter  {100};       // EM max iterations
+    double      emTol      {1.0e-6};    // EM convergence tolerance (rel. log-likelihood)
 };
 
-struct SpectralLombScargleConfig {
-    double oversampling  {4.0};    // frequency grid oversampling factor
-    bool   fastNfft      {false};  // use NFFT approximation for n >= 100k
-    double fapThreshold  {0.01};   // FAP significance threshold for peak reporting
+struct KalmanForecastConfig {
+    int    steps     {0};    // prediction steps beyond last observation (0 = no forecast)
+    double confidenceLevel {0.95};
 };
 
-struct SpectralSpectrogramConfig {
-    bool   enabled         {false};
-    int    windowLength    {1461};  // STFT window in samples
-    double overlap         {0.5};   // window overlap fraction [0, 1)
-    double focusPeriodMin  {0.0};   // zoom lower bound in days (0 = no zoom)
-    double focusPeriodMax  {0.0};   // zoom upper bound in days (0 = no zoom)
-};
+// KalmanNoiseConfig and KalmanForecastConfig defined outside KalmanConfig (GCC 13 pattern)
 
-struct SpectralPeakConfig {
-    int    topN           {10};    // number of top peaks to report
-    double minPeriodDays  {0.0};   // ignore peaks below this period (0 = no limit)
-    double maxPeriodDays  {0.0};   // ignore peaks above this period (0 = no limit)
-};
-
-struct SpectralConfig {
-    std::string                gapFillStrategy   {"linear"};
-    int                        gapFillMaxLength  {0};
-    std::string                method            {"auto"};  // "auto"|"fft"|"lomb_scargle"
-    SpectralFftConfig          fft               {};
-    SpectralLombScargleConfig  lombScargle       {};
-    SpectralSpectrogramConfig  spectrogram       {};
-    SpectralPeakConfig         peaks             {};
-    double                     significanceLevel {0.05};
+struct KalmanConfig {
+    std::string         gapFillStrategy  {"linear"};
+    int                 gapFillMaxLength {0};
+    std::string         model            {"local_level"};  // "local_level"|"local_trend"|"constant_velocity"
+    KalmanNoiseConfig   noise            {};
+    std::string         smoother         {"rts"};   // "none" | "rts"
+    KalmanForecastConfig forecast        {};
+    double              significanceLevel{0.05};
 };
 ```
 
-### PlotConfig additions for spectral
+### PlotConfig additions for kalman (to add to config.hpp)
 ```cpp
-bool spectralPsd          {true};   // PSD / periodogram plot (log-log or log-linear)
-bool spectralPeaks        {true};   // annotated peaks on PSD plot
-bool spectralSpectrogram  {false};  // 2D time-frequency heatmap
+bool kalmanOverlay      {true};   // original + filtered + smoothed + confidence band
+bool kalmanInnovations  {true};   // innovations (residuals) vs time
+bool kalmanGain         {false};  // Kalman gain K[t] vs time
+bool kalmanUncertainty  {false};  // sqrt(P[t]) -- filter uncertainty vs time
+bool kalmanForecast     {true};   // forecast with prediction intervals (if steps > 0)
+bool kalmanDiagnostics  {false};  // ACF of innovations + histogram (white noise check)
 ```
 
-### Output units convention
-- **Frequencies**: cycles per day (cpd) -- natural for climatological data
-- **Periods**: days -- used in protocols and peak tables
-- **For ms sensor data**: period in seconds derived from sampling step automatically
-- Protocols list top N peaks in descending power order
+### Example JSON config (kalman.json)
+```json
+{
+    "workspace": "C:/LOKI_DATA",
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3]
+    },
+    "output": { "log_level": "info" },
+    "plots": {
+        "output_format": "png",
+        "kalman_overlay":     true,
+        "kalman_innovations": true,
+        "kalman_gain":        false,
+        "kalman_uncertainty": false,
+        "kalman_forecast":    true,
+        "kalman_diagnostics": false
+    },
+    "kalman": {
+        "gap_fill_strategy": "linear",
+        "gap_fill_max_length": 0,
+        "model": "local_level",
+        "noise": {
+            "estimation": "em",
+            "Q_init": 1.0,
+            "R_init": 1.0,
+            "em_max_iter": 100,
+            "em_tol": 1e-6
+        },
+        "smoother": "rts",
+        "forecast": {
+            "steps": 24,
+            "confidence_level": 0.95
+        },
+        "significance_level": 0.05
+    }
+}
+```
 
-### Protocol format (sketch)
+### Files to request at loki_kalman thread start
 ```
-==========================================================
- LOKI Spectral Analysis Protocol
-==========================================================
- Dataset   : CLIM_DATA_EX1
- Component : col_3
- Method    : Lomb-Scargle
- N         : 36524 observations
- Span      : 25.12 years
- Median step: 0.25 days (6h)
-----------------------------------------------------------
- Top 10 dominant periods:
-  Rank  Period (days)  Freq (cpd)   Power    FAP
-     1      365.25      0.002738    0.847    < 0.001
-     2      182.62      0.005476    0.341    < 0.001
-     3      351.40      0.002846    0.128      0.003
-     ...
-----------------------------------------------------------
- Spectrogram: disabled
-==========================================================
+libs/loki_core/include/loki/core/config.hpp          -- current state (post-spectral)
+libs/loki_core/src/core/configLoader.cpp             -- last 60 lines (_parseSpectral pattern)
+libs/loki_spectral/CMakeLists.txt                    -- lib CMake pattern
+apps/loki_spectral/CMakeLists.txt                    -- app CMake pattern
+apps/loki_spectral/main.cpp                          -- DataManager + analyzer pattern
 ```
 
-### Files to request at loki_spectral thread start
-```
-libs/loki_core/include/loki/core/config.hpp          -- current state (post-decomposition)
-libs/loki_core/src/core/configLoader.cpp             -- last 50 lines (_parseDecomposition pattern)
-libs/loki_core/include/loki/io/plot.hpp              -- Plot API (residualDiagnostics signature)
-libs/loki_decomposition/CMakeLists.txt               -- CMake pattern
-apps/loki_decomposition/CMakeLists.txt               -- app CMake pattern
-apps/loki_decomposition/main.cpp                     -- DataManager loading pattern
-```
+### Domain notes for loki_kalman
+- Train velocity measured directly (not integrated from position)
+  -> state = `[velocity, acceleration]`, H = `[1, 0]`
+- Sources: pulse encoder (impulzy) or Doppler radar (RS485 line)
+- For ms data: `dt` in seconds (e.g. 0.001 for 1 kHz)
+- For 6h climatological data: `dt = 0.25` (days) or convert to seconds
+- Prediction horizon: train = 0.1--1 s; troposfera = hours to days
+- EM convergence criterion: relative change in log-likelihood < `em_tol`
+- Extended KF and UKF: planned for a later thread, not in this implementation
 
 ---
 
@@ -612,11 +605,14 @@ into static libraries on Windows/GCC. Workarounds in place:
 2. `CalibrationRegressor` uses `Eigen::JacobiSVD` directly.
 3. `SsaAnalyzer` uses randomized SVD (small internal matrices only).
 Do NOT use `BDCSVD` in any `.cpp` compiled into a static library.
+For `loki_kalman`: use `Eigen::LLT` or `Eigen::LDLT` for covariance updates
+(positive definite matrices) -- these are safe in static libs.
 
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
 - `TimeSeries::append(const TimeStamp& time, double value, uint8_t flag = 0)`
 - `::TimeStamp` is NOT in `namespace loki` -- always qualify as `::TimeStamp`
+- MJD getter on TimeStamp: `ts[i].time.mjd()` (not `toMjd()`)
 
 ### `std::numbers::pi` instead of `M_PI`
 Use `std::numbers::pi` (C++20 `<numbers>`).
@@ -625,12 +621,23 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - `LOKI_WARNING` (not `LOKI_WARN`)
 - `LOKI_INFO` accepts only a single string argument -- use concatenation
 
-### Gnuplot on Windows
+### Gnuplot on Windows -- CRITICAL
 - API: `gp("command")` -- no `<<` operator
 - All module-specific plotters use local `fwdSlash()` static private helper
 - Font: `'Sans,12'` (not `'Helvetica,12'`)
 - Terminal: `noenhanced`
+- `-persist` flag REMOVED from gnuplot.cpp -- do not add it back
+- Use `plot '-'` (inline data) instead of tmp files wherever possible
+- For tmp files (spectrogram matrix format): call `ofs.flush(); ofs.close()`
+  explicitly before constructing the `Gnuplot` object
 - `Plot::residualDiagnostics()` is non-static -- instantiate `Plot corePlot(cfg)`
+
+### loki_spectral -- plot flags location
+Spectral plot flags (`spectral_psd`, `spectral_peaks`, `spectral_amplitude`,
+`spectral_phase`, `spectral_spectrogram`) are read directly from the top-level
+`"plots"` JSON object, NOT from a nested `"enabled"` sub-object.
+This is because most other modules use `"enabled"` but spectral was added later.
+The `_parsePlots()` function handles both locations.
 
 ### DataManager loading pattern (all apps)
 ```cpp
@@ -644,67 +651,66 @@ for (const auto& r : loadResults) {
     }
 }
 ```
-Do NOT use `Loader::load()` directly -- it requires a file path argument
-and is a lower-level API. `DataManager` handles all input modes
-(SINGLE_FILE, FILE_LIST, SCAN_DIRECTORY).
 
 ### SSA performance -- key learnings
-- JacobiSVD on K x L trajectory matrix (K=35000, L=1461) takes hours
-- SelfAdjointEigenSolver on L x L: also too slow for L=1461
-- Solution: randomized SVD (Halko et al. 2011) in `randomizedSvd.hpp/.cpp`
 - For 6h climatological data (n=36524): L=365, k=40 -> ~2.5 min total
-
-### loki_decomposition -- key learnings
-- Classical seasonal: modulo-period slot median (no MedianYearSeries dependency)
-- STL: private weighted LOESS in `stlDecomposer.cpp` (no loki_filter dependency)
-- MA trend edge NaN filled via `GapFiller(LINEAR).fill()` -- bfill/ffill
-- Period is always in samples -- document clearly in config
+- Use randomized SVD (`randomizedSvd.hpp/.cpp`), not JacobiSVD or BDCSVD
 
 ### `distributions.hpp` namespace
 Functions are in `loki::stats::` -- e.g. `loki::stats::chi2Quantile(p, df)`.
 
 ---
 
-## Config Structs (current state post-decomposition)
+## Config Structs (current state post-spectral)
 
-### DecompositionConfig (config.hpp) -- complete
+### SpectralConfig (config.hpp) -- complete
 ```cpp
-enum class DecompositionMethodEnum { CLASSICAL, STL };
-
-struct ClassicalDecompositionConfig {
-    std::string trendFilter  {"moving_average"};
-    std::string seasonalType {"median"};
+struct SpectralFftConfig {
+    std::string windowFunction {"hann"};
+    bool        welch          {false};
+    int         welchSegments  {8};
+    double      welchOverlap   {0.5};
 };
-struct StlDecompositionConfig {
-    int nInner{2}; int nOuter{1}; int sDegree{1}; int tDegree{1};
-    double sBandwidth{0.0}; double tBandwidth{0.0};
+struct SpectralLombScargleConfig {
+    double oversampling {4.0};
+    bool   fastNfft     {false};
+    double fapThreshold {0.01};
 };
-struct DecompositionConfig {
-    std::string gapFillStrategy{"linear"}; int gapFillMaxLength{0};
-    DecompositionMethodEnum method{DecompositionMethodEnum::CLASSICAL};
-    int period{1461};
-    ClassicalDecompositionConfig classical{};
-    StlDecompositionConfig stl{};
-    double significanceLevel{0.05};
+struct SpectralSpectrogramConfig {
+    bool   enabled        {false};
+    int    windowLength   {1461};
+    double overlap        {0.5};
+    double focusPeriodMin {0.0};
+    double focusPeriodMax {0.0};
+};
+struct SpectralPeakConfig {
+    int    topN          {10};
+    double minPeriodDays {0.0};
+    double maxPeriodDays {0.0};
+};
+struct SpectralConfig {
+    std::string                gapFillStrategy  {"linear"};
+    int                        gapFillMaxLength {0};
+    std::string                method           {"auto"};
+    SpectralFftConfig          fft              {};
+    SpectralLombScargleConfig  lombScargle      {};
+    SpectralSpectrogramConfig  spectrogram      {};
+    SpectralPeakConfig         peaks            {};
+    double                     significanceLevel{0.05};
 };
 ```
 
-### PlotConfig decomposition additions (config.hpp) -- complete
-```cpp
-bool decompOverlay     {true};
-bool decompPanels      {true};
-bool decompDiagnostics {false};
-```
-
-### SpectralConfig (config.hpp) -- TO ADD in loki_spectral thread
-See "NEXT THREAD: loki_spectral" section above for full design.
-
-### PlotConfig spectral additions (config.hpp) -- TO ADD
+### PlotConfig spectral fields (config.hpp) -- complete
 ```cpp
 bool spectralPsd         {true};
 bool spectralPeaks       {true};
+bool spectralAmplitude   {false};
+bool spectralPhase       {false};
 bool spectralSpectrogram {false};
 ```
+
+### KalmanConfig (config.hpp) -- TO ADD in loki_kalman thread
+See "NEXT THREAD: loki_kalman" section above for full design.
 
 ---
 
@@ -721,7 +727,12 @@ bool spectralSpectrogram {false};
 - `min_segment_points` for change point detection should be high (e.g. 600)
   for 6h climatological data to avoid false detections
 - Lomb-Scargle preferred over FFT for GNSS and sensor data with frequent gaps
-- For ms-resolution sensor data with n > 100k: use NFFT approximation in L-S
+- For ms-resolution sensor data: FFT peak frequency resolution = fs/nfft;
+  for 1 kHz data and n=1000: resolution = 1 Hz (1 cpms)
+- Spectral `max_period_days` should always be set for FFT to avoid
+  long-period trend artefacts dominating rank-1 peak
+- Kalman `local_level` Q/R ratio determines smoothness: small Q/R = very smooth,
+  large Q/R = follows measurements closely
 
 ---
 
@@ -732,8 +743,8 @@ bool spectralSpectrogram {false};
 | 1 | `loki_arima` | Climatological residual modelling, forecasting | COMPLETE |
 | 2 | `loki_ssa` | SSA decomposition: trend + oscillations + noise | COMPLETE |
 | 3 | `loki_decomposition` | Classical + STL trend/seasonal/residual decomposition | COMPLETE |
-| 4 | `loki_spectral` | FFT + Lomb-Scargle, period identification, spectrogram | **NEXT** |
-| 5 | `loki_kalman` | GNSS processing, train sensor fusion | planned |
+| 4 | `loki_spectral` | FFT + Lomb-Scargle, period identification, spectrogram | COMPLETE |
+| 5 | `loki_kalman` | State estimation, smoothing, prediction, uncertainty | **NEXT** |
 | 6 | `loki_clustering` | Train phase segmentation (DBSCAN, k-means) | planned |
 | 7 | `loki_qc` | Quality control, gap flagging, automated reporting | planned |
 
@@ -761,7 +772,7 @@ bool spectralSpectrogram {false};
 - Logs: `OUTPUT/LOG/`
 - Plot naming: `[program]_[dataset]_[parameter]_[plottype].[format]`
 - Program prefix: `core` | `homogeneity` | `outlier` | `filter` | `regression` |
-                  `stationarity` | `arima` | `ssa` | `decomposition` | `spectral`
+                  `stationarity` | `arima` | `ssa` | `decomposition` | `spectral` | `kalman`
 - CSV delimiter: semicolon (`;`)
 
 ---
@@ -783,7 +794,12 @@ bool spectralSpectrogram {false};
 - `NonlinearRegressor` does NOT inherit from `Regressor`.
 - `SplineFilter` is planned but NOT yet implemented.
 - Classical decomposition and SSA are separate applications -- do not merge.
-- `loki_spectral` depends only on `loki_core` -- no dependency on
-  `loki_decomposition`, `loki_ssa`, or `loki_filter`.
+- `loki_spectral` depends only on `loki_core`.
+- `loki_kalman` depends only on `loki_core`.
+- gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
 - loki.sh -- register new apps in APP_EXE map:
   `["spectral"]="loki_spectral_app"`
+  `["kalman"]="loki_kalman_app"`
+- TimeStamp MJD getter: `.mjd()` (confirmed from timeStamp.hpp)
+- SNHT detector (`snhtDetector.hpp/.cpp`) -- not yet implemented,
+  files are empty placeholders. Will be added to `loki_homogeneity` later.

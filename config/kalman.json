@@ -1,0 +1,45 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3],
+        "merge_strategy": "separate"
+    },
+    "output": {
+        "log_level": "info"
+    },
+    "plots": {
+        "output_format": "png",
+        "kalman_overlay":      true,
+        "kalman_innovations":  true,
+        "kalman_gain":         true,
+        "kalman_uncertainty":  true,
+        "kalman_forecast":     true,
+        "kalman_diagnostics":  true
+    },
+    "kalman": {
+        "gap_fill_strategy":  "auto",
+        "gap_fill_max_length": 0,
+        "model": "local_level",
+        "noise": {
+            "estimation":       "manual",
+            "Q":                0.0001,
+            "R":                0.0004,
+            "smoothing_factor": 10.0,
+            "Q_init":           1.0,
+            "R_init":           1.0,
+            "em_max_iter":      100,
+            "em_tol":           1e-3
+        },
+        "smoother": "rts",
+        "forecast": {
+            "steps":            24,
+            "confidence_level": 0.95
+        },
+        "significance_level": 0.05
+    }
+}

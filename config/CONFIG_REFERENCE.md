@@ -22,7 +22,9 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 9. [loki_stationarity](#9-loki_stationarity)
 10. [loki_arima](#10-loki_arima)
 11. [loki_ssa](#11-loki_ssa)
-1. [loki_decomposition](#12-loki_decomposition)
+12. [loki_decomposition](#12-loki_decomposition)
+13. [loki_spectral](#13-loki_spectral)
+14. [loki_kalman](#14-loki_kalman)
 
 ---
 
@@ -2376,3 +2378,787 @@ Sections:
 "period": 365,
 "classical": { "seasonal_type": "median" }
 ```
+
+## 13. loki_spectral
+
+**Program:** `loki_spectral.exe`
+**Default config:** `config/spectral.json`
+
+Performs spectral analysis of a time series to identify dominant periodicities,
+estimate power spectral density, and characterise amplitude and phase structure.
+Two methods are available: FFT (for uniform data) and Lomb-Scargle (for gappy
+or unevenly sampled data). An optional STFT spectrogram shows how spectral
+content evolves over time.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller              -- fill missing values (required for FFT)
+2. Method selection       -- "auto", "fft", or "lomb_scargle"
+3. Periodogram            -- FFT (Cooley-Tukey) or Lomb-Scargle
+4. Peak detection         -- local maxima above noise floor, ranked by power
+5. CSV / Protocol         -- top N peaks with period, frequency, power, FAP
+6. Plots                  -- PSD, amplitude, phase, spectrogram
+```
+
+The section key in the JSON file is `"spectral"`.
+
+---
+
+### 13.1 spectral.method / gap_fill_strategy / gap_fill_max_length
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `auto` | Analysis method. See options below. |
+| `gap_fill_strategy` | string | `linear` | Gap filling applied before analysis. `linear`, `forward_fill`, `mean`, `none`. |
+| `gap_fill_max_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+| `significance_level` | float | `0.05` | Reserved for future hypothesis tests on spectral peaks. |
+
+### method options
+
+| Value | Description | When to use |
+|---|---|---|
+| `auto` | Inspects the series: if fewer than 5% of consecutive time steps exceed 1.1x the median step, uses FFT; otherwise uses Lomb-Scargle. | **Recommended default.** Correct choice without user intervention. |
+| `fft` | Always uses FFT. Requires a gap-free, uniformly sampled series. GapFiller runs first; a warning is logged if gaps remain. | When you know the data is uniform and want the fastest computation. |
+| `lomb_scargle` | Always uses Lomb-Scargle. Works directly on gappy or unevenly sampled data. Slower than FFT. Computes False Alarm Probability (FAP) for each peak. | GNSS data, sensor data with frequent dropouts, or when FAP is required. |
+
+> **Auto-selection note**: for 6h climatological data with no gaps, `auto`
+> always selects FFT. For GNSS or train sensor data with gaps, `auto` selects
+> Lomb-Scargle. Check the log for the message
+> `SpectralAnalyzer: auto-selected method 'fft'` to confirm.
+
+> **FFT vs Lomb-Scargle on uniform data**: both give equivalent PSD estimates
+> on gap-free uniform data. FFT is orders of magnitude faster. Use FFT for
+> routine analysis and Lomb-Scargle only when FAP values are needed or gaps
+> are present.
+
+---
+
+### 13.2 spectral.fft
+
+Settings for the FFT path. Ignored when `method = lomb_scargle`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `window_function` | string | `hann` | Tapering window applied before FFT. See options below. |
+| `welch` | bool | `false` | Enable Welch PSD averaging. Reduces variance at the cost of frequency resolution. |
+| `welch_segments` | int | `8` | Number of overlapping segments for Welch. Must be >= 2. |
+| `welch_overlap` | float | `0.5` | Segment overlap fraction in [0, 1). |
+
+### window_function options
+
+| Value | Side-lobe level | Best for |
+|---|---|---|
+| `hann` | -31 dB | **Recommended default.** Good balance of leakage suppression and amplitude accuracy. |
+| `hamming` | -43 dB | Slightly better side-lobe suppression than Hann. Common in signal processing. |
+| `blackman` | -58 dB | Strong leakage suppression. Use when weak peaks near strong peaks must be resolved. |
+| `flattop` | -93 dB | Best amplitude accuracy for calibration. Wide main lobe -- poor frequency resolution. |
+| `rectangular` | -13 dB | No tapering. Best frequency resolution but worst leakage. Use only for pure tones. |
+
+> **Which window to choose**: for climatological data with a dominant annual
+> cycle and weak sub-harmonics, `hann` is always appropriate. Use `blackman`
+> if you need to detect a weak signal (e.g. 0.1% power) adjacent to a strong
+> peak (e.g. the annual cycle).
+
+> **Welch averaging**: divides the signal into `welch_segments` overlapping
+> blocks and averages their periodograms. This reduces statistical variance
+> (smoother PSD) but also reduces frequency resolution. For 25 years of 6h
+> data with 8 segments, each segment is ~3 years long -- the frequency
+> resolution is degraded 8x. Use Welch only when a smooth PSD estimate is
+> more important than precise peak location. For peak detection, disable Welch.
+
+> **Welch segment count guide**:
+>
+> | Segments | PSD smoothness | Frequency resolution | Use case |
+> |---|---|---|---|
+> | 1 (Welch off) | Low (noisy) | Highest | Peak detection, precise period identification |
+> | 4 | Moderate | Good | Balanced analysis |
+> | 8 | High | Reduced 8x | PSD shape characterisation |
+> | 16 | Very high | Reduced 16x | Broadband noise floor estimation |
+
+---
+
+### 13.3 spectral.lomb_scargle
+
+Settings for the Lomb-Scargle path. Ignored when `method = fft`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `oversampling` | float | `4.0` | Frequency grid oversampling factor. Must be >= 1. |
+| `fast_nfft` | bool | `false` | Reserved: NFFT approximation for n >= 100k (not yet implemented). |
+| `fap_threshold` | float | `0.01` | False Alarm Probability threshold for peak reporting. Peaks with FAP > threshold are excluded. |
+
+> **Oversampling**: the frequency grid runs from `f_min = 1/T_span` to
+> `f_max = 1/(2 * median_step)` (Nyquist). The number of frequency points is
+> `oversampling * T_span * f_max`. Higher oversampling gives finer frequency
+> resolution but increases computation time linearly. For 25 years of 6h data:
+> oversampling=4 gives ~146,000 frequency points, taking ~2-5 minutes.
+>
+> | Oversampling | Frequency resolution | Time (25y, 6h) |
+> |---|---|---|
+> | 1 | Coarse | ~30 s |
+> | 4 | Standard | ~2-5 min |
+> | 10 | Fine | ~10-15 min |
+
+> **FAP (False Alarm Probability)**: the probability that a peak of the
+> observed height would arise by chance from white noise. Computed using the
+> Baluev (2008) analytic approximation. FAP < 0.01 means the peak is
+> significant at the 1% level. In the protocol, peaks with FAP < 0.001 are
+> reported as `< 0.001`. For FFT results, FAP is shown as `N/A`.
+
+> **fap_threshold**: only peaks with FAP <= fap_threshold are included in the
+> output table. Set to 1.0 to include all peaks regardless of significance.
+> Set to 0.001 for strict significance filtering.
+
+---
+
+### 13.4 spectral.spectrogram
+
+Controls the Short-Time Fourier Transform (STFT) spectrogram. Disabled by default.
+Must also set `plots.spectral_spectrogram: true` to generate the plot.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable STFT computation. |
+| `window_length` | int | `1461` | STFT window length in samples. Must be >= 4. |
+| `overlap` | float | `0.5` | Window overlap fraction in [0, 1). Higher = more frames = smoother time axis. |
+| `focus_period_min` | float | `0.0` | Lower period bound in days for the frequency zoom. `0.0` = no zoom. |
+| `focus_period_max` | float | `0.0` | Upper period bound in days for the frequency zoom. `0.0` = no zoom. |
+
+> **Window length**: determines the frequency resolution of each STFT frame.
+> Longer windows give better frequency resolution but worse time resolution.
+> For 6h data:
+>
+> | Window length | Duration | Frequency resolution | Time resolution |
+> |---|---|---|---|
+> | 365 | 91 days | ~4 cpd bins | High |
+> | 1461 | 365 days | ~1 cpd bins | Medium |
+> | 2922 | 730 days | ~0.5 cpd bins | Low |
+>
+> Rule of thumb: window should be at least 2x the longest period of interest.
+> To resolve the annual cycle (365 days), use `window_length >= 730`.
+
+> **Overlap**: 0.5 means successive frames start `window_length/2` samples
+> apart. Higher overlap produces more frames and a smoother time axis, but
+> increases computation time proportionally. For 25 years of 6h data:
+>
+> | Overlap | Frames (L=1461) | Computation |
+> |---|---|---|
+> | 0.5 | ~48 | Fast |
+> | 0.75 | ~97 | Moderate |
+> | 0.9 | ~243 | Slow |
+
+> **Focus window** (`focus_period_min` / `focus_period_max`): zooms the Y
+> axis of the spectrogram heatmap to a specific period range. This does not
+> affect the computation -- only the display range.
+> Example: `focus_period_min: 300, focus_period_max: 450` zooms to the region
+> around the annual cycle (365 days). Leave both at 0.0 to show the full
+> frequency range.
+
+> **Typical spectrogram settings for climatological data**:
+> ```json
+> "spectrogram": {
+>     "enabled": true,
+>     "window_length": 1461,
+>     "overlap": 0.75,
+>     "focus_period_min": 30.0,
+>     "focus_period_max": 500.0
+> }
+> ```
+> This gives ~97 frames covering the annual cycle and its harmonics.
+
+---
+
+### 13.5 spectral.peaks
+
+Controls peak detection and ranking in the periodogram.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `top_n` | int | `10` | Maximum number of peaks to report. |
+| `min_period_days` | float | `0.0` | Ignore peaks with period shorter than this. `0.0` = no lower limit. |
+| `max_period_days` | float | `0.0` | Ignore peaks with period longer than this. `0.0` = no upper limit. |
+
+> **Peak detection algorithm**: local maxima in the periodogram above the
+> median noise floor are identified, sorted by power, and the top N are
+> reported. Lomb-Scargle peaks are additionally filtered by FAP threshold.
+
+> **max_period_days**: strongly recommended to set this for FFT results.
+> Without it, the rank-1 peak is often a spurious low-frequency artefact
+> caused by long-term trend or drift in the data. Setting
+> `max_period_days: 3650` (10 years) eliminates artefacts longer than the
+> meaningful geophysical band. For climatological data a typical setting is:
+> ```json
+> "peaks": {
+>     "top_n": 10,
+>     "min_period_days": 1.0,
+>     "max_period_days": 400.0
+> }
+> ```
+> This keeps the annual cycle (365 d), semi-annual (182 d), and shorter
+> sub-seasonal peaks while discarding long-period trend artefacts.
+
+> **min_period_days**: useful for GNSS or sensor data where sub-daily noise
+> is not of interest. Set to `1.0` to exclude all sub-daily periods.
+
+---
+
+### 13.6 Plots (spectral pipeline)
+
+Spectral plot flags are set directly under `"plots"` (not inside an `"enabled"` sub-object).
+
+| Flag | Default | Description |
+|---|---|---|
+| `spectral_psd` | `true` | PSD / periodogram on log-log axes (X = period in days, Y = power). Dominant peaks annotated with rank numbers (red impulse lines). |
+| `spectral_peaks` | `true` | Annotated peak markers on the PSD plot. Set `false` to show a clean PSD without annotations. Has no effect if `spectral_psd` is `false`. |
+| `spectral_amplitude` | `false` | Amplitude spectrum `|X[k]|` on log-linear axes (X = period, Y = amplitude in signal units). Useful for interpreting peak strength in physical units. FFT only -- for Lomb-Scargle, amplitude = sqrt(normalised power). |
+| `spectral_phase` | `false` | Phase spectrum `atan2(Im, Re)` in radians. Only significant-amplitude frequencies are plotted (threshold: 1% of max amplitude). FFT only -- empty for Lomb-Scargle. |
+| `spectral_spectrogram` | `false` | 2-D time-frequency heatmap (STFT). Only generated when `spectral.spectrogram.enabled` is also `true`. |
+
+> **Reading the PSD plot**: X-axis is period in days on a log scale (0.1 to
+> 100,000 days). Y-axis is PSD on a log scale. Dominant physical signals appear
+> as sharp vertical spikes. The red rank numbers identify the top-N peaks found
+> by the peak detector. Broad bumps indicate quasi-periodic or broadband energy.
+
+> **Reading the amplitude plot**: unlike PSD (which scales as power per
+> frequency bin), the amplitude plot shows `|X[k]|` which is proportional to
+> the sinusoidal amplitude at each frequency. A peak at 365 days with amplitude
+> 0.023 means that the annual sinusoidal component has an amplitude of ~0.023
+> in the units of the input signal. This is more physically interpretable than
+> PSD units.
+
+> **Reading the phase plot**: only frequencies where the amplitude exceeds 1%
+> of the maximum amplitude are shown (others are numerical noise). A stable
+> phase at a dominant period (e.g. the annual cycle) has physical meaning --
+> it indicates the phase offset of that oscillation relative to the start of
+> the time series. Scattered points at other frequencies indicate noise.
+
+> **Reading the spectrogram**: X-axis is MJD (time), Y-axis is period in days.
+> Colour indicates spectral power (log scale). A horizontal band at constant
+> period means a stationary periodic signal present throughout the record. A
+> band that appears/disappears or shifts in period over time indicates a
+> non-stationary oscillation. The annual cycle (365 d) should appear as a
+> persistent red/orange band if the focus window covers it.
+
+---
+
+### 13.7 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `spectral_[dataset]_[component]_protocol.txt`
+
+The protocol contains:
+- Dataset name, component, method, observation count, time span
+- Median sampling step in days
+- Ranked table of top N peaks: rank, period (days), frequency (cpd), power, FAP
+
+Example:
+```
+==========================================================
+ LOKI Spectral Analysis Protocol
+==========================================================
+ Dataset    : CLIM_DATA_EX1
+ Component  : col_3
+ Method     : fft
+ N          : 36524 observations
+ Span       : 25.00 years (9131.00 days)
+ Median step: 0.25 days
+----------------------------------------------------------
+ Top 10 dominant period(s):
+
+ Rank   Period (days)   Freq (cpd)    Power     FAP
+ ----------------------------------------------------------
+    1         364.09      0.002747    1.0000  N/A
+    2           1.00      1.000000    0.0235  N/A
+    3         184.09      0.005432    0.0217  N/A
+    ...
+==========================================================
+```
+
+---
+
+### 13.8 Recommended configurations
+
+**Quick FFT analysis -- peak identification only** (seconds):
+```json
+"spectral": {
+    "method": "fft",
+    "fft": { "window_function": "hann", "welch": false },
+    "peaks": { "top_n": 10, "min_period_days": 1.0, "max_period_days": 400.0 }
+}
+```
+
+**Smooth PSD shape (Welch, no peak annotation)**:
+```json
+"spectral": {
+    "method": "fft",
+    "fft": { "window_function": "hann", "welch": true, "welch_segments": 8, "welch_overlap": 0.5 }
+}
+```
+```json
+"plots": { "spectral_psd": true, "spectral_peaks": false }
+```
+
+**Lomb-Scargle with FAP (GNSS / gappy data)**:
+```json
+"spectral": {
+    "method": "lomb_scargle",
+    "lomb_scargle": { "oversampling": 4.0, "fap_threshold": 0.01 },
+    "peaks": { "top_n": 10, "min_period_days": 1.0, "max_period_days": 400.0 }
+}
+```
+
+**Full analysis with spectrogram (climatological data)**:
+```json
+"spectral": {
+    "method": "auto",
+    "fft": { "window_function": "hann", "welch": false },
+    "spectrogram": {
+        "enabled": true,
+        "window_length": 1461,
+        "overlap": 0.75,
+        "focus_period_min": 30.0,
+        "focus_period_max": 500.0
+    },
+    "peaks": { "top_n": 10, "min_period_days": 1.0, "max_period_days": 400.0 }
+}
+```
+```json
+"plots": {
+    "spectral_psd": true,
+    "spectral_peaks": true,
+    "spectral_amplitude": true,
+    "spectral_phase": false,
+    "spectral_spectrogram": true
+}
+```
+
+**Amplitude + phase for signal characterisation**:
+```json
+"plots": {
+    "spectral_psd": true,
+    "spectral_peaks": true,
+    "spectral_amplitude": true,
+    "spectral_phase": true,
+    "spectral_spectrogram": false
+}
+```
+
+---
+
+### 13.9 Common issues and remedies
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Rank 1 peak at very long period (> 3000 days) | Long-term trend / drift dominates the FFT | Set `max_period_days: 3650` in `peaks` |
+| Annual cycle shows at 341 days instead of 365 | Welch reduces frequency resolution | Set `welch: false` for precise peak location |
+| Lomb-Scargle very slow | Large n + high oversampling | Reduce `oversampling` to 1 or 2 for exploration |
+| Spectrogram is empty / white | Focus window excludes all frequency bins | Set `focus_period_min: 0, focus_period_max: 0` to disable zoom |
+| Phase plot is all scattered noise | All amplitudes below 1% threshold | Signal too weak or series too noisy for phase estimation |
+| FAP column shows N/A | FFT method selected (FAP only from Lomb-Scargle) | Switch to `method: lomb_scargle` if FAP is required |
+| Amplitude plot shows large values at long periods | Trend/drift contributes low-frequency energy | Apply detrending before spectral analysis, or restrict `max_period_days` |
+
+## 14. loki_kalman
+
+**Program:** `loki_kalman.exe`
+**Default config:** `config/kalman.json`
+
+Applies a linear Kalman filter with optional RTS backward smoother and
+EM-based noise covariance estimation to a time series. Produces filtered
+and smoothed state estimates, one-step-ahead innovations, Kalman gain,
+filter uncertainty, and a multi-step forecast with prediction intervals.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller              -- fill missing values (optional pre-processing)
+2. dt estimation          -- median of consecutive time differences (seconds)
+3. Noise estimation       -- manual / heuristic / EM
+4. KalmanModelBuilder     -- construct F, H, Q, R, x0, P0
+5. KalmanFilter           -- forward pass (predict + update)
+6. RtsSmoother            -- backward pass (optional)
+7. Forecast               -- repeated predict steps beyond last observation
+8. CSV / Protocol         -- state estimates, innovations, uncertainty
+9. Plots                  -- overlay, innovations, gain, uncertainty, forecast, diagnostics
+```
+
+The section key in the JSON file is `"kalman"`.
+
+---
+
+### 14.1 kalman.model
+
+Selects the state space model. The model determines the state vector,
+transition matrix F, and observation matrix H.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model` | string | `local_level` | State space model. See options below. |
+
+### model options
+
+| Value | State vector | F matrix | H matrix | Best for |
+|---|---|---|---|---|
+| `local_level` | `[level]` | `[1]` | `[1]` | Climatological signals (IWV, troposfera), slowly varying sensors |
+| `local_trend` | `[level, trend]` | `[[1,dt],[0,1]]` | `[1,0]` | GNSS coordinates with long-term drift |
+| `constant_velocity` | `[velocity, accel]` | `[[1,dt],[0,1]]` | `[1,0]` | Train velocity measured directly from encoder or Doppler radar |
+
+> **On `dt`**: the sampling interval in seconds is estimated automatically
+> from the median of consecutive time differences in the loaded series.
+> It does not need to be specified in the config. For 6h data: dt = 21600 s.
+> For 1 kHz sensor data: dt = 0.001 s.
+
+> **`local_trend` vs `constant_velocity`**: both have identical F and H
+> structure. The difference is physical interpretation and recommended Q/R
+> values. `local_trend` models a slowly evolving level with a drift component;
+> `constant_velocity` models a directly measured velocity with an acceleration
+> component.
+
+> **Choosing the model**:
+> - **Climatological / IWV / troposfera**: always `local_level`. The signal
+>   varies on synoptic timescales without a systematic drift.
+> - **GNSS coordinates (dN, dE, dU)**: `local_trend` when a long-term drift
+>   (post-glacial rebound, tectonic motion) is expected.
+> - **Train velocity from encoder or Doppler**: `constant_velocity`. The
+>   measured quantity is velocity directly, not position.
+
+---
+
+### 14.2 kalman.gap_fill_strategy / gap_fill_max_length
+
+Gap filling is applied as a **pre-processing step** before the filter runs.
+Any remaining NaN values after gap filling are handled inside the Kalman
+filter as **predict-only epochs** (the update step is skipped, so the filter
+covariance grows until the next valid observation).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `gap_fill_strategy` | string | `auto` | Gap filling strategy. See options below. |
+| `gap_fill_max_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. Longer gaps remain as NaN and are handled by the filter. |
+
+### gap_fill_strategy options
+
+| Value | Description | When to use |
+|---|---|---|
+| `auto` | For 6h climatological data (dt < 0.3 days) with series >= 10 years: uses `median_year`. Otherwise: `linear`. | **Recommended default.** |
+| `linear` | Linear interpolation between nearest valid neighbours. | Short gaps, any sampling rate. |
+| `median_year` | Median annual profile lookup for each missing epoch. | 6h or finer climatological data with >= 10 years span. |
+| `none` | No gap filling -- all NaN remain; filter predicts without update at those epochs. | When gaps carry physical meaning (instrument outage). |
+
+> **Gap filling vs filter handling**: gap filling before the filter is
+> optional. The Kalman filter naturally handles missing observations by
+> running a predict-only step (no update). Gap filling is recommended only
+> when the gaps are short and the interpolated values are physically
+> meaningful. For long gaps (> 1 week for 6h data) set `gap_fill_max_length`
+> to a reasonable value and let the filter propagate uncertainty across the
+> remaining NaN epochs.
+
+---
+
+### 14.3 kalman.noise
+
+Controls how the process noise variance Q and measurement noise variance R
+are determined. These are the most important parameters for filter behaviour.
+
+#### The Q/R ratio and Kalman gain
+
+The steady-state Kalman gain for `local_level` is approximately:
+
+```
+K = Q / (Q + R)
+```
+
+Small Q/R (Q << R) -> small K -> filter trusts the model, heavy smoothing.
+Large Q/R (Q >> R) -> large K -> filter trusts measurements, tracks closely.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `estimation` | string | `manual` | Noise estimation method. See options below. |
+| `Q` | float | `1.0` | Process noise variance (manual mode only). Must be > 0. |
+| `R` | float | `1.0` | Measurement noise variance (manual mode only). Must be > 0. |
+| `smoothing_factor` | float | `10.0` | Q = R / smoothing_factor (heuristic mode). Must be > 0. |
+| `Q_init` | float | `1.0` | Initial Q for EM algorithm. Must be > 0. |
+| `R_init` | float | `1.0` | Initial R for EM algorithm. Must be > 0. |
+| `em_max_iter` | int | `100` | Maximum EM iterations. Must be >= 1. |
+| `em_tol` | float | `1e-6` | EM convergence criterion: relative change in log-likelihood. Must be > 0. |
+
+### estimation options
+
+| Value | Description | When to use |
+|---|---|---|
+| `manual` | Uses Q and R directly as specified. No estimation. | When physical knowledge of noise levels is available. Fastest. |
+| `heuristic` | R = var(measurements), Q = R / smoothing_factor. | Quick starting point when physical units are unknown. |
+| `em` | Expectation-Maximisation: iterates forward filter + RTS smoother to find Q and R that maximise log-likelihood. | When optimal noise parameters are unknown and series is long (n > 1000). Slow for large n. |
+
+> **Manual Q and R selection guide** (physical units squared):
+>
+> | Data type | Recommended Q | Recommended R | Resulting K |
+> |---|---|---|---|
+> | GPS IWV (m), tracking | 1e-4 | 4e-6 | ~0.96 |
+> | GPS IWV (m), smoothing | 1e-4 | 4e-4 | ~0.20 |
+> | GPS IWV (m), trend extraction | 1e-6 | 1e-3 | ~0.001 |
+> | Train velocity (m/s) | application-specific | application-specific | -- |
+>
+> R corresponds to the squared measurement noise. For GPS IWV: instrument
+> precision ~2 mm -> R = (0.002)^2 = 4e-6. For a smoother result increase R
+> (model representativeness uncertainty) rather than decrease Q.
+
+> **EM convergence**: for 6h climatological data (n=36524), EM with
+> `em_max_iter=100` and `em_tol=1e-6` typically does not converge fully --
+> the log-likelihood change at iteration 100 is still ~1e-5. This is not
+> a problem in practice: after ~20-30 iterations Q and R are already stable
+> to 3 significant figures. Tighten `em_tol` to `1e-4` or `1e-3` for faster
+> convergence at the cost of a slightly suboptimal solution. Each EM iteration
+> runs a full forward filter + RTS smoother pass: for n=36524 each iteration
+> takes ~1.5 seconds.
+
+> **EM result interpretation**: EM maximises the likelihood of the observed
+> data under the specified model. For `local_level` without seasonal
+> pre-processing, EM tends to find large Q (the filter tracks synoptic
+> variability) and very small R (GPS IWV precision is genuinely high). This
+> is physically correct but produces a near-interpolating filter (K close to 1).
+> If smoothing is desired, use `manual` with a larger R that encodes
+> representativeness uncertainty, not just instrument noise.
+
+> **heuristic smoothing_factor guide**:
+>
+> | smoothing_factor | Q/R ratio | Effect |
+> |---|---|---|
+> | 1 | 1.0 | K ~ 0.5, balanced |
+> | 10 | 0.1 | K ~ 0.09, moderate smoothing |
+> | 100 | 0.01 | K ~ 0.01, heavy smoothing |
+> | 500 | 0.002 | K ~ 0.002, trend extraction |
+
+---
+
+### 14.4 kalman.smoother
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `smoother` | string | `rts` | Backward smoother. See options below. |
+
+### smoother options
+
+| Value | Description | When to use |
+|---|---|---|
+| `rts` | Rauch-Tung-Striebel backward smoother. Uses all future observations to refine past state estimates. Runs a full backward pass after the forward filter. | **Recommended for all offline analysis.** Gives lower uncertainty than the forward filter. |
+| `none` | No smoother. Only forward-filtered estimates are produced. | When only causal (real-time) estimates are needed, or when computation time is critical. |
+
+> **Filter vs smoother**: the forward filter at epoch t uses observations
+> up to time t only. The RTS smoother at epoch t uses all n observations.
+> The smoother uncertainty is always <= filter uncertainty. For offline
+> reanalysis (climatological studies, post-processing of sensor logs)
+> always use `smoother: rts`. For real-time applications set `smoother: none`.
+
+> **Computational cost**: the RTS smoother adds one backward pass of O(n)
+> operations. For n=36524 this takes < 1 second. It is negligible compared
+> to the EM estimation cost.
+
+---
+
+### 14.5 kalman.forecast
+
+Controls multi-step prediction beyond the last observation.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `steps` | int | `0` | Number of prediction steps beyond the last observation. `0` = no forecast. Must be >= 0. |
+| `confidence_level` | float | `0.95` | Confidence level for the prediction interval. The interval is `state +/- z * std`, where `z = 1.96` for 95%. |
+
+> **Forecast interpretation**: the forecast is generated by repeated application
+> of the state transition F starting from the last filtered state. For
+> `local_level`, the point forecast is constant (equal to the last filtered
+> level). For `local_trend` and `constant_velocity`, the point forecast
+> follows the estimated drift. The prediction uncertainty grows monotonically
+> because process noise accumulates with each step:
+>
+> ```
+> P[t+k|t] = F^k * P[t|t] * (F^k)' + sum_{j=0}^{k-1} F^j * Q * (F^j)'
+> ```
+>
+> For `local_level`: `std[t+k] = sqrt(P[t|t] + k * Q)`.
+
+> **Forecast horizon guide** (6h data, 1 step = 6h):
+>
+> | steps | Horizon | Physical meaning |
+> |---|---|---|
+> | 4 | 1 day | Short-term nowcast |
+> | 24 | 6 days | Medium-range |
+> | 96 | 24 days | Monthly outlook (uncertainty very large) |
+>
+> For `local_level` with GPS IWV: forecast uncertainty at step k is
+> sqrt(P_ss + k * Q) where P_ss ~ 1.5e-5 m^2. At k=24 (6 days) and Q=1e-4:
+> std ~ sqrt(1.5e-5 + 24 * 1e-4) ~ 0.050 m, i.e. +/-0.1 m at 95%.
+> This is comparable to the total IWV variability, so forecasts beyond
+> 24-48 steps are not informative for this dataset.
+
+> **`confidence_level`**: currently uses z = 1.96 for 95% regardless of
+> the configured value. The z-value will be derived from the normal quantile
+> function in a future update.
+
+---
+
+### 14.6 kalman.significance_level
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `significance_level` | float | `0.05` | Reserved for future hypothesis tests on innovations. Not currently used in the pipeline. |
+
+---
+
+### 14.7 Plots (kalman pipeline)
+
+Kalman plot flags are set directly under `"plots"` (not inside an `"enabled"` sub-object),
+following the same convention as the spectral module.
+
+| Flag | Default | Description |
+|---|---|---|
+| `kalman_overlay` | `true` | Original (grey dots) + filtered (blue line) + smoothed RTS (red line, if enabled) + 2-sigma confidence band (shaded blue). Full series length. |
+| `kalman_innovations` | `true` | One-step-ahead innovations (y[t] - H * x_hat[t\|t-1]) vs time. Steady-state +/-2sigma band shown as dashed horizontal lines. |
+| `kalman_gain` | `false` | Kalman gain K[t][0] vs time. Shows convergence from initial value to steady-state. |
+| `kalman_uncertainty` | `false` | Filter std sqrt(P[t\|t]) and smoother std sqrt(P[t\|T]) vs time. |
+| `kalman_forecast` | `true` | Last 1461 observed samples + forecast with 2-sigma prediction interval. Only generated when `forecast.steps > 0`. |
+| `kalman_diagnostics` | `false` | 4-panel residual diagnostics of innovations: residuals vs fitted, Normal Q-Q with 95% bands, histogram with normal fit, ACF. Delegates to `loki::Plot::residualDiagnostics()`. |
+
+> **Reading the overlay plot**: the filtered and smoothed lines should
+> follow the signal trend. A large gap between filtered and smoothed
+> indicates the smoother is using future information to correct the
+> filter -- normal behaviour at abrupt changes. The confidence band
+> width reflects filter uncertainty (proportional to sqrt(P[t|t]));
+> for stationary models it is constant after a short initial transient.
+
+> **Reading the innovations plot**: innovations should be approximately
+> white noise centred on zero. Systematic structure indicates model
+> misspecification:
+> - **Positive drift**: signal has a trend not captured by the model.
+>   Switch to `local_trend`.
+> - **Oscillatory pattern**: seasonal or periodic component present.
+>   Consider deseasonalising before filtering.
+> - **Negative ACF at lag 1**: filter is slightly over-smoothing (K too small).
+>   Increase Q or decrease R.
+> - **Positive ACF at lag 1**: filter is under-smoothing (K too large, tracks
+>   noise). Decrease Q or increase R.
+
+> **Reading the gain plot**: K converges from the initial value (near 1 for
+> diffuse P0) to the steady-state value within a few steps. If K stays near 1
+> after convergence, Q >> R (filter trusts measurements). If K is near 0,
+> Q << R (filter trusts the model / heavy smoothing).
+
+> **Reading the uncertainty plot**: filter std is constant in steady state
+> for stationary models. Smoother std is always <= filter std. A gap between
+> the two indicates how much information the smoother gains from future
+> observations -- wider gap = more benefit from smoothing.
+
+---
+
+### 14.8 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `kalman_[dataset]_[component]_protocol.txt`
+
+The protocol contains:
+- Dataset name, component, model, noise estimation method, smoother
+- N total observations, N observed (non-NaN)
+- Estimated Q and R
+- Log-likelihood of the measurement sequence
+- EM iterations and convergence status (if estimation = em)
+- Forecast summary: steps, start/end MJD, final point estimate and std (if enabled)
+
+---
+
+### 14.9 Example configs
+
+**GPS IWV tracking (EM noise estimation, RTS smoother)**:
+```json
+"kalman": {
+    "gap_fill_strategy": "auto",
+    "gap_fill_max_length": 0,
+    "model": "local_level",
+    "noise": {
+        "estimation": "em",
+        "Q_init": 1.0,
+        "R_init": 1.0,
+        "em_max_iter": 100,
+        "em_tol": 1e-4
+    },
+    "smoother": "rts",
+    "forecast": { "steps": 24, "confidence_level": 0.95 },
+    "significance_level": 0.05
+}
+```
+
+**GPS IWV tracking (manual, physically motivated)**:
+```json
+"kalman": {
+    "gap_fill_strategy": "auto",
+    "model": "local_level",
+    "noise": {
+        "estimation": "manual",
+        "Q": 0.0001,
+        "R": 0.000004
+    },
+    "smoother": "rts",
+    "forecast": { "steps": 24 }
+}
+```
+
+**GPS IWV smoothing (extract slow signal)**:
+```json
+"kalman": {
+    "gap_fill_strategy": "auto",
+    "model": "local_level",
+    "noise": {
+        "estimation": "manual",
+        "Q": 0.000001,
+        "R": 0.001
+    },
+    "smoother": "rts",
+    "forecast": { "steps": 0 }
+}
+```
+
+**Train velocity (constant_velocity model, heuristic noise)**:
+```json
+"kalman": {
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 10,
+    "model": "constant_velocity",
+    "noise": {
+        "estimation": "heuristic",
+        "smoothing_factor": 50.0
+    },
+    "smoother": "rts",
+    "forecast": { "steps": 100 }
+}
+```
+
+**GNSS coordinate drift (local_trend, manual)**:
+```json
+"kalman": {
+    "gap_fill_strategy": "linear",
+    "model": "local_trend",
+    "noise": {
+        "estimation": "manual",
+        "Q": 1e-8,
+        "R": 1e-6
+    },
+    "smoother": "rts",
+    "forecast": { "steps": 365 }
+}
+```
+
+---
+
+### 14.10 Common issues and remedies
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Filtered series tracks every measurement (no smoothing) | Q >> R, K close to 1 | Increase R or decrease Q; use `heuristic` with high `smoothing_factor` |
+| Filtered series barely moves (over-smoothing) | Q << R, K close to 0 | Decrease R or increase Q |
+| EM does not converge in 100 iterations | `em_tol` too tight for large n | Relax `em_tol` to `1e-4` or `1e-3` |
+| EM result gives near-interpolating filter (K ~ 1) | Model has no seasonal component; EM assigns all variance to Q | Expected for IWV without deseasonalisation; use `manual` with larger R for smoothing |
+| Innovations show lag-1 negative ACF | Filter over-smoothing relative to data autocorrelation | Increase Q slightly |
+| Innovations show lag-1 positive ACF | Data has short-term persistence not captured by model | Expected for atmospheric data; consider AR-augmented model (future feature) |
+| Forecast std grows too quickly | Q is large (filter is sensitive to model noise) | Decrease Q for long-horizon forecasting |
+| Overlay shows only partial series | gnuplot xrange issue (fixed in current version) | Rebuild with latest `plotKalman.cpp` |
+| Protocol shows `EM converged: no` | Normal for large n with tight tolerance | Check that Q and R have stabilised in the log; result is still usable |

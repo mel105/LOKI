@@ -61,6 +61,7 @@ private:
     static SsaConfig             _parseSsa              (const nlohmann::json& j);
     static DecompositionConfig   _parseDecomposition    (const nlohmann::json& j);
     static SpectralConfig        _parseSpectral         (const nlohmann::json& j);
+    static KalmanConfig          _parseKalman           (const nlohmann::json& j);
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
     static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,

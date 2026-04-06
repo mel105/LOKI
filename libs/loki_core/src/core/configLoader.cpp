@@ -77,19 +77,20 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
 
     const std::filesystem::path inputDir = cfg.workspace / "INPUT";
 
-    cfg.input        = _parseInput        (j.value("input",        json::object()), inputDir);
-    cfg.output       = _parseOutput       (j.value("output",       json::object()));
-    cfg.homogeneity  = _parseHomogeneity  (j.value("homogeneity",  json::object()));
-    cfg.outlier      = _parseOutlier      (j.value("outlier",      json::object()));
-    cfg.filter       = _parseFilter       (j.value("filter",       json::object()));
-    cfg.regression   = _parseRegression   (j.value("regression",   json::object()));
-    cfg.plots        = _parsePlots        (j.value("plots",        json::object()));
-    cfg.stats        = _parseStats        (j);
-    cfg.stationarity = _parseStationarity (j.value("stationarity", json::object()));
-    cfg.arima        = _parseArima        (j.value("arima",        json::object()));
-    cfg.ssa          = _parseSsa          (j.value("ssa",          json::object()));
-    cfg.decomposition = _parseDecomposition(j.value("decomposition", json::object()));
-    cfg.spectral      = _parseSpectral     (j.value("spectral",      json::object()));
+    cfg.input         = _parseInput        (j.value("input",        json::object()), inputDir);
+    cfg.output        = _parseOutput       (j.value("output",       json::object()));
+    cfg.homogeneity   = _parseHomogeneity  (j.value("homogeneity",  json::object()));
+    cfg.outlier       = _parseOutlier      (j.value("outlier",      json::object()));
+    cfg.filter        = _parseFilter       (j.value("filter",       json::object()));
+    cfg.regression    = _parseRegression   (j.value("regression",   json::object()));
+    cfg.plots         = _parsePlots        (j.value("plots",        json::object()));
+    cfg.stats         = _parseStats        (j);
+    cfg.stationarity  = _parseStationarity (j.value("stationarity", json::object()));
+    cfg.arima         = _parseArima        (j.value("arima",        json::object()));
+    cfg.ssa           = _parseSsa          (j.value("ssa",          json::object()));
+    cfg.decomposition = _parseDecomposition(j.value("decomposition",json::object()));
+    cfg.spectral      = _parseSpectral     (j.value("spectral",     json::object()));
+    cfg.kalman        = _parseKalman       (j.value("kalman",       json::object()));
 
     return cfg;
 }
@@ -513,9 +514,9 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("arima_diagnostics")) cfg.arimaDiagnostics = e["arima_diagnostics"].get<bool>();
 
         // SSA pipeline
-        if (e.contains("ssa_scree"))          cfg.ssaScree         = e["ssa_scree"].get<bool>();
-        if (e.contains("ssa_wcorr"))          cfg.ssaWCorr         = e["ssa_wcorr"].get<bool>();
-        if (e.contains("ssa_components"))     cfg.ssaComponents    = e["ssa_components"].get<bool>();
+        if (e.contains("ssa_scree"))          cfg.ssaScree          = e["ssa_scree"].get<bool>();
+        if (e.contains("ssa_wcorr"))          cfg.ssaWCorr          = e["ssa_wcorr"].get<bool>();
+        if (e.contains("ssa_components"))     cfg.ssaComponents     = e["ssa_components"].get<bool>();
         if (e.contains("ssa_reconstruction")) cfg.ssaReconstruction = e["ssa_reconstruction"].get<bool>();
 
         // Decomposition pipeline
@@ -535,6 +536,14 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("spectral_amplitude"))   cfg.spectralAmplitude   = j["spectral_amplitude"].get<bool>();
     if (j.contains("spectral_phase"))       cfg.spectralPhase       = j["spectral_phase"].get<bool>();
     if (j.contains("spectral_spectrogram")) cfg.spectralSpectrogram = j["spectral_spectrogram"].get<bool>();
+
+    // Kalman flags at top level of "plots" block
+    if (j.contains("kalman_overlay"))      cfg.kalmanOverlay      = j["kalman_overlay"].get<bool>();
+    if (j.contains("kalman_innovations"))  cfg.kalmanInnovations  = j["kalman_innovations"].get<bool>();
+    if (j.contains("kalman_gain"))         cfg.kalmanGain         = j["kalman_gain"].get<bool>();
+    if (j.contains("kalman_uncertainty"))  cfg.kalmanUncertainty  = j["kalman_uncertainty"].get<bool>();
+    if (j.contains("kalman_forecast"))     cfg.kalmanForecast     = j["kalman_forecast"].get<bool>();
+    if (j.contains("kalman_diagnostics"))  cfg.kalmanDiagnostics  = j["kalman_diagnostics"].get<bool>();
 
     return cfg;
 }
@@ -858,7 +867,6 @@ SsaConfig ConfigLoader::_parseSsa(const nlohmann::json& j)
                 + std::to_string(cfg.grouping.varianceThreshold) + ".");
         }
 
-        // Parse manual groups: {"trend": [0, 1], "annual": [2, 3, 4, 5], ...}
         if (g.contains("manual_groups") && g.at("manual_groups").is_object()) {
             for (const auto& [name, indices] : g.at("manual_groups").items()) {
                 std::vector<int> idx;
@@ -1128,6 +1136,134 @@ SpectralConfig ConfigLoader::_parseSpectral(const nlohmann::json& j)
         throw ConfigException(
             "ConfigLoader: spectral.significance_level must be in (0, 1), got "
             + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseKalman
+// -----------------------------------------------------------------------------
+
+KalmanConfig ConfigLoader::_parseKalman(const nlohmann::json& j)
+{
+    KalmanConfig cfg;
+
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "auto", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,     false);
+    cfg.model            = getOrDefault<std::string>(j, "model",    "local_level",    false);
+    cfg.smoother         = getOrDefault<std::string>(j, "smoother", "rts",            false);
+    cfg.significanceLevel= getOrDefault<double>     (j, "significance_level", 0.05,  false);
+
+    if (cfg.model != "local_level"
+        && cfg.model != "local_trend"
+        && cfg.model != "constant_velocity") {
+        throw ConfigException(
+            "ConfigLoader: kalman.model '" + cfg.model + "' not recognised. "
+            "Valid: local_level, local_trend, constant_velocity.");
+    }
+
+    if (cfg.smoother != "none" && cfg.smoother != "rts") {
+        throw ConfigException(
+            "ConfigLoader: kalman.smoother '" + cfg.smoother + "' not recognised. "
+            "Valid: none, rts.");
+    }
+
+    if (cfg.gapFillStrategy != "auto"
+        && cfg.gapFillStrategy != "linear"
+        && cfg.gapFillStrategy != "median_year"
+        && cfg.gapFillStrategy != "none") {
+        throw ConfigException(
+            "ConfigLoader: kalman.gap_fill_strategy '" + cfg.gapFillStrategy
+            + "' not recognised. Valid: auto, linear, median_year, none.");
+    }
+
+    if (cfg.gapFillMaxLength < 0) {
+        throw ConfigException(
+            "ConfigLoader: kalman.gap_fill_max_length must be >= 0, got "
+            + std::to_string(cfg.gapFillMaxLength) + ".");
+    }
+
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: kalman.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    // ---- noise sub-section --------------------------------------------------
+    if (j.contains("noise")) {
+        const auto& n = j.at("noise");
+
+        cfg.noise.estimation = getOrDefault<std::string>(n, "estimation", "manual", false);
+        if (cfg.noise.estimation != "manual"
+            && cfg.noise.estimation != "heuristic"
+            && cfg.noise.estimation != "em") {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.estimation '" + cfg.noise.estimation
+                + "' not recognised. Valid: manual, heuristic, em.");
+        }
+
+        cfg.noise.Q               = getOrDefault<double>(n, "Q",               1.0,    false);
+        cfg.noise.R               = getOrDefault<double>(n, "R",               1.0,    false);
+        cfg.noise.smoothingFactor = getOrDefault<double>(n, "smoothing_factor", 10.0,  false);
+        cfg.noise.QInit           = getOrDefault<double>(n, "Q_init",           1.0,   false);
+        cfg.noise.RInit           = getOrDefault<double>(n, "R_init",           1.0,   false);
+        cfg.noise.emMaxIter       = getOrDefault<int>   (n, "em_max_iter",      100,   false);
+        cfg.noise.emTol           = getOrDefault<double>(n, "em_tol",           1.0e-6,false);
+
+        if (cfg.noise.Q <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.Q must be > 0, got "
+                + std::to_string(cfg.noise.Q) + ".");
+        }
+        if (cfg.noise.R <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.R must be > 0, got "
+                + std::to_string(cfg.noise.R) + ".");
+        }
+        if (cfg.noise.QInit <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.Q_init must be > 0, got "
+                + std::to_string(cfg.noise.QInit) + ".");
+        }
+        if (cfg.noise.RInit <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.R_init must be > 0, got "
+                + std::to_string(cfg.noise.RInit) + ".");
+        }
+        if (cfg.noise.smoothingFactor <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.smoothing_factor must be > 0, got "
+                + std::to_string(cfg.noise.smoothingFactor) + ".");
+        }
+        if (cfg.noise.emMaxIter < 1) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.em_max_iter must be >= 1, got "
+                + std::to_string(cfg.noise.emMaxIter) + ".");
+        }
+        if (cfg.noise.emTol <= 0.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.noise.em_tol must be > 0, got "
+                + std::to_string(cfg.noise.emTol) + ".");
+        }
+    }
+
+    // ---- forecast sub-section -----------------------------------------------
+    if (j.contains("forecast")) {
+        const auto& f = j.at("forecast");
+        cfg.forecast.steps           = getOrDefault<int>   (f, "steps",            0,    false);
+        cfg.forecast.confidenceLevel = getOrDefault<double>(f, "confidence_level", 0.95, false);
+
+        if (cfg.forecast.steps < 0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.forecast.steps must be >= 0, got "
+                + std::to_string(cfg.forecast.steps) + ".");
+        }
+        if (cfg.forecast.confidenceLevel <= 0.0 || cfg.forecast.confidenceLevel >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: kalman.forecast.confidence_level must be in (0, 1), got "
+                + std::to_string(cfg.forecast.confidenceLevel) + ".");
+        }
     }
 
     return cfg;
