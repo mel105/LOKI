@@ -92,6 +92,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.spectral      = _parseSpectral     (j.value("spectral",     json::object()));
     cfg.kalman        = _parseKalman       (j.value("kalman",       json::object()));
     cfg.qc            = _parseQc           (j.value("qc",           json::object()));
+    cfg.clustering    = _parseClustering   (j.value("clustering",   json::object()));
 
     return cfg;
 }
@@ -550,6 +551,11 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("qc_coverage"))  cfg.qcCoverage  = j["qc_coverage"].get<bool>();
     if (j.contains("qc_histogram")) cfg.qcHistogram = j["qc_histogram"].get<bool>();
     if (j.contains("qc_acf"))       cfg.qcAcf       = j["qc_acf"].get<bool>();
+
+    // Clustering flags at top level of "plots" block
+    if (j.contains("clustering_labels"))     cfg.clusteringLabels     = j["clustering_labels"].get<bool>();
+    if (j.contains("clustering_scatter"))    cfg.clusteringScatter    = j["clustering_scatter"].get<bool>();
+    if (j.contains("clustering_silhouette")) cfg.clusteringSilhouette = j["clustering_silhouette"].get<bool>();
 
     return cfg;
 }
@@ -1361,6 +1367,136 @@ QcConfig ConfigLoader::_parseQc(const nlohmann::json& j)
                 "ConfigLoader: qc.seasonal.min_month_coverage must be in [0, 1], got "
                 + std::to_string(cfg.seasonal.minMonthCoverage) + ".");
         }
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseClustering
+// -----------------------------------------------------------------------------
+
+ClusteringConfig ConfigLoader::_parseClustering(const nlohmann::json& j)
+{
+    ClusteringConfig cfg;
+
+    cfg.method           = getOrDefault<std::string>(j, "method",             "kmeans", false);
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear", false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,        false);
+    cfg.significanceLevel= getOrDefault<double>     (j, "significance_level",  0.05,    false);
+
+    if (cfg.method != "kmeans" && cfg.method != "dbscan") {
+        throw ConfigException(
+            "ConfigLoader: clustering.method '" + cfg.method
+            + "' not recognised. Valid: kmeans, dbscan.");
+    }
+    if (cfg.significanceLevel <= 0.0 || cfg.significanceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: clustering.significance_level must be in (0, 1), got "
+            + std::to_string(cfg.significanceLevel) + ".");
+    }
+
+    // ---- features sub-section -----------------------------------------------
+    if (j.contains("features")) {
+        const auto& f = j.at("features");
+        cfg.features.value            = getOrDefault<bool>(f, "value",            true,  false);
+        cfg.features.derivative       = getOrDefault<bool>(f, "derivative",       false, false);
+        cfg.features.absDerivative    = getOrDefault<bool>(f, "abs_derivative",   false, false);
+        cfg.features.secondDerivative = getOrDefault<bool>(f, "second_derivative",false, false);
+        cfg.features.slope            = getOrDefault<bool>(f, "slope",            false, false);
+        cfg.features.slopeWindow      = getOrDefault<int> (f, "slope_window",     15,    false);
+
+        if (cfg.features.slopeWindow < 2) {
+            throw ConfigException(
+                "ConfigLoader: clustering.features.slope_window must be >= 2, got "
+                + std::to_string(cfg.features.slopeWindow) + ".");
+        }
+
+        if (!cfg.features.value && !cfg.features.derivative
+            && !cfg.features.absDerivative && !cfg.features.secondDerivative
+            && !cfg.features.slope) {
+            LOKI_WARNING("ConfigLoader: no clustering features enabled -- "
+                         "defaulting to value=true.");
+            cfg.features.value = true;
+        }
+    }
+
+    // ---- kmeans sub-section -------------------------------------------------
+    if (j.contains("kmeans")) {
+        const auto& km = j.at("kmeans");
+
+        cfg.kmeans.k       = getOrDefault<int>        (km, "k",        0,          false);
+        cfg.kmeans.kMin    = getOrDefault<int>        (km, "k_min",    2,          false);
+        cfg.kmeans.kMax    = getOrDefault<int>        (km, "k_max",    10,         false);
+        cfg.kmeans.maxIter = getOrDefault<int>        (km, "max_iter", 300,        false);
+        cfg.kmeans.nInit   = getOrDefault<int>        (km, "n_init",   10,         false);
+        cfg.kmeans.tol     = getOrDefault<double>     (km, "tol",      1.0e-4,     false);
+        cfg.kmeans.init    = getOrDefault<std::string>(km, "init",     "kmeans++", false);
+
+        if (km.contains("labels")) {
+            cfg.kmeans.labels = km.at("labels").get<std::vector<std::string>>();
+        }
+
+        if (cfg.kmeans.k < 0) {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.k must be >= 0, got "
+                + std::to_string(cfg.kmeans.k) + ".");
+        }
+        if (cfg.kmeans.kMin < 2) {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.k_min must be >= 2, got "
+                + std::to_string(cfg.kmeans.kMin) + ".");
+        }
+        if (cfg.kmeans.kMax < cfg.kmeans.kMin) {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.k_max must be >= k_min.");
+        }
+        if (cfg.kmeans.maxIter < 1) {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.max_iter must be >= 1, got "
+                + std::to_string(cfg.kmeans.maxIter) + ".");
+        }
+        if (cfg.kmeans.nInit < 1) {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.n_init must be >= 1, got "
+                + std::to_string(cfg.kmeans.nInit) + ".");
+        }
+        if (cfg.kmeans.init != "kmeans++" && cfg.kmeans.init != "random") {
+            throw ConfigException(
+                "ConfigLoader: clustering.kmeans.init must be 'kmeans++' or 'random', got '"
+                + cfg.kmeans.init + "'.");
+        }
+    }
+
+    // ---- dbscan sub-section -------------------------------------------------
+    if (j.contains("dbscan")) {
+        const auto& db = j.at("dbscan");
+
+        cfg.dbscan.eps    = getOrDefault<double>     (db, "eps",     0.0,         false);
+        cfg.dbscan.minPts = getOrDefault<int>        (db, "min_pts", 5,           false);
+        cfg.dbscan.metric = getOrDefault<std::string>(db, "metric",  "euclidean", false);
+
+        if (cfg.dbscan.eps < 0.0) {
+            throw ConfigException(
+                "ConfigLoader: clustering.dbscan.eps must be >= 0, got "
+                + std::to_string(cfg.dbscan.eps) + ".");
+        }
+        if (cfg.dbscan.minPts < 2) {
+            throw ConfigException(
+                "ConfigLoader: clustering.dbscan.min_pts must be >= 2, got "
+                + std::to_string(cfg.dbscan.minPts) + ".");
+        }
+        if (cfg.dbscan.metric != "euclidean" && cfg.dbscan.metric != "manhattan") {
+            throw ConfigException(
+                "ConfigLoader: clustering.dbscan.metric must be 'euclidean' or "
+                "'manhattan', got '" + cfg.dbscan.metric + "'.");
+        }
+    }
+
+    // ---- outlier sub-section ------------------------------------------------
+    if (j.contains("outlier")) {
+        const auto& o = j.at("outlier");
+        cfg.outlier.enabled = getOrDefault<bool>(o, "enabled", false, false);
     }
 
     return cfg;

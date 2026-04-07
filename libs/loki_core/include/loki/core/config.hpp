@@ -410,6 +410,11 @@ struct PlotConfig {
     bool qcCoverage  {true};   ///< Time-axis coverage plot (valid/gap/outlier colour bands).
     bool qcHistogram {true};   ///< Value histogram with normal fit overlay.
     bool qcAcf       {false};  ///< ACF of valid observations.
+
+    // -- Clustering pipeline plots --------------------------------------------
+    bool clusteringLabels    {true};  ///< Time axis coloured by cluster label.
+    bool clusteringScatter   {true};  ///< 2-D feature scatter coloured by label (>= 2 features).
+    bool clusteringSilhouette{true};  ///< Silhouette plot (k-means only).
 };
 
 // -----------------------------------------------------------------------------
@@ -752,6 +757,73 @@ struct QcConfig {
     double           minSpanYears        {10.0};  ///< Min span for MEDIAN_YEAR gap fill recommendation.
 };
 
+
+// -----------------------------------------------------------------------------
+//  ClusteringConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Feature vector selection for clustering.
+ */
+struct ClusteringFeatureConfig {
+    bool value           {true};   ///< Use the series value as a feature.
+    bool derivative      {false};  ///< Use signed first difference v[t] - v[t-1].
+    bool absDerivative   {false};  ///< Use |v[t] - v[t-1]|.
+    bool secondDerivative{false};  ///< Use second difference v[t] - 2*v[t-1] + v[t-2].
+    bool slope           {false};  ///< Use OLS slope over a sliding window (slope_window samples).
+    int  slopeWindow     {15};     ///< Window length in samples for OLS slope estimation.
+};
+
+/**
+ * @brief k-means configuration for the clustering pipeline.
+ */
+struct KMeansClusteringConfig {
+    int                      k     {0};          ///< Number of clusters. 0 = auto via silhouette.
+    int                      kMin  {2};          ///< Lower bound for auto k selection.
+    int                      kMax  {10};         ///< Upper bound for auto k selection.
+    int                      maxIter{300};       ///< Maximum iterations per run.
+    int                      nInit  {10};        ///< Number of random restarts.
+    double                   tol    {1.0e-4};    ///< Centroid shift convergence criterion.
+    std::string              init   {"kmeans++"}; ///< Initialisation: "kmeans++" | "random"
+    std::vector<std::string> labels {};          ///< User-defined label names (empty = auto).
+};
+
+/**
+ * @brief DBSCAN configuration for the clustering pipeline.
+ */
+struct DbscanClusteringConfig {
+    double      eps    {0.0};         ///< Neighbourhood radius in z-score space. 0 = auto via k-NN elbow.
+    int         minPts {5};           ///< Minimum points for a core point.
+    std::string metric {"euclidean"}; ///< Distance metric: "euclidean" | "manhattan"
+};
+
+/**
+ * @brief Outlier reporting settings for the clustering pipeline.
+ *
+ * When enabled, DBSCAN noise points (label = -1) are flagged as outliers
+ * in the flags CSV and reported in the protocol.
+ */
+struct ClusteringOutlierConfig {
+    bool enabled {false}; ///< Flag DBSCAN noise points as outliers in CSV output.
+};
+
+// ClusteringFeatureConfig, KMeansClusteringConfig, DbscanClusteringConfig,
+// ClusteringOutlierConfig defined above (GCC 13 pattern).
+
+/**
+ * @brief Top-level configuration for the loki_clustering pipeline.
+ */
+struct ClusteringConfig {
+    std::string              method          {"kmeans"}; ///< "kmeans" | "dbscan"
+    std::string              gapFillStrategy {"linear"}; ///< Gap fill before feature extraction.
+    int                      gapFillMaxLength{0};
+    ClusteringFeatureConfig  features        {};
+    KMeansClusteringConfig   kmeans          {};
+    DbscanClusteringConfig   dbscan          {};
+    ClusteringOutlierConfig  outlier         {};
+    double                   significanceLevel{0.05};
+};
+
 // -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
@@ -774,6 +846,7 @@ struct AppConfig {
     SpectralConfig      spectral;
     KalmanConfig        kalman;
     QcConfig            qc;
+    ClusteringConfig    clustering;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

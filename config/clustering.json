@@ -1,0 +1,57 @@
+{
+    "workspace": "C:/Users/eliasmichal/Dokumenty/Osobne",
+
+    "input": {
+        "mode": "single_file",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_seconds",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "clustering": {
+    "method": "kmeans",
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0,
+    "features": {
+      "value": true,
+      "derivative": false,
+      "abs_derivative": true,
+      "second_derivative": false,
+      "slope": true,
+      "slope_window": 15
+    },
+    "kmeans": {
+      "k": 4,
+      "k_min": 2,
+      "k_max": 10,
+      "max_iter": 300,
+      "n_init": 10,
+      "tol": 0.0001,
+      "init": "kmeans++",
+      "labels": ["stationary", "decelerating", "cruising", "accelerating"]
+    },
+    "dbscan": {
+      "eps": 0.5,
+      "min_pts": 5,
+      "metric": "euclidean"
+    },
+    "outlier": {
+      "enabled": false
+    },
+    "significance_level": 0.05
+  },
+  "plots": {
+    "output_format": "png",
+    "clustering_labels": true,
+    "clustering_scatter": true,
+    "clustering_silhouette": true
+  }
+}

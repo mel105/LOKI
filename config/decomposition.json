@@ -1,13 +1,13 @@
 {
-    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+    "workspace": "C:/Users/eliasmichal/Dokumenty/Osobne",
 
     "input": {
-        "file": "CLIM_DATA_EX1.txt",
-        "time_format": "utc",
-        "time_columns": [0, 1],
-        "delimiter": " ",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_second",
+        "time_columns": [0],
+        "delimiter": ";",
         "comment_char": "%",
-        "columns": [3],
+        "columns": [2],
         "merge_strategy": "separate"
     },
 
@@ -17,7 +17,7 @@
 
     "decomposition": {
         "method": "classical",
-        "period": 1461,
+        "period": 50,
         "gap_fill_strategy": "linear",
         "gap_fill_max_length": 0,
 

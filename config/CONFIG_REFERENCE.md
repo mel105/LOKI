@@ -26,6 +26,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 13. [loki_spectral](#13-loki_spectral)
 14. [loki_kalman](#14-loki_kalman)
 15. [loki_qc](#15-loki_qc)
+16. [loki_clustering](#16-loki_clustering)
 
 ---
 
@@ -3416,3 +3417,447 @@ Sections:
     "seasonal": { "min_years_per_slot": 3, "min_month_coverage": 0.3 }
 }
 ```
+
+## 16. loki_clustering
+
+**Program:** `loki_clustering.exe`
+**Default config:** `config/clustering.json`
+
+Groups time series observations into clusters based on configurable feature
+vectors. Two algorithms are available: k-means (partition-based) and DBSCAN
+(density-based). The module is general-purpose -- applicable to climatological,
+GNSS, and sensor data. Primary use cases include phase segmentation of vehicle
+velocity profiles and density-based outlier detection.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller              -- fill NaN / missing values (optional)
+2. Feature extraction     -- build feature matrix from configured features
+3. Z-score normalisation  -- each feature column normalised independently
+4. k-means or DBSCAN      -- clustering in normalised feature space
+5. Edge point assignment  -- NaN derivative rows assigned to nearest centroid
+6. Label naming           -- user-defined or auto-generated cluster names
+7. Protocol               -- OUTPUT/PROTOCOLS/clustering_[dataset]_[component]_protocol.txt
+8. Labels CSV             -- OUTPUT/CSV/clustering_[dataset]_[component]_labels.csv
+9. Plots                  -- labels time axis, feature scatter, silhouette
+```
+
+The section key in the JSON file is `"clustering"`.
+
+---
+
+### 16.1 Top-level clustering settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `kmeans` | Clustering algorithm. `"kmeans"` or `"dbscan"`. |
+| `gap_fill_strategy` | string | `linear` | Gap fill strategy before feature extraction. `"linear"`, `"forward_fill"`, `"mean"`, `"none"`. |
+| `gap_fill_max_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+| `significance_level` | float | `0.05` | Reserved for future hypothesis tests. |
+
+---
+
+### 16.2 clustering.features
+
+Controls which features are extracted from the series to form the observation
+vector for each epoch. All enabled features are z-score normalised before
+clustering so that their scales do not bias the distance metric.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `value` | bool | `true` | Use the raw series value `v[t]` as a feature. |
+| `derivative` | bool | `false` | Use the signed first difference `v[t] - v[t-1]`. Positive = increasing, negative = decreasing. |
+| `abs_derivative` | bool | `false` | Use `|v[t] - v[t-1]|`. Magnitude of change only, direction discarded. |
+| `second_derivative` | bool | `false` | Use `v[t] - 2*v[t-1] + v[t-2]`. Rate of change of the rate of change. |
+| `slope` | bool | `false` | Use the OLS slope over a sliding window of `slope_window` samples. Positive = sustained increase, negative = sustained decrease. |
+| `slope_window` | int | `15` | Window length in samples for the OLS slope estimator. Must be >= 2. |
+
+#### Feature selection guide
+
+At least one feature must be enabled. If all are disabled, `value` is
+automatically re-enabled with a warning.
+
+The first two samples (or more, depending on which features are active) cannot
+have derivative or slope features computed. These **edge points** are assigned
+to the nearest centroid using only the available (non-NaN) features. This is
+handled automatically.
+
+| Goal | Recommended features | Notes |
+|---|---|---|
+| Separate by value range only | `value: true` | Simplest. Good for climatological data where distinct regimes differ in mean value. |
+| Separate value + rate of change (unsigned) | `value: true`, `abs_derivative: true` | Good for short sensor records. Does not distinguish acceleration from braking. |
+| Separate value + direction of change | `value: true`, `derivative: true` | Distinguishes zrýchlenie from brzdenie. Noise-sensitive for small windows. |
+| Phase segmentation of velocity profiles | `value: true`, `slope: true` | **Recommended for vehicle/train data.** `slope` captures sustained trends over a window, not just instantaneous change. Robust to measurement noise. |
+| Curvature-sensitive segmentation | `value: true`, `slope: true`, `second_derivative: true` | Use when transition sharpness matters (e.g. detecting braking onset). |
+
+> **On `derivative` vs `slope`**: `derivative = v[t] - v[t-1]` is an
+> instantaneous quantity -- highly sensitive to measurement noise at 1 Hz
+> or faster. `slope` fits a linear trend over `slope_window` samples using
+> OLS, which effectively averages out noise. For vehicle sensor data,
+> `slope` with `slope_window = 10..20` is strongly preferred over `derivative`.
+
+> **On `abs_derivative` vs `derivative`**: `abs_derivative` discards the
+> direction of change. k-means cannot distinguish zrýchľovanie from brzdenie
+> when using `abs_derivative` alone. Use signed `derivative` or `slope` when
+> directional separation is required.
+
+> **Note on `slope_window`**: the window is in samples, not time units. At
+> 1 Hz, `slope_window = 15` covers 15 seconds. At 10 Hz, the same window
+> covers 1.5 seconds. Adjust to match the expected duration of the
+> acceleration/braking phases in your data.
+
+#### Feature combination examples
+
+**Climatological data -- separate dry/wet regimes:**
+```json
+"features": { "value": true }
+```
+
+**Train velocity -- 3 phases (stationary / moving / changing speed):**
+```json
+"features": {
+    "value":        true,
+    "abs_derivative": true
+}
+```
+
+**Train velocity -- 4 phases with direction (stationary / accelerating / cruising / decelerating):**
+```json
+"features": {
+    "value":        true,
+    "slope":        true,
+    "slope_window": 15
+}
+```
+
+**GNSS velocity -- direction-sensitive with curvature:**
+```json
+"features": {
+    "value":             true,
+    "slope":             true,
+    "second_derivative": true,
+    "slope_window":      20
+}
+```
+
+---
+
+### 16.3 clustering.kmeans
+
+Controls the k-means clustering algorithm. Features are assumed to be
+z-score normalised. The implementation uses k-means++ initialisation
+(default) with multiple random restarts to avoid local minima.
+
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `k` | int | `0` | >= 0 | Number of clusters. `0` = auto-select via silhouette score in `[k_min, k_max]`. |
+| `k_min` | int | `2` | >= 2 | Lower bound for auto k selection. |
+| `k_max` | int | `10` | >= k_min | Upper bound for auto k selection. |
+| `max_iter` | int | `300` | >= 1 | Maximum iterations per run. |
+| `n_init` | int | `10` | >= 1 | Number of independent random restarts. Best result (lowest inertia) is kept. |
+| `tol` | float | `1e-4` | > 0 | Convergence criterion: maximum centroid shift per iteration. |
+| `init` | string | `"kmeans++"` | — | Initialisation method. `"kmeans++"` or `"random"`. |
+| `labels` | string[] | `[]` | — | User-defined cluster names. See label assignment below. |
+
+#### Auto k selection (`k = 0`)
+
+When `k = 0`, the algorithm evaluates all integer values of k in
+`[k_min, k_max]` and selects the k with the highest global silhouette
+coefficient. The selected k is reported in the protocol and log.
+
+Silhouette coefficient ranges from -1 to 1:
+- Near 1: points are well-matched to their cluster and far from neighbours.
+- Near 0: points are near cluster boundaries.
+- Negative: points may be misassigned.
+
+> **Auto k is slower**: each candidate k requires `n_init` full k-means runs.
+> For `k_max = 10` and `n_init = 10`, up to 90 independent runs are executed.
+> For n=1276 this takes a few seconds. For large n (> 50000) consider setting
+> k manually or reducing `n_init` to 3.
+
+> **Auto k may not match physical expectation**: silhouette maximisation finds
+> the statistically best-separated clustering, which may not correspond to the
+> physically meaningful number of phases. If you know the expected number of
+> phases (e.g. 4 for stationary/accelerating/cruising/decelerating), set k
+> explicitly.
+
+#### Label assignment
+
+If `labels` is non-empty and its length equals k, labels are assigned to
+clusters in order of **ascending first-feature centroid value**. The cluster
+with the lowest mean value receives the first label, the highest receives the
+last.
+
+Example: with `k = 4` and `labels: ["stationary", "decelerating", "cruising", "accelerating"]`
+and `value` as the first feature:
+- Lowest centroid value → `"stationary"`
+- Second lowest → `"decelerating"`
+- Second highest → `"cruising"`
+- Highest → `"accelerating"`
+
+> **Important**: the label order is based on the first feature (value), not
+> on the slope or derivative centroid. If the physical label assignment does
+> not match the value ordering in your data, adjust the label order in the
+> config or inspect the protocol centroid table to determine the correct mapping.
+
+> **Mismatch handling**: if `labels.length != k`, auto labels
+> (`cluster_0`, `cluster_1`, ...) are used and a warning is logged.
+
+#### k-means configuration guide
+
+| Scenario | Recommended settings |
+|---|---|
+| Known number of phases | `k = 4` (or appropriate number), `n_init = 10` |
+| Unknown number of phases | `k = 0`, `k_min = 2`, `k_max = 8`, `n_init = 5` |
+| Large dataset (n > 10000) | `k` manual, `n_init = 3`, `max_iter = 100` |
+| Noisy sensor data | Increase `n_init` to 20 for more stable results |
+
+---
+
+### 16.4 clustering.dbscan
+
+Controls the DBSCAN density-based clustering algorithm. DBSCAN does not
+require the number of clusters to be specified. Points in low-density
+regions are classified as noise (label = -1).
+
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `eps` | float | `0.0` | >= 0 | Neighbourhood radius in z-score normalised feature space. `0.0` = auto-estimate via k-NN elbow method. |
+| `min_pts` | int | `5` | >= 2 | Minimum number of points within `eps` for a point to be a core point. |
+| `metric` | string | `"euclidean"` | — | Distance metric. `"euclidean"` or `"manhattan"`. |
+
+#### Auto eps estimation (`eps = 0.0`)
+
+When `eps = 0.0`, the algorithm estimates `eps` automatically using the
+k-NN distance elbow method:
+
+1. For each point, compute the distance to its `min_pts`-th nearest neighbour.
+2. Sort these distances in ascending order.
+3. Find the point of maximum curvature (elbow) via the second discrete derivative.
+4. Use the distance at the elbow as `eps`.
+
+The estimated `eps` is logged at INFO level.
+
+#### DBSCAN parameter guide
+
+| Parameter | Effect | Guidance |
+|---|---|---|
+| `eps` too small | Almost all points classified as noise | Increase `eps` or use auto estimation |
+| `eps` too large | All points merged into one cluster | Decrease `eps` |
+| `min_pts` too small | Noise-sensitive, many small clusters | Increase to 5--10 for 1 Hz sensor data |
+| `min_pts` too large | Core points rare, many noise points | Decrease for sparse data |
+
+> **DBSCAN vs k-means for outlier detection**: DBSCAN naturally identifies
+> isolated points as noise without requiring a predefined number of clusters.
+> This makes it well-suited for detecting sensor dropouts, measurement spikes,
+> and physically impossible values in vehicle sensor data. Enable
+> `outlier.enabled: true` to propagate noise points to the flags CSV.
+
+> **DBSCAN for phase segmentation**: DBSCAN works well when phases have
+> clearly different densities in feature space. For vehicle velocity data
+> where phases blend smoothly (gradual acceleration), k-means with `slope`
+> typically gives more interpretable results.
+
+> **Note on `min_pts` and sampling rate**: at 1 Hz, `min_pts = 5` means
+> a phase must last at least 5 seconds to be recognised as a cluster. At
+> 10 Hz, the same setting requires only 0.5 seconds. Adjust to match the
+> minimum expected phase duration.
+
+---
+
+### 16.5 clustering.outlier
+
+Controls whether DBSCAN noise points are propagated as outlier flags in the
+output CSV. Has no effect when `method = "kmeans"`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | If `true`, DBSCAN noise points (label = -1) are flagged as outliers in the labels CSV (`outlier_flag = 1`). |
+
+> **When to enable**: use `outlier.enabled: true` when running DBSCAN
+> specifically for outlier detection rather than phase segmentation. The
+> flags CSV can then be used by downstream modules to mask or remove
+> the flagged epochs.
+
+---
+
+### 16.6 Labels CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `clustering_[dataset]_[component]_labels.csv`
+
+```
+mjd ; utc ; value ; label ; label_name ; outlier_flag
+```
+
+| Column | Description |
+|---|---|
+| `mjd` | Modified Julian Date of the epoch |
+| `utc` | UTC string ("YYYY-MM-DD hh:mm:ss.sss") |
+| `value` | Series value at this epoch; `NaN` for missing epochs |
+| `label` | Integer cluster label. `-1` = DBSCAN noise or NaN epoch |
+| `label_name` | Human-readable cluster name (e.g. `"stationary"`, `"cruising"`) |
+| `outlier_flag` | `1` if DBSCAN noise and `outlier.enabled = true`; `0` otherwise |
+
+NaN epochs (not clustered) receive `label = -1`, `label_name = "invalid"`,
+`outlier_flag = 0`.
+
+---
+
+### 16.7 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `clustering_[dataset]_[component]_protocol.txt`
+
+The protocol contains:
+- Dataset name, component, method, active features.
+- k-means: selected k (auto or manual), total inertia, global silhouette.
+- DBSCAN: cluster count, noise point count, effective eps.
+- Per-cluster summary: name, epoch count, inertia, centroid in original units.
+- Outlier summary (if `outlier.enabled = true`).
+
+---
+
+### 16.8 Plots (clustering pipeline)
+
+Clustering plot flags are set directly under `"plots"` (same convention as
+kalman and spectral modules).
+
+| Flag | Default | Description |
+|---|---|---|
+| `clustering_labels` | `true` | Time axis with coloured dots per cluster label. X-axis uses relative time in seconds for series shorter than 1 day; MJD otherwise. DBSCAN noise points shown as red circles. |
+| `clustering_scatter` | `true` | 2-D scatter of feature[0] vs feature[1], coloured by label. Only generated when >= 2 features are active. DBSCAN noise as red crosses. |
+| `clustering_silhouette` | `true` | Per-cluster silhouette bar chart with global mean dashed line. Only generated for k-means. |
+
+> **Reading the labels plot**: each dot is one epoch coloured by its cluster
+> assignment. Transitions between colours indicate phase boundaries. For
+> vehicle data, `stationary` (lowest value) should appear as a flat region
+> near zero; `accelerating` / `decelerating` as transitional segments.
+
+> **Reading the scatter plot**: each axis corresponds to one feature
+> (z-score normalised). Well-separated clusters appear as non-overlapping
+> point clouds. Overlapping clusters indicate that the chosen features are
+> insufficient to distinguish those phases -- consider adding `slope` or
+> `derivative`. DBSCAN noise points (red crosses) should appear as isolated
+> points far from the main clouds.
+
+> **Reading the silhouette plot**: each bar shows the mean silhouette
+> coefficient for one cluster. Bars extending rightward (positive) indicate
+> well-separated clusters. Bars near zero or negative indicate ambiguous
+> assignment. The dashed vertical line is the global mean. A global silhouette
+> above 0.5 is generally considered good separation.
+
+---
+
+### 16.9 Example configs
+
+**Auto k-means -- climatological data (value only):**
+```json
+"clustering": {
+    "method": "kmeans",
+    "features": { "value": true },
+    "kmeans": { "k": 0, "k_min": 2, "k_max": 6 }
+}
+```
+
+**k-means with 4 phases -- train velocity (value + slope):**
+```json
+"clustering": {
+    "method": "kmeans",
+    "features": {
+        "value":        true,
+        "slope":        true,
+        "slope_window": 15
+    },
+    "kmeans": {
+        "k":      4,
+        "n_init": 10,
+        "labels": ["stationary", "decelerating", "cruising", "accelerating"]
+    }
+}
+```
+
+**DBSCAN outlier detection -- sensor data:**
+```json
+"clustering": {
+    "method": "dbscan",
+    "features": { "value": true, "abs_derivative": true },
+    "dbscan": {
+        "eps":     0.0,
+        "min_pts": 5,
+        "metric":  "euclidean"
+    },
+    "outlier": { "enabled": true }
+}
+```
+
+**3-phase segmentation -- simpler vehicle data:**
+```json
+"clustering": {
+    "method": "kmeans",
+    "features": {
+        "value":          true,
+        "abs_derivative": true
+    },
+    "kmeans": {
+        "k":      3,
+        "labels": ["stationary", "changing_speed", "cruising"]
+    }
+}
+```
+
+---
+
+### 16.10 Common issues and remedies
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| All points in one cluster | `eps` too large (DBSCAN) or k=1 equivalent | Decrease `eps` or use auto estimation |
+| Most points classified as noise | `eps` too small or `min_pts` too high | Increase `eps` or decrease `min_pts` |
+| Scatter plot not generated | Fewer than 2 features active | Enable a second feature (e.g. `slope`) |
+| Silhouette plot not generated | `method = "dbscan"` | Silhouette only available for k-means |
+| Labels assigned in wrong order | k-means orders by first-feature centroid | Reorder `labels` array to match ascending value order |
+| `accelerating` and `decelerating` mixed | `abs_derivative` discards direction | Switch to `derivative` or `slope` (signed) |
+| Slow cruising misclassified as accelerating | `slope_window` too small, noisy slope estimate | Increase `slope_window` to 20--30 |
+| Empty cluster warnings during fit | Data has fewer distinct modes than k | Reduce k or use `k = 0` auto-select |
+| Segfault / crash with derivative features | Edge points had NaN in feature matrix | Fixed in current version -- update `kMeans.cpp` |
+
+---
+
+### 16.11 Best practices
+
+**Feature selection:**
+- Start with `value` only to understand the data distribution.
+- Add `slope` (not `derivative`) when directional phase separation is needed.
+- Avoid combining `derivative` and `abs_derivative` -- they are linearly
+  dependent and add no new information.
+- For noisy sensor data, always prefer `slope` over `derivative`.
+
+**Number of clusters:**
+- Use `k = 0` (auto) for exploratory analysis; inspect the silhouette plot
+  and protocol to understand the natural cluster structure.
+- Use a fixed k when you have prior physical knowledge of the phase count.
+- Silhouette > 0.5: good separation. Silhouette < 0.3: consider reducing k
+  or changing features.
+
+**k-means stability:**
+- Increase `n_init` to 20 when results vary between runs (local minima).
+- Use `init: "kmeans++"` (default) -- it is significantly more stable than
+  `"random"` for most datasets.
+- For very large series (n > 100000), reduce `n_init` to 3 and set k manually.
+
+**DBSCAN parameter selection:**
+- Always try `eps = 0.0` first to let the elbow method estimate it.
+- If the auto estimate gives too many noise points, manually set `eps` to
+  a value slightly above the auto estimate.
+- Set `min_pts` to roughly the expected minimum phase duration in samples
+  divided by 2.
+
+**slope_window selection:**
+- Rule of thumb: set `slope_window` to cover half the typical duration of
+  the shortest phase of interest.
+- At 1 Hz: phases lasting >= 10 s → `slope_window = 5..10`.
+- At 1 Hz: phases lasting >= 30 s → `slope_window = 15..20`.
+- Larger windows give smoother slope estimates but delay phase transition
+  detection.

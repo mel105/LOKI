@@ -23,6 +23,7 @@
 #   spectral         apps/loki_ssa/loki_spectral.exe
 #   kalman           apps/loki_kalman/loki_kalman.exe
 #   qc               apps/loki_qc/loki_qc.exe
+#   clustering       apps/loki_qc/loki_clustering.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -84,6 +85,7 @@ declare -A APP_EXE=(
     [spectral]="apps/loki_spectral/loki_spectral.exe"
     [kalman]="apps/loki_kalman/loki_kalman.exe"
     [qc]="apps/loki_qc/loki_qc.exe"
+    [clustering]="apps/loki_clustering/loki_clustering.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -98,6 +100,7 @@ declare -A APP_CONFIG=(
     [spectral]="config/spectral.json"
     [kalman]="config/kalman.json"
     [qc]="config/qc.json"
+    [clustering]="config/clustering.json"
 )
 
 # -----------------------------------------------------------------------------
@@ -125,7 +128,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|all)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|all)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;
