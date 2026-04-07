@@ -9,6 +9,8 @@ add_library(loki_filter STATIC
     src/savitzkyGolayFilter.cpp
     src/filterWindowAdvisor.cpp
     src/plotFilter.cpp
+    src/splineFilter.cpp
+    src/filterAnalyzer.cpp
 )
 
 target_include_directories(loki_filter

@@ -304,6 +304,7 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
     else if (method == "kernel")          cfg.method = FilterMethodEnum::KERNEL;
     else if (method == "loess")           cfg.method = FilterMethodEnum::LOESS;
     else if (method == "savitzky_golay")  cfg.method = FilterMethodEnum::SAVITZKY_GOLAY;
+    else if (method == "spline")          cfg.method = FilterMethodEnum::SPLINE;
     else {
         LOKI_WARNING("Config 'filter.method' unknown value '" + method + "' -- using 'kernel'.");
         cfg.method = FilterMethodEnum::KERNEL;
@@ -362,6 +363,17 @@ FilterConfig ConfigLoader::_parseFilter(const nlohmann::json& j)
         const auto& sg = j.at("savitzky_golay");
         cfg.savitzkyGolay.window = getOrDefault<int>(sg, "window", 11, false);
         cfg.savitzkyGolay.degree = getOrDefault<int>(sg, "degree",  2, false);
+    }
+
+    if (j.contains("spline")) {
+        const auto& sp = j.at("spline");
+        cfg.spline.subsampleStep = getOrDefault<int>        (sp, "subsample_step", 0,            false);
+        cfg.spline.bc            = getOrDefault<std::string>(sp, "bc",             "not_a_knot", false);
+        if (cfg.spline.bc != "natural" && cfg.spline.bc != "not_a_knot" && cfg.spline.bc != "clamped") {
+            throw ConfigException(
+                "ConfigLoader: filter.spline.bc must be 'natural', 'not_a_knot', or 'clamped', got '"
+                + cfg.spline.bc + "'.");
+        }
     }
 
     return cfg;

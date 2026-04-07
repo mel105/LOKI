@@ -179,7 +179,8 @@ enum class FilterMethodEnum {
     WEIGHTED_MA,
     KERNEL,
     LOESS,
-    SAVITZKY_GOLAY
+    SAVITZKY_GOLAY, 
+    SPLINE
 };
 
 // -----------------------------------------------------------------------------
@@ -222,6 +223,11 @@ struct SavitzkyGolayFilterConfig {
     int degree{2};
 };
 
+struct SplineFilterConfig {
+    int         subsampleStep{0};
+    std::string bc{"not_a_knot"};
+};
+
 /**
  * @brief Top-level configuration for the loki_filter pipeline.
  */
@@ -235,6 +241,7 @@ struct FilterConfig {
     KernelFilterConfig        kernel{};
     LoessFilterConfig         loess{};
     SavitzkyGolayFilterConfig savitzkyGolay{};
+    SplineFilterConfig        spline{};
 };
 
 // -----------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 #include "loki/core/exceptions.hpp"
 #include "loki/core/logger.hpp"
+#include <loki/math/spline.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -105,6 +106,7 @@ TimeSeries GapFiller::fill(const TimeSeries& series) const
         case Strategy::LINEAR:       return fillLinear(series, gaps);
         case Strategy::FORWARD_FILL: return fillForwardFill(series, gaps);
         case Strategy::MEAN:         return fillMean(series, gaps);
+        case Strategy::SPLINE:       return fillSpline(series, gaps);
         default:
             throw AlgorithmException("GapFiller::fill: unhandled strategy.");
     }
@@ -152,6 +154,7 @@ TimeSeries GapFiller::fill(const TimeSeries& series,
             case Strategy::LINEAR:       return fillLinear(series, gaps);
             case Strategy::FORWARD_FILL: return fillForwardFill(series, gaps);
             case Strategy::MEAN:         return fillMean(series, gaps);
+            case Strategy::SPLINE:       return fillSpline(series, gaps);
             default:
                 throw AlgorithmException("GapFiller::fill: unhandled strategy.");
         }
@@ -406,6 +409,76 @@ TimeSeries GapFiller::fillLinear(const TimeSeries&          series,
     LOKI_INFO("GapFiller: LINEAR fill complete (" +
              std::to_string(obs.size() - series.size()) + " epoch(s) inserted).");
 
+    return packTimeSeries(std::move(obs), series);
+}
+
+TimeSeries GapFiller::fillSpline(const TimeSeries&          series,
+                                 const std::vector<GapInfo>& gaps) const
+{
+    const double step = estimateExpectedStep(series);
+    auto obs = expandSeries(series, gaps, step);
+ 
+    // Fill edges first (bfill/ffill) -- spline needs at least 3 valid anchors.
+    fillEdges(obs);
+ 
+    // Collect all valid observations as spline knots (MJD, value).
+    std::vector<double> kx, ky;
+    kx.reserve(obs.size());
+    ky.reserve(obs.size());
+    for (const auto& o : obs) {
+        if (isValid(o)) {
+            kx.push_back(o.time.mjd());
+            ky.push_back(o.value);
+        }
+    }
+ 
+    if (kx.size() < 3) {
+        // Not enough valid points for cubic spline -- fall back to linear.
+        LOKI_WARNING("GapFiller: fewer than 3 valid knots for SPLINE fill "
+                     "-- falling back to LINEAR.");
+        return fillLinear(series, gaps);
+    }
+ 
+    // Build the spline once through all valid observations.
+    const auto spline = loki::math::CubicSpline::interpolate(kx, ky);
+ 
+    std::size_t skipped = 0;
+ 
+    std::size_t i = 0;
+    while (i < obs.size()) {
+        if (!isValid(obs[i])) {
+            std::size_t j = i;
+            while (j < obs.size() && !isValid(obs[j])) { ++j; }
+ 
+            const std::size_t runLen = j - i;
+ 
+            if (m_cfg.maxFillLength > 0 && runLen > m_cfg.maxFillLength) {
+                LOKI_WARNING("GapFiller: gap of " + std::to_string(runLen) +
+                             " epoch(s) at index " + std::to_string(i) +
+                             " exceeds maxFillLength=" +
+                             std::to_string(m_cfg.maxFillLength) + "; leaving as NaN.");
+                ++skipped;
+                i = j;
+                continue;
+            }
+ 
+            for (std::size_t k = i; k < j; ++k) {
+                obs[k].value = spline.evaluate(obs[k].time.mjd());
+            }
+            i = j;
+        } else {
+            ++i;
+        }
+    }
+ 
+    if (skipped > 0) {
+        LOKI_WARNING("GapFiller: " + std::to_string(skipped) +
+                     " gap(s) left unfilled (too long).");
+    }
+ 
+    LOKI_INFO("GapFiller: SPLINE fill complete (" +
+              std::to_string(obs.size() - series.size()) + " epoch(s) inserted).");
+ 
     return packTimeSeries(std::move(obs), series);
 }
 

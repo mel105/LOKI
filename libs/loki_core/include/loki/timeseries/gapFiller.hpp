@@ -90,6 +90,7 @@ public:
         FORWARD_FILL, ///< Propagate last known value forward (bfill at leading edge).
         MEAN,         ///< Replace with global series mean.
         MEDIAN_YEAR,  ///< Median annual profile lookup (ProfileLookup required).
+        SPLINE,       ///< Replace with cubic spline model.
         NONE          ///< Detection only; do not modify values.
     };
 
@@ -207,6 +208,10 @@ private:
 
     [[nodiscard]]
     TimeSeries fillLinear(const TimeSeries&          series,
+                          const std::vector<GapInfo>& gaps) const;
+
+    [[nodiscard]]
+    TimeSeries fillSpline(const TimeSeries& series,
                           const std::vector<GapInfo>& gaps) const;
 
     [[nodiscard]]

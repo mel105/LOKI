@@ -4,16 +4,7 @@
 #include "loki/io/dataManager.hpp"
 #include "loki/stats/descriptive.hpp"
 #include "loki/timeseries/gapFiller.hpp"
-#include "loki/filter/filter.hpp"
-#include "loki/filter/filterResult.hpp"
-#include "loki/filter/movingAverageFilter.hpp"
-#include "loki/filter/emaFilter.hpp"
-#include "loki/filter/weightedMovingAverageFilter.hpp"
-#include "loki/filter/kernelSmoother.hpp"
-#include "loki/filter/loessFilter.hpp"
-#include "loki/filter/savitzkyGolayFilter.hpp"
-#include "loki/filter/filterWindowAdvisor.hpp"
-#include "loki/filter/plotFilter.hpp"
+#include "loki/filter/filterAnalyzer.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -70,171 +61,6 @@ static CliArgs parseArgs(int argc, char* argv[])
         }
     }
     return args;
-}
-
-// ----------------------------------------------------------------------------
-//  Build GapFiller::Config from FilterConfig
-// ----------------------------------------------------------------------------
-
-static loki::GapFiller::Config buildGapFillerConfig(const loki::FilterConfig& fcfg)
-{
-    loki::GapFiller::Config gfc{};
-    const std::string& s = fcfg.gapFilling.strategy;
-    if      (s == "linear")       gfc.strategy = loki::GapFiller::Strategy::LINEAR;
-    else if (s == "forward_fill") gfc.strategy = loki::GapFiller::Strategy::FORWARD_FILL;
-    else if (s == "mean")         gfc.strategy = loki::GapFiller::Strategy::MEAN;
-    else                          gfc.strategy = loki::GapFiller::Strategy::NONE;
-    gfc.maxFillLength = static_cast<std::size_t>(
-        std::max(0, fcfg.gapFilling.maxFillLength));
-    return gfc;
-}
-
-// ----------------------------------------------------------------------------
-//  Build filter from config
-// ----------------------------------------------------------------------------
-
-static std::unique_ptr<Filter>
-buildFilter(const FilterConfig& fcfg,
-            const TimeSeries&   series)
-{
-    auto makeAdvisorConfig = [&]() -> FilterWindowAdvisor::Config {
-        FilterWindowAdvisor::Config ac{};
-        const std::string& m = fcfg.autoWindowMethod;
-        if      (m == "silverman") ac.method = FilterWindowAdvisor::Method::SILVERMAN;
-        else if (m == "acf_peak")  ac.method = FilterWindowAdvisor::Method::ACF_PEAK;
-        else                       ac.method = FilterWindowAdvisor::Method::SILVERMAN_MAD;
-        return ac;
-    };
-
-    switch (fcfg.method) {
-
-        case FilterMethodEnum::MOVING_AVERAGE: {
-            int window = fcfg.movingAverage.window;
-            if (window == 0) {
-                const auto advice = FilterWindowAdvisor::advise(series, makeAdvisorConfig());
-                window = advice.windowSamples;
-                LOKI_INFO("FilterWindowAdvisor (moving_average): window="
-                          + std::to_string(window) + "  [" + advice.rationale + "]");
-            }
-            MovingAverageFilter::Config c{};
-            c.window = window;
-            return std::make_unique<MovingAverageFilter>(c);
-        }
-
-        case FilterMethodEnum::EMA: {
-            EmaFilter::Config c{};
-            c.alpha = fcfg.ema.alpha;
-            return std::make_unique<EmaFilter>(c);
-        }
-
-        case FilterMethodEnum::WEIGHTED_MA: {
-            WeightedMovingAverageFilter::Config c{};
-            c.weights = fcfg.weightedMa.weights;
-            return std::make_unique<WeightedMovingAverageFilter>(c);
-        }
-
-        case FilterMethodEnum::KERNEL: {
-            double bw = fcfg.kernel.bandwidth;
-            if (bw == 0.0) {
-                const auto advice = FilterWindowAdvisor::advise(series, makeAdvisorConfig());
-                bw = advice.bandwidth;
-                LOKI_INFO("FilterWindowAdvisor (kernel): bandwidth="
-                          + std::to_string(bw) + "  [" + advice.rationale + "]");
-            }
-            KernelSmoother::Config c{};
-            c.bandwidth      = bw;
-            c.gaussianCutoff = fcfg.kernel.gaussianCutoff;
-            const std::string& kt = fcfg.kernel.kernelType;
-            if      (kt == "gaussian")   c.kernel = KernelSmoother::Kernel::GAUSSIAN;
-            else if (kt == "uniform")    c.kernel = KernelSmoother::Kernel::UNIFORM;
-            else if (kt == "triangular") c.kernel = KernelSmoother::Kernel::TRIANGULAR;
-            else                         c.kernel = KernelSmoother::Kernel::EPANECHNIKOV;
-            return std::make_unique<KernelSmoother>(c);
-        }
-
-        case FilterMethodEnum::LOESS: {
-            double bw = fcfg.loess.bandwidth;
-            if (bw == 0.0) {
-                const auto advice = FilterWindowAdvisor::advise(series, makeAdvisorConfig());
-                bw = advice.bandwidth;
-                LOKI_INFO("FilterWindowAdvisor (loess): bandwidth="
-                          + std::to_string(bw) + "  [" + advice.rationale + "]");
-            }
-            LoessFilter::Config c{};
-            c.bandwidth        = bw;
-            c.degree           = fcfg.loess.degree;
-            c.robust           = fcfg.loess.robust;
-            c.robustIterations = fcfg.loess.robustIterations;
-            const std::string& kt = fcfg.loess.kernelType;
-            if      (kt == "epanechnikov") c.kernel = LoessFilter::Kernel::EPANECHNIKOV;
-            else if (kt == "gaussian")     c.kernel = LoessFilter::Kernel::GAUSSIAN;
-            else                           c.kernel = LoessFilter::Kernel::TRICUBE;
-            return std::make_unique<LoessFilter>(c);
-        }
-
-        case FilterMethodEnum::SAVITZKY_GOLAY: {
-            int window = fcfg.savitzkyGolay.window;
-            if (window == 0) {
-                const auto advice = FilterWindowAdvisor::advise(series, makeAdvisorConfig());
-                window = advice.windowSamples;
-                if (window % 2 == 0) window += 1;
-                LOKI_INFO("FilterWindowAdvisor (savitzky_golay): window="
-                          + std::to_string(window) + "  [" + advice.rationale + "]");
-            }
-            SavitzkyGolayFilter::Config c{};
-            c.window = window;
-            c.degree = fcfg.savitzkyGolay.degree;
-            return std::make_unique<SavitzkyGolayFilter>(c);
-        }
-    }
-
-    throw AlgorithmException("buildFilter: unhandled FilterMethodEnum value.");
-}
-
-// ----------------------------------------------------------------------------
-//  CSV export
-// ----------------------------------------------------------------------------
-
-static void writeCsv(const std::filesystem::path& csvDir,
-                     const TimeSeries&             original,
-                     const FilterResult&           result)
-{
-    const auto& m    = original.metadata();
-    std::string base = m.stationId;
-    if (!m.componentName.empty()) {
-        if (!base.empty()) base += "_";
-        base += m.componentName;
-    }
-    if (base.empty()) base = "series";
-
-    const std::filesystem::path outPath = csvDir / (base + "_filter.csv");
-    std::ofstream csv(outPath);
-    if (!csv.is_open()) {
-        LOKI_WARNING("writeCsv: cannot open file: " + outPath.string());
-        return;
-    }
-
-    csv << "mjd;original;filtered;residual\n";
-    csv << std::fixed << std::setprecision(10);
-
-    const std::size_t n = original.size();
-    for (std::size_t i = 0; i < n; ++i) {
-        const double mjd      = original[i].time.mjd();
-        const double origVal  = original[i].value;
-        const double filtVal  = (i < result.filtered.size())
-                                    ? result.filtered[i].value
-                                    : std::numeric_limits<double>::quiet_NaN();
-        const double residual = (i < result.residuals.size())
-                                    ? result.residuals[i].value
-                                    : std::numeric_limits<double>::quiet_NaN();
-
-        csv << mjd      << ";"
-            << origVal  << ";"
-            << filtVal  << ";"
-            << residual << "\n";
-    }
-
-    LOKI_INFO("CSV written: " + outPath.string());
 }
 
 // ----------------------------------------------------------------------------
@@ -313,71 +139,15 @@ int main(int argc, char* argv[])
             LOKI_ERROR(std::string("Statistics failed: ") + ex.what());
         }
     }
-
-    const loki::GapFiller::Config gapFillerCfg = buildGapFillerConfig(cfg.filter);
-    loki::filter::PlotFilter plotter{cfg};
+    
+    loki::FilterAnalyzer analyzer{cfg};
 
     for (const auto& r : loadResults) {
         for (const auto& ts : r.series) {
-            const std::string name = ts.metadata().stationId + "_"
-                                   + ts.metadata().componentName;
-            LOKI_INFO("--- Processing series: " + name + " ---");
-
-            // Step 1: gap filling.
-            loki::TimeSeries filled = ts;
             try {
-                loki::GapFiller gapFiller{gapFillerCfg};
-                filled = gapFiller.fill(ts);
-                const std::size_t nFilled = filled.size() - ts.size();
-                // Count NaN before and after to report gap fill statistics.
-                std::size_t nanBefore = 0;
-                std::size_t nanAfter  = 0;
-                for (const auto& obs : ts)     if (!loki::isValid(obs)) ++nanBefore;
-                for (const auto& obs : filled) if (!loki::isValid(obs)) ++nanAfter;
-                LOKI_INFO("GapFiller: NaN before=" + std::to_string(nanBefore)
-                          + "  after=" + std::to_string(nanAfter)
-                          + "  strategy=" + cfg.filter.gapFilling.strategy);
-                (void)nFilled;
+                analyzer.run(ts, r.filePath.stem().string());
             } catch (const loki::LOKIException& ex) {
-                LOKI_ERROR("GapFiller failed for " + name + ": " + ex.what());
-                continue;
-            }
-
-            // Step 2: build and apply filter.
-            FilterResult result;
-            try {
-                const auto filterPtr = buildFilter(cfg.filter, filled);
-                LOKI_INFO("Filter: " + filterPtr->name());
-                result = filterPtr->apply(filled);
-            } catch (const LOKIException& ex) {
-                LOKI_ERROR("Filter failed for " + name + ": " + ex.what());
-                continue;
-            }
-
-            {
-                std::string winfo = "Filter applied: " + result.filterName
-                    + "  n=" + std::to_string(result.filtered.size());
-                if (result.effectiveWindow > 0) {
-                    winfo += "  window=" + std::to_string(result.effectiveWindow) + " samples";
-                    winfo += "  bandwidth=" + std::to_string(result.effectiveBandwidth);
-                    // Hint: if residuals still show periodicity, try smaller bandwidth.
-                    winfo += "  (to reduce smoothing: lower bandwidth in filter.json)";
-                }
-                LOKI_INFO(winfo);
-            }
-
-            // Step 3: CSV export.
-            try {
-                writeCsv(cfg.csvDir, ts, result);
-            } catch (const loki::LOKIException& ex) {
-                LOKI_ERROR(std::string("CSV export failed: ") + ex.what());
-            }
-
-            // Step 4: plots.
-            try {
-                plotter.plotAll(ts, filled, result);
-            } catch (const loki::LOKIException& ex) {
-                LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
+                LOKI_ERROR(std::string("FilterAnalyzer failed: ") + ex.what());
             }
         }
     }

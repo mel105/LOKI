@@ -3,7 +3,7 @@
 
     "input": {
         "file": "SENSOR_DATA.txt",
-        "time_format": "gpst",
+        "time_format": "gpst_seconds",
         "time_columns": [0],
         "delimiter": ";",
         "comment_char": "%",
@@ -45,8 +45,9 @@
             "strategy": "linear",
             "max_fill_length": 0
         },
-        "method": "moving_average",
+        "method": "spline",
         "auto_window_method": "silverman_mad",
+
         "moving_average": {
             "window": 10
         },
@@ -67,6 +68,10 @@
             "kernel_type": "tricube",
             "robust": false,
             "robust_iterations": 3
+        },
+        "spline": {
+            "subsample_step": 0,
+            "bc": "not_a_knot"
         },
         "savitzky_golay": {
             "window": 101,

@@ -21,6 +21,9 @@ target_sources(loki_core
         src/stats/distributions.cpp
         src/stats/hypothesis.cpp
         src/stats/wCorrelation.cpp
+        src/stats/bootstrap.cpp
+        src/stats/sampling.cpp
+        src/stats/permutation.cpp
         src/math/lsq.cpp
         src/math/designMatrix.cpp
         src/math/hatMatrix.cpp
@@ -28,6 +31,7 @@ target_sources(loki_core
         src/math/lm.cpp
         src/math/embedMatrix.cpp
         src/math/randomizedSvd.cpp
+        src/math/spline.cpp
 )
 
 target_include_directories(loki_core

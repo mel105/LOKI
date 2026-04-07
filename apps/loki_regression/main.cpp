@@ -91,6 +91,7 @@ static loki::GapFiller::Config buildGapFillerConfig(const loki::RegressionConfig
     if      (s == "linear")       gfc.strategy = loki::GapFiller::Strategy::LINEAR;
     else if (s == "forward_fill") gfc.strategy = loki::GapFiller::Strategy::FORWARD_FILL;
     else if (s == "mean")         gfc.strategy = loki::GapFiller::Strategy::MEAN;
+    else if (s == "spline")       gfc.strategy = loki::GapFiller::Strategy::SPLINE;
     else                          gfc.strategy = loki::GapFiller::Strategy::NONE;
     gfc.maxFillLength = static_cast<std::size_t>(
         std::max(0, rcfg.gapFilling.maxFillLength));

@@ -127,7 +127,8 @@ All plot output files follow this naming convention:
 
 - **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression` |
                 `stationarity` | `arima` | `ssa` | `decomposition` | `spectral` |
-                `kalman` | `qc`
+                `kalman` | `qc` | `clustering` | `simulate` | `evt` | `kriging` |
+                `spline`
 - **dataset** : input filename stem without extension
 - **parameter** : series `componentName` from metadata
 - **plottype** : descriptive short name
@@ -173,17 +174,28 @@ loki_regression       (depends on loki_core only)
 
 loki_stationarity     (depends on loki_core only)
 
-loki_arima            (depends on loki_core + loki_stationarity)  <- COMPLETE
+loki_arima            (depends on loki_core + loki_stationarity)   <- COMPLETE
 
-loki_ssa              (depends on loki_core only)                  <- COMPLETE
+loki_ssa              (depends on loki_core only)                   <- COMPLETE
 
-loki_decomposition    (depends on loki_core only)                  <- COMPLETE
+loki_decomposition    (depends on loki_core only)                   <- COMPLETE
 
-loki_spectral         (depends on loki_core only)                  <- COMPLETE
+loki_spectral         (depends on loki_core only)                   <- COMPLETE
 
-loki_kalman           (depends on loki_core only)                  <- COMPLETE
+loki_kalman           (depends on loki_core only)                   <- COMPLETE
 
-loki_qc               (depends on loki_core + loki_outlier)        <- NEXT
+loki_qc               (depends on loki_core + loki_outlier)        <- COMPLETE
+
+loki_clustering       (depends on loki_core only)                   <- COMPLETE
+
+loki_simulate         (depends on loki_core + loki_arima +
+                        loki_kalman)                                <- PLANNED
+
+loki_evt              (depends on loki_core only)                   <- PLANNED
+
+loki_kriging          (depends on loki_core only)                   <- PLANNED
+
+loki_spline           (depends on loki_core only)                   <- PLANNED
 ```
 
 ### Rules
@@ -214,9 +226,12 @@ loki/
 |   +-- loki_decomposition/
 |   +-- loki_spectral/
 |   +-- loki_kalman/
-|   +-- loki_qc/                    <- NEXT
-|       +-- CMakeLists.txt
-|       +-- main.cpp
+|   +-- loki_qc/
+|   +-- loki_clustering/
+|   +-- loki_simulate/               <- PLANNED
+|   +-- loki_evt/                    <- PLANNED
+|   +-- loki_kriging/                <- PLANNED
+|   +-- loki_spline/                 <- PLANNED
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
@@ -224,10 +239,12 @@ loki/
 |   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer,
 |   |       |                  medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
-|   |       |                  wCorrelation)
+|   |       |                  wCorrelation, sampling*, bootstrap*, permutation*)
+|   |       |                  -- * PLANNED additions
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
-|   |                          lagMatrix, embedMatrix, randomizedSvd)
+|   |                          lagMatrix, embedMatrix, randomizedSvd, spline*)
+|   |                          -- * PLANNED addition
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -238,13 +255,12 @@ loki/
 |   +-- loki_decomposition/
 |   +-- loki_spectral/
 |   +-- loki_kalman/
-|   +-- loki_qc/                    <- NEXT
-|       +-- CMakeLists.txt
-|       +-- include/loki/qc/
-|       |   +-- qcResult.hpp
-|       |   +-- qcAnalyzer.hpp/.cpp
-|       |   +-- plotQc.hpp/.cpp
-|       +-- src/
+|   +-- loki_qc/
+|   +-- loki_clustering/
+|   +-- loki_simulate/               <- PLANNED
+|   +-- loki_evt/                    <- PLANNED
+|   +-- loki_kriging/                <- PLANNED
+|   +-- loki_spline/                 <- PLANNED
 +-- tests/
 +-- config/
 |   +-- outlier.json
@@ -255,7 +271,12 @@ loki/
 |   +-- decomposition.json
 |   +-- spectral.json
 |   +-- kalman.json
-|   +-- qc.json                     <- NEXT
+|   +-- qc.json
+|   +-- clustering.json
+|   +-- simulate.json                <- PLANNED
+|   +-- evt.json                     <- PLANNED
+|   +-- kriging.json                 <- PLANNED
+|   +-- spline.json                  <- PLANNED
 +-- scripts/
 |   +-- loki.sh
 +-- docs/
@@ -278,8 +299,8 @@ loki/
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
 ```bash
-./scripts/loki.sh build kalman --copy-dlls
-./scripts/loki.sh run kalman
+./scripts/loki.sh build clustering --copy-dlls
+./scripts/loki.sh run clustering
 ./scripts/loki.sh test --rebuild
 ```
 
@@ -295,6 +316,26 @@ Same pattern for all apps: library target != executable target name.
 ```cmake
 target_include_directories(loki_core SYSTEM PUBLIC
     $<TARGET_PROPERTY:Eigen3::Eigen,INTERFACE_INCLUDE_DIRECTORIES>)
+```
+
+### loki.sh registration (all apps)
+```
+["homogeneity"]="loki_homogeneity_app"
+["outlier"]="loki_outlier_app"
+["filter"]="loki_filter_app"
+["regression"]="loki_regression_app"
+["stationarity"]="loki_stationarity_app"
+["arima"]="loki_arima_app"
+["ssa"]="loki_ssa_app"
+["decomposition"]="loki_decomposition_app"
+["spectral"]="loki_spectral_app"
+["kalman"]="loki_kalman_app"
+["qc"]="loki_qc_app"
+["clustering"]="loki_clustering_app"
+["simulate"]="loki_simulate_app"    <- PLANNED
+["evt"]="loki_evt_app"              <- PLANNED
+["kriging"]="loki_kriging_app"      <- PLANNED
+["spline"]="loki_spline_app"        <- PLANNED
 ```
 
 ---
@@ -316,18 +357,20 @@ target_include_directories(loki_core SYSTEM PUBLIC
                   `StlDecompositionConfig`,
                   `SpectralConfig` with `SpectralFftConfig`,
                   `SpectralLombScargleConfig`, `SpectralSpectrogramConfig`,
-                  `SpectralPeakConfig`
-- **PENDING**: `KalmanConfig` (with `KalmanNoiseConfig`, `KalmanForecastConfig`)
-               and kalman `PlotConfig` fields must still be added to `config.hpp`
-               and `AppConfig`. See "loki_kalman -- COMPLETE" section below.
-- `configLoader.hpp / .cpp` -- `_parseKalman()` added, kalman plot flags added
+                  `SpectralPeakConfig`,
+                  `KalmanConfig` with `KalmanNoiseConfig`, `KalmanForecastConfig`,
+                  `QcConfig` with `QcOutlierConfig`, `QcSeasonalConfig`,
+                  `ClusteringConfig` with `ClusteringFeatureConfig`,
+                  `KMeansClusteringConfig`, `DbscanClusteringConfig`,
+                  `ClusteringOutlierConfig`
+- `configLoader.hpp / .cpp` -- `_parseKalman()`, `_parseQc()`, `_parseClustering()` added
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
 - `gapFiller.hpp / .cpp`
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
-- `descriptive.hpp / .cpp`
-- `filter.hpp / .cpp` (stats)
+- `descriptive.hpp / .cpp` -- includes `hurstExponent()` and `summarize()`
+- `filter.hpp / .cpp` (stats -- movingAverage, EMA, WMA)
 - `distributions.hpp / .cpp`
 - `hypothesis.hpp / .cpp`
 - `metrics.hpp / .cpp`
@@ -350,250 +393,179 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ### loki_outlier -- complete (O1-O4)
 ### loki_homogeneity -- complete
 ### loki_stationarity -- complete
-### loki_filter -- complete
+### loki_filter -- complete (SplineFilter NOT YET implemented)
 ### loki_regression -- complete (R1-R8)
 ### loki_arima -- complete
 ### loki_ssa -- complete (S1-S5)
 ### loki_decomposition -- complete
 ### loki_spectral -- complete
-
-### loki_kalman -- COMPLETE
-
-Validated on 6h climatological data (n=36524, 25 years).
-
-```
-libs/loki_kalman/include/loki/kalman/
-    kalmanResult.hpp         -- KalmanResult struct (times, original, filteredState,
-                                filteredStd, smoothedState, smoothedStd, predictedState,
-                                innovations, innovationStd, gains, forecastTimes,
-                                forecastState, forecastStd, logLikelihood, estimatedQ,
-                                estimatedR, emIterations, emConverged, modelName,
-                                noiseMethod, smoother)
-    kalmanModel.hpp          -- KalmanModel struct (F, H, Q, R, x0, P0, name)
-    kalmanModelBuilder.hpp/.cpp -- factory: localLevel(), localTrend(), constantVelocity()
-    kalmanFilter.hpp/.cpp    -- forward pass, Joseph covariance update, logLikelihood(),
-                                withNoise() for EM
-    rtsSmoother.hpp/.cpp     -- RTS backward pass, SmootherStep struct,
-                                Cholesky-based gain (LLT with pseudoinverse fallback)
-    emEstimator.hpp/.cpp     -- EM for Q/R (scalar parameterisation Q=q*I, R=r),
-                                lag-1 cross-covariance, EmResult struct
-    kalmanAnalyzer.hpp/.cpp  -- orchestrator: gap fill, dt auto-detect, noise est,
-                                model build, forward pass, RTS, forecast, protocol
-    plotKalman.hpp/.cpp      -- 6 plot types, inline gnuplot data, steady-state sigma
-                                via median of second-half innovationStd
-```
-
-Key facts about `loki_kalman`:
-- dt auto-detected from median of consecutive MJD differences (seconds)
-- Gap fill: "auto" uses MEDIAN_YEAR for 6h climate (dt < 0.3 days, span >= 10y),
-  else LINEAR; remaining NaN -> predict-only filter step (no update)
-- Three models: local_level (1-state), local_trend / constant_velocity (2-state, same F/H)
-- EM: scalar Q and R (Q = q*I_n), M-step with lag-1 cross-covariance,
-  convergence = relative logL change < emTol; for n=36524 each iter ~1.5s
-- Joseph-form covariance update for numerical stability
-- RTS smoother: Cholesky inversion of PPred with pseudoinverse fallback
-- Forecast: repeated F*x predict steps, uncertainty grows as sqrt(P[t|t] + k*Q)
-- Steady-state Kalman gain K = Q/(Q+R) for local_level
-- Validated result: EM gives Q=1.28e-4, R=4e-6, K=0.97 for GPS IWV
-  (near-interpolating, physically correct -- GPS IWV precision ~2mm, real variability large)
-  Manual Q=1e-4, R=4e-6 gives K=0.40 -- better for smoothing applications
-
-**PENDING config.hpp changes** (must be added before loki_qc thread):
-```cpp
-// Add before AppConfig -- outside due to GCC 13 pattern:
-struct KalmanNoiseConfig {
-    std::string estimation    {"manual"};
-    double      Q             {1.0};
-    double      R             {1.0};
-    double      smoothingFactor{10.0};
-    double      QInit         {1.0};
-    double      RInit         {1.0};
-    int         emMaxIter     {100};
-    double      emTol         {1.0e-6};
-};
-struct KalmanForecastConfig {
-    int    steps          {0};
-    double confidenceLevel{0.95};
-};
-struct KalmanConfig {
-    std::string          gapFillStrategy  {"auto"};
-    int                  gapFillMaxLength {0};
-    std::string          model            {"local_level"};
-    KalmanNoiseConfig    noise            {};
-    std::string          smoother         {"rts"};
-    KalmanForecastConfig forecast         {};
-    double               significanceLevel{0.05};
-};
-
-// Add to PlotConfig (after spectralSpectrogram):
-bool kalmanOverlay     {true};
-bool kalmanInnovations {true};
-bool kalmanGain        {false};
-bool kalmanUncertainty {false};
-bool kalmanForecast    {true};
-bool kalmanDiagnostics {false};
-
-// Add to AppConfig (after SpectralConfig spectral):
-KalmanConfig  kalman;
-```
-
-loki.sh registration:
-```
-["kalman"]="loki_kalman_app"
-```
+### loki_kalman -- complete
+### loki_qc -- complete
+### loki_clustering -- complete
 
 ---
 
-## NEXT THREAD: loki_qc
+## Planned Extensions to loki_core
 
-### What loki_qc does
-Diagnostic and reporting module -- the entry gate of the LOKI pipeline.
-Runs before any other analysis module. Does NOT modify data. Produces:
-- A detailed quality control protocol (text)
-- A flagging CSV (one row per epoch, bitfield flag column)
-- Coverage and outlier plots
+### stats/sampling.hpp / .cpp
+Random number generators for statistical distributions via `std::mt19937`.
+Distributions: Normal, Student-t, Chi2, F, Uniform, Exponential, Poisson,
+Binomial, Beta, Gamma, Laplace.
+Foundation for bootstrap, Monte Carlo simulation, and loki_simulate.
+No external dependencies beyond `<random>`.
 
-### Design philosophy
-- Pure diagnostics: no data correction, no modelling
-- Wraps existing loki_core infrastructure (GapFiller, IqrDetector, MadDetector,
-  ZScoreDetector, MedianYearSeries, descriptive stats, hypothesis tests)
-- Each analysis section is independently configurable via JSON `enabled` flag
-- Adapts to data type: seasonal analysis auto-disabled for sub-hourly data
-- Provides explicit recommendations in protocol for downstream modules
+### stats/bootstrap.hpp / .cpp
+- Percentile bootstrap -- simplest, for large samples.
+- BCa (bias-corrected accelerated) -- standard for small samples.
+- **Block bootstrap** -- for dependent (autocorrelated) time series.
+  Block length selection: fixed, optimal (Politis & White 2004), or manual.
+  Block bootstrap is REQUIRED for climatological/GNSS data. iid bootstrap
+  is invalid for autocorrelated series.
+Use cases: CI for Hurst exponent, SNHT critical values, regression coefficients.
 
-### QC sections (each independently enabled/disabled)
+### stats/permutation.hpp / .cpp
+Non-parametric permutation tests as alternative to parametric hypothesis tests.
+Complements `hypothesis.hpp`. Useful when normality assumption is violated.
 
-**Section 1: Temporal coverage**
-- Start/end in MJD, UTC string, GPS total seconds (all three formats)
-- Expected epoch count vs actual -> completeness %
-- Gap statistics: count, min/max/median length, longest gap location
-- Sampling uniformity: % of steps exceeding 1.1x median step
-- Detected sampling rate changes (e.g. transition from 6h to 3h)
+### math/spline.hpp / .cpp
+Cubic spline interpolation with boundary condition options:
+- Natural (second derivative = 0 at endpoints)
+- Clamped (specified first derivative at endpoints)
+- Not-a-knot (third derivative continuous at second and second-to-last knots)
 
-**Section 2: Descriptive statistics**
-- N valid, N NaN, N flagged outlier
-- Mean, median, std, IQR, skewness, kurtosis, min, max, percentiles
-- Hurst exponent (configurable, slow for large n)
-- Jarque-Bera normality test
+This is **shared infrastructure** used by:
+- `GapFiller` (new SPLINE strategy) -- smoother gap filling than linear
+- `SplineFilter` in loki_filter (currently NOT YET implemented)
+- `loki_spline` app (advanced fitting -- uses this as foundation)
 
-**Section 3: Outlier detection**
-- IQR, MAD, ZScore detectors (HatMatrix excluded -- that is loki_outlier standalone)
-- Count and % flagged per method
-- List of flagged epochs with value and flag reason
-- Configurable per-method enable flag and threshold
+---
 
-**Section 4: Sampling rate analysis**
-- Median step, min/max step
-- Non-uniform step count and %
-- This drives the FFT vs Lomb-Scargle recommendation
+## Planned Extensions to Existing Modules
 
-**Section 5: Seasonal consistency** (auto-disabled if step > 1h)
-- Years with < threshold % coverage per month
-- Minimum years per MedianYearSeries slot
-- Whether MEDIAN_YEAR gap filling is feasible
+### GapFiller -- new SPLINE strategy
+Requires `loki_core/math/spline.hpp` first.
+New `Strategy::SPLINE` using cubic spline interpolation.
+Particularly useful for sub-daily sensor data where linear interpolation
+introduces artificial kinks at gap boundaries.
 
-### Flagging CSV output
-Bitfield flag per epoch:
-```
-0  = valid
-1  = gap (missing epoch)
-2  = outlier_iqr
-4  = outlier_mad
-8  = outlier_zscore
-```
-Flags are OR-combined (e.g. 6 = outlier_iqr + outlier_mad).
-File: `OUTPUT/CSV/qc_[dataset]_[component]_flags.csv`
-Format: `mjd ; utc ; value ; flag`
+### SplineFilter in loki_filter
+Currently placeholder. Implementable once `math/spline.hpp` exists.
+Smoothing spline with roughness penalty -- trade-off between data fidelity
+and smoothness controlled by lambda parameter.
 
-### Recommendations in protocol
-The protocol ends with an explicit recommendation block:
-- Gap filling: recommended strategy based on step and span
-- Spectral method: FFT or Lomb-Scargle based on uniformity %
-- MedianYearSeries: feasible yes/no based on span and coverage
-- Outlier cleaning: recommended yes/no and method
-- Homogeneity: consider if series is long and continuous
+### loki_homogeneity -- new change point detectors
+The existing `changePointDetector.cpp` uses **Yao & Davis (1986)**
+likelihood-ratio test with Gumbel asymptotic approximation and
+Bartlett-window long-run variance correction. This is NOT Alexandersson SNHT.
 
-### Plots
-```
-qc_[dataset]_[component]_coverage.[fmt]   -- time axis: valid/gap/outlier color bands
-qc_[dataset]_[component]_histogram.[fmt]  -- value histogram with normal fit
-qc_[dataset]_[component]_acf.[fmt]        -- ACF (optional)
-```
+New detectors added alongside existing one, selectable via `method` config key:
 
-### QcConfig design (to add to config.hpp)
+**SNHT** (`snhtDetector.hpp / .cpp`) -- Alexandersson (1986):
+Standard Normal Homogeneity Test. T-statistic compares the ratio of segment
+means to overall mean. Widely used in climatological homogenisation literature.
+Config: `"method": "snht"`
 
-```cpp
-struct QcOutlierConfig {
-    bool   iqrEnabled       {true};
-    double iqrMultiplier    {1.5};
-    bool   madEnabled       {true};
-    double madMultiplier    {3.0};
-    bool   zscoreEnabled    {true};
-    double zscoreThreshold  {3.0};
-};
+**PELT** (`peltDetector.hpp / .cpp`) -- Killick et al. (2012):
+Pruned Exact Linear Time algorithm. Finds the globally optimal set of change
+points (minimises penalised cost function) in O(n) amortised time.
+Handles multiple change points efficiently without binary segmentation bias.
+Config: `"method": "pelt"`
 
-struct QcSeasonalConfig {
-    bool   enabled              {true};   // auto-disabled for step > 1h
-    int    minYearsPerSlot      {5};
-    double minMonthCoverage     {0.5};    // fraction [0,1]
-};
+**BOCPD** (`bocpdDetector.hpp / .cpp`) -- Adams & MacKay (2007):
+Bayesian Online Change Point Detection. Computes posterior probability of a
+change point at each time step. Suitable for streaming/real-time sensor data.
+Outputs a probability series rather than a single detected index.
+Config: `"method": "bocpd"`
 
-// QcOutlierConfig and QcSeasonalConfig defined outside QcConfig (GCC 13 pattern)
+The `MultiChangePointDetector` dispatcher updated to route to all four methods.
 
-struct QcConfig {
-    std::string      gapFillStrategy  {"none"};  // QC does not fill -- detect only
-    bool             temporalEnabled  {true};
-    bool             statsEnabled     {true};
-    bool             outlierEnabled   {true};
-    bool             samplingEnabled  {true};
-    bool             seasonalEnabled  {true};
-    bool             hurstEnabled     {true};
-    QcOutlierConfig  outlier          {};
-    QcSeasonalConfig seasonal         {};
-    double           significanceLevel{0.05};
-    double           uniformityThreshold{0.05}; // fraction of non-uniform steps -> Lomb-Scargle
-    double           minSpanYears     {10.0};   // min span for MEDIAN_YEAR recommendation
-};
-```
+---
 
-### PlotConfig additions for qc
-```cpp
-bool qcCoverage   {true};   // time-axis coverage plot (valid/gap/outlier bands)
-bool qcHistogram  {true};   // value histogram with normal fit
-bool qcAcf        {false};  // ACF of valid observations
-```
+## Planned New Applications
 
-### Files to request at loki_qc thread start
-```
-libs/loki_core/include/loki/core/config.hpp        -- current state (post-kalman additions)
-libs/loki_core/src/core/configLoader.cpp           -- last 80 lines (_parseKalman pattern)
-libs/loki_core/include/loki/core/configLoader.hpp  -- private section
-libs/loki_kalman/CMakeLists.txt                    -- lib CMake pattern
-apps/loki_kalman/CMakeLists.txt                    -- app CMake pattern
-apps/loki_kalman/main.cpp                          -- DataManager + analyzer pattern
-libs/loki_core/include/loki/timeseries/gapFiller.hpp
-libs/loki_core/include/loki/stats/descriptive.hpp
-libs/loki_core/include/loki/stats/hypothesis.hpp
-libs/loki_outlier/include/loki/outlier/iqrDetector.hpp    -- outlier detector API
-libs/loki_outlier/include/loki/outlier/madDetector.hpp
-libs/loki_outlier/include/loki/outlier/zscoreDetector.hpp
-```
+### loki_simulate
+Monte Carlo simulation and synthetic time series generation.
 
-**IMPORTANT**: Before starting loki_qc thread, first apply the pending
-config.hpp changes for loki_kalman (KalmanConfig, KalmanForecastConfig,
-KalmanNoiseConfig, kalman PlotConfig fields, KalmanConfig in AppConfig).
+Pipeline:
+- Generate synthetic AR(p)/MA(q)/ARIMA(p,d,q) series from fitted parameters
+  (reuses loki_arima coefficient output).
+- Generate Kalman state-space model realisations from estimated Q and R
+  (reuses loki_kalman EM output).
+- Monte Carlo integration for probability estimation.
+- Parametric bootstrap: refit model on each simulated realisation, build
+  distribution of parameter estimates and CI.
+- Validation use case: generate series with known change point position and
+  magnitude, verify loki_homogeneity detection rate.
 
-### Domain notes for loki_qc
-- Sampling rate auto-detection: median of consecutive MJD diffs * 86400 = seconds
-- "Sub-hourly" threshold for disabling seasonal analysis: median step < 3600s
-- Completeness = actual_epochs / expected_epochs where
-  expected = round(total_span / median_step) + 1
-- For ms data: gap threshold factor should be generous (1.5x median step)
-  to avoid false gap detection from jitter
-- Coverage plot: one colored bar per day (aggregated) for long series,
-  per epoch for short series (< 1000 epochs)
-- loki_qc depends on loki_outlier for IQR/MAD/ZScore detectors
-  (these are already in loki_outlier, not duplicated)
+Depends on: loki_core (sampling), loki_arima, loki_kalman.
+
+### loki_evt
+Extreme Value Theory for tail probability modelling.
+
+Methods:
+- **GEV** (Generalized Extreme Value): Gumbel (xi=0), Frechet (xi>0),
+  Weibull (xi<0) as special cases. Block maxima method.
+- **GPD** (Generalized Pareto Distribution): Peaks over Threshold (POT) method.
+  Preferred over GEV for small datasets as it uses all threshold exceedances.
+- Return level estimation: T-year return level with confidence intervals
+  via profile likelihood or bootstrap.
+- Threshold selection for POT: mean excess plot, stability plots.
+- Goodness-of-fit: Anderson-Darling test adapted for GEV/GPD.
+- Probability-probability and quantile-quantile plots for EVT distributions.
+
+Primary use case: **SIL 4 safety analysis** (IEC 61508) where error intensity
+must be < 1e-8 per hour. EVT provides statistically principled extrapolation
+to very small probabilities from limited observed failure data without
+assuming a specific parametric distribution for the bulk of the data.
+
+Depends on: loki_core only.
+
+### loki_kriging
+Gaussian process-based spatial and temporal interpolation.
+
+Components:
+- **Empirical variogram**: compute semi-variance as function of lag distance.
+  Supports isotropic and directional variograms.
+- **Variogram model fitting**: spherical, exponential, Gaussian, nugget+sill.
+  Weighted least squares fit. Visual inspection essential -- automated fitting
+  is a starting point only.
+- **Simple Kriging**: known stationary mean. Best linear unbiased predictor.
+- **Ordinary Kriging**: unknown mean, estimated from data. Most commonly used.
+  Unbiasedness constraint via Lagrange multiplier.
+- **Universal Kriging**: non-stationary mean modelled as linear combination
+  of known functions (trend surface). Generalises ordinary Kriging.
+- **Cross-validation**: leave-one-out error for variogram model selection.
+  Standardised residuals should be approximately N(0,1) for correct model.
+
+Use cases: spatial interpolation of GNSS station networks (dN, dE, dU fields),
+temporal interpolation of irregularly sampled climate records, filling spatial
+gaps in measurement networks.
+
+Depends on: loki_core only (Eigen3 for kriging system solving).
+
+### loki_spline
+Advanced spline fitting, B-spline, and NURBS.
+
+Uses `loki_core/math/spline.hpp` as foundation (shared with GapFiller).
+This app handles the analytical/fitting use cases beyond basic interpolation.
+
+Components:
+- **B-spline**: basis functions with configurable degree (1=linear, 2=quadratic,
+  3=cubic, ...) and knot vector. Knot selection: uniform, chord-length,
+  centripetal parametrisation.
+- **NURBS** (Non-Uniform Rational B-Splines): weighted control points.
+  Exact representation of conic sections (circles, ellipses, parabolas).
+  Useful for smooth reconstruction of vehicle trajectories and sensor paths
+  with geometric constraints.
+- **Smoothing splines**: minimise sum of squared residuals + lambda * integral
+  of squared second derivative. Lambda controls smoothness vs data fidelity.
+  Generalised cross-validation (GCV) for automatic lambda selection.
+- **Knot insertion/removal**: de Boor algorithm for evaluation.
+  Adaptive knot placement at high-curvature regions.
+- Output: fitted curve sampled at user-defined resolution, CSV export,
+  control points, knot vector, residuals.
+
+Depends on: loki_core only.
 
 ---
 
@@ -638,14 +610,13 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - For tmp files (spectrogram matrix format): call `ofs.flush(); ofs.close()`
   explicitly before constructing the `Gnuplot` object
 - `Plot::residualDiagnostics()` is non-static -- instantiate `Plot corePlot(cfg)`
-- Always set explicit `set xrange [tMin:tMax]` before plot commands to prevent
-  gnuplot from inferring range only from the first dataset (filledcurves issue)
-- For horizontal reference lines use `set arrow N from x1,y to x2,y nohead` --
-  NOT inline datasets (they only appear at data points, not continuously)
+- Always set explicit `set xrange [tMin:tMax]` before plot commands
+- For horizontal reference lines use `set arrow N from x1,y to x2,y nohead`
+- PlotClustering: x-axis uses relative time in seconds when series span < 1 day
 
 ### loki_spectral -- plot flags location
 Spectral plot flags are at top-level of `"plots"` JSON object (not in `"enabled"`).
-Same convention adopted for kalman and qc plot flags.
+Same convention adopted for kalman, qc, and clustering plot flags.
 
 ### DataManager loading pattern (all apps)
 ```cpp
@@ -660,87 +631,77 @@ for (const auto& r : loadResults) {
 }
 ```
 
-### loki_kalman -- key learnings
-- EM with n=36524 and emTol=1e-6 does not converge in 100 iterations (logL
-  change ~1e-5 at iter 100). Q and R stabilise after ~20-30 iterations.
-  Use emTol=1e-4 or emTol=1e-3 for practical convergence.
-- For GPS IWV: EM result Q=1.28e-4, R=4e-6 is physically correct (K~0.97,
-  near-interpolating). If smoothing desired, use manual Q=1e-4, R=4e-4 (K~0.20)
-  or manual Q=1e-6, R=1e-3 (K~0.001) for trend extraction.
-- ACF of innovations shows lag-1 negative correlation (~-0.2) for atmospheric
-  data -- this is a data property (short-term atmospheric persistence), not
-  a filter defect. Requires AR-augmented model (future feature) to eliminate.
-- RTS smoother std is always <= filter std; gap between them indicates how
-  much future information helps -- for GPS IWV the gap is small (P is stable).
-- plotKalman.cpp: set xrange explicitly; use gnuplot arrows for sigma bands.
+### loki_clustering -- key learnings
+- k-means edge points (first rows with NaN derivative/slope) handled by
+  `_handleEdgePoints()` -- assigns nearest centroid using only non-NaN features.
+  Never pass NaN rows directly to k-means fit (causes segfault via empty cluster cascade).
+- `abs_derivative` and `derivative` are linearly dependent -- do not combine.
+- For vehicle phase segmentation, `slope` (OLS over `slope_window` samples)
+  strongly preferred over `derivative` -- averages out sensor noise.
+- `slope_window` in samples (at 1 Hz: window=15 covers 15 seconds).
+- Label assignment is by ascending first-feature (value) centroid.
+- DBSCAN auto eps via k-NN elbow: use `eps = 0.0` for automatic estimation.
+- Silhouette global mean line clipped to [-1, 1] for gnuplot xrange.
 
-### loki_qc -- design decisions (pre-agreed)
-- HatMatrix detector NOT included -- that is standalone in loki_outlier
-- Seasonal analysis auto-disabled when median step > 3600s (sub-hourly data)
-- Each section independently enabled in JSON
-- Three time formats in protocol: MJD, UTC, GPS total seconds
-- Bitfield flags in CSV (OR-combined): 0=valid, 1=gap, 2=iqr, 4=mad, 8=zscore
-- loki_qc depends on loki_outlier (for IQR/MAD/ZScore); do not duplicate detectors
-- Coverage plot: aggregated per day for long series
-
----
-
-## Config Structs (current state)
-
-### KalmanConfig -- PENDING addition to config.hpp
-See "PENDING config.hpp changes" in loki_kalman section above.
-
-### QcConfig -- TO ADD in loki_qc thread
-See "NEXT THREAD: loki_qc" section above for full design.
-
-### SpectralConfig -- complete (see previous CLAUDE.md)
+### loki_homogeneity -- detector identity
+The existing `changePointDetector.cpp` uses **Yao & Davis (1986)** -- NOT SNHT.
+SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
 
 ---
 
 ## Statistical / Domain Key Learnings
 
-- SSA window L should be a multiple of the dominant period for clean separation
+- SSA window L should be a multiple of the dominant period for clean separation.
 - Classical decomposition: residual variance > 40% is normal for sub-daily
-  climatological data (synoptic variability dominates)
-- STL outer loop (n_outer >= 1) needed when seasonal amplitude changes over time
-- Period in decomposition is always in samples -- 1461 for 6h data (1 year)
-- Draconitic period for GNSS: 351.4 days (not 365.25)
-- For 6h climatological data: L=365 (quarter-year) is a good SSA starting point
-- Lomb-Scargle preferred over FFT for GNSS and sensor data with frequent gaps
-- Kalman local_level Q/R ratio determines smoothness: small Q/R = smooth,
-  large Q/R = tracks measurements; K = Q/(Q+R) for local_level steady-state
-- GPS IWV precision ~2mm -> R = 4e-6 m^2; synoptic variability -> Q ~ 1e-4 m^2
-- EM on GPS IWV finds near-interpolating filter (K~0.97) -- physically correct
-- ACF of Kalman innovations lag-1 negative for atmospheric data -- expected
+  climatological data (synoptic variability dominates).
+- STL outer loop (n_outer >= 1) needed when seasonal amplitude changes over time.
+- Period in decomposition is always in samples -- 1461 for 6h data (1 year).
+- Draconitic period for GNSS: 351.4 days (not 365.25).
+- Lomb-Scargle preferred over FFT for GNSS and sensor data with frequent gaps.
+- Kalman local_level K = Q/(Q+R); GPS IWV: Q~1e-4, R~4e-6 gives K~0.97.
+- EM on GPS IWV finds near-interpolating filter (K~0.97) -- physically correct.
+- ACF of Kalman innovations lag-1 negative for atmospheric data -- expected.
+- EVT/SIL 4: GPD/POT preferred over GEV/block-maxima for small datasets.
+  Block maxima wastes data; POT uses all exceedances above threshold.
+  For error intensity < 1e-8/h, threshold selection and GPD shape parameter
+  estimation are the critical steps.
+- Bootstrap: standard iid bootstrap INVALID for autocorrelated time series.
+  Block bootstrap required. Block length >= effective decorrelation length
+  (lag where ACF < 1.96/sqrt(n)).
+- Kriging: variogram fitting is the most sensitive step. Visual inspection
+  of empirical variogram essential before automated fitting. Nugget effect
+  = measurement noise + micro-scale variability below sampling resolution.
+- NURBS vs B-spline: NURBS allows exact conic sections via rational weights.
+  For general curve fitting without geometric constraints, B-spline sufficient.
+- Spline in GapFiller: cubic spline preferred over linear for smooth signals
+  (IWV, GNSS coordinates). Linear interpolation introduces kinks at gap edges.
 
 ---
 
-## Module Roadmap (priority order)
+## Module Roadmap (full picture)
 
-| Priority | Module | Status |
-|---|---|---|
-| 1 | `loki_arima` | COMPLETE |
-| 2 | `loki_ssa` | COMPLETE |
-| 3 | `loki_decomposition` | COMPLETE |
-| 4 | `loki_spectral` | COMPLETE |
-| 5 | `loki_kalman` | COMPLETE |
-| 6 | `loki_qc` | **NEXT** |
-| 7 | `loki_clustering` | planned |
-
----
-
-## Approach & Patterns
-
-- **Thread-based workflow:** Each conversation handles a specific milestone.
-  Always begins with "Working on LOKI -- see CLAUDE.md" + attached CLAUDE.md +
-  relevant source files listed in "Files to request" section.
-- **Design-first:** Discuss architecture and approve signatures before any implementation.
-- **Iterative debugging:** Build errors shared in chunks; systematic resolution.
-- **Documentation artifacts:** Each thread concludes with updated CLAUDE.md and
-  CONFIG_REFERENCE.md section if needed.
-- **Config philosophy:** JSON configs kept clean; all documentation in CONFIG_REFERENCE.md.
-- **Output conventions:** Protocols -> `OUTPUT/PROTOCOLS/`; plots -> `OUTPUT/IMG/`;
-  CSV -> `OUTPUT/CSV/`; logs -> `OUTPUT/LOG/`.
+| Priority | Module / Extension | Type | Status |
+|---|---|---|---|
+| done | `loki_arima` | app | COMPLETE |
+| done | `loki_ssa` | app | COMPLETE |
+| done | `loki_decomposition` | app | COMPLETE |
+| done | `loki_spectral` | app | COMPLETE |
+| done | `loki_kalman` | app | COMPLETE |
+| done | `loki_qc` | app | COMPLETE |
+| done | `loki_clustering` | app | COMPLETE |
+| 1 | `loki_core/math/spline` | core extension | PLANNED |
+| 1 | `loki_core/stats/sampling` | core extension | PLANNED |
+| 1 | `loki_core/stats/bootstrap` | core extension | PLANNED |
+| 1 | `loki_core/stats/permutation` | core extension | PLANNED |
+| 2 | `GapFiller` SPLINE strategy | core extension | PLANNED (needs spline first) |
+| 2 | `SplineFilter` in loki_filter | module extension | PLANNED (needs spline first) |
+| 2 | SNHT in loki_homogeneity | module extension | PLANNED |
+| 2 | PELT in loki_homogeneity | module extension | PLANNED |
+| 2 | BOCPD in loki_homogeneity | module extension | PLANNED |
+| 3 | `loki_simulate` | new app | PLANNED |
+| 3 | `loki_evt` | new app | PLANNED |
+| 4 | `loki_kriging` | new app | PLANNED |
+| 4 | `loki_spline` | new app | PLANNED |
 
 ---
 
@@ -749,10 +710,6 @@ See "NEXT THREAD: loki_qc" section above for full design.
 - Images: `OUTPUT/IMG/`
 - CSV: `OUTPUT/CSV/`
 - Logs: `OUTPUT/LOG/`
-- Plot naming: `[program]_[dataset]_[parameter]_[plottype].[format]`
-- Program prefix: `core` | `homogeneity` | `outlier` | `filter` | `regression` |
-                  `stationarity` | `arima` | `ssa` | `decomposition` | `spectral` |
-                  `kalman` | `qc`
 - CSV delimiter: semicolon (`;`)
 
 ---
@@ -770,13 +727,15 @@ See "NEXT THREAD: loki_qc" section above for full design.
 - `window` parameters in filters and SSA are in samples, not time units.
 - `HatMatrixDetector` does NOT inherit from `OutlierDetector`.
 - `NonlinearRegressor` does NOT inherit from `Regressor`.
-- `SplineFilter` is planned but NOT yet implemented.
-- Classical decomposition and SSA are separate applications -- do not merge.
+- `SplineFilter` is NOT YET IMPLEMENTED -- requires `math/spline.hpp` first.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
-- loki.sh -- register new apps in APP_EXE map:
-  `["kalman"]="loki_kalman_app"`
-  `["qc"]="loki_qc_app"`
-- TimeStamp MJD getter: `.mjd()` -- UTC string: `.utcString()` -- GPS: `.gpsTotalSeconds()`
-- loki_qc depends on loki_outlier (IQR/MAD/ZScore detectors already implemented there)
-- loki_qc seasonal section: auto-disable when median step > 3600s
-- loki_qc flags are bitfield OR-combined in CSV output
+- TimeStamp: `.mjd()` | `.utcString()` | `.gpsTotalSeconds()`
+- loki_qc seasonal section: auto-disable when median step > 3600s.
+- loki_qc flags: bitfield OR-combined in CSV output.
+- loki_clustering: NaN edge points -> `_handleEdgePoints()`, never raw to fit.
+- loki_clustering: `slope` preferred over `derivative` for noisy sensor data.
+- loki_homogeneity existing detector: Yao & Davis (1986), NOT SNHT.
+- loki_spline app: B-spline + NURBS. Cubic spline interpolation in loki_core/math.
+- loki_evt: SIL 4 use case (< 1e-8/h). GPD/POT preferred for small datasets.
+- loki_kriging: Simple / Ordinary / Universal variants. Variogram fitting critical.
+- Block bootstrap required for autocorrelated series; iid bootstrap invalid.
