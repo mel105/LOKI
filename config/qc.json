@@ -1,0 +1,52 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "CLIM_DATA_EX1.txt",
+        "time_format": "utc",
+        "time_columns": [0, 1],
+        "delimiter": " ",
+        "comment_char": "%",
+        "columns": [3],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "qc": {
+        "temporal_enabled":    true,
+        "stats_enabled":       true,
+        "outlier_enabled":     true,
+        "sampling_enabled":    true,
+        "seasonal_enabled":    true,
+        "hurst_enabled":       true,
+        "ma_window_size":      1461,
+        "significance_level":  0.05,
+        "uniformity_threshold": 0.05,
+        "min_span_years":      10.0,
+
+        "outlier": {
+            "iqr_enabled":      true,
+            "iqr_multiplier":   1.5,
+            "mad_enabled":      true,
+            "mad_multiplier":   3.0,
+            "zscore_enabled":   true,
+            "zscore_threshold": 3.0
+        },
+
+        "seasonal": {
+            "enabled":            true,
+            "min_years_per_slot": 5,
+            "min_month_coverage": 0.5
+        }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "qc_coverage":  true,
+        "qc_histogram": true,
+        "qc_acf":       false
+    }
+}

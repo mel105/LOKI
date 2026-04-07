@@ -25,6 +25,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 12. [loki_decomposition](#12-loki_decomposition)
 13. [loki_spectral](#13-loki_spectral)
 14. [loki_kalman](#14-loki_kalman)
+15. [loki_qc](#15-loki_qc)
 
 ---
 
@@ -3162,3 +3163,256 @@ The protocol contains:
 | Forecast std grows too quickly | Q is large (filter is sensitive to model noise) | Decrease Q for long-horizon forecasting |
 | Overlay shows only partial series | gnuplot xrange issue (fixed in current version) | Rebuild with latest `plotKalman.cpp` |
 | Protocol shows `EM converged: no` | Normal for large n with tight tolerance | Check that Q and R have stabilised in the log; result is still usable |
+
+## 15. loki_qc
+
+**Program:** `loki_qc.exe`
+**Default config:** `config/qc.json`
+
+Diagnostic entry gate for the LOKI pipeline. Runs before any other analysis
+module. Does **not** modify data. Produces a quality control protocol, a
+per-epoch flagging CSV, and optional plots.
+
+The pipeline runs the following steps in order:
+
+```
+1. Sampling rate analysis  -- median step, uniformity fraction
+2. Temporal coverage       -- gaps, completeness, span
+3. Descriptive statistics  -- mean, std, IQR, skewness, kurtosis, Hurst, JB test
+4. Outlier detection       -- IQR, MAD, Z-score on MA-detrended residuals
+5. Seasonal consistency    -- MedianYearSeries feasibility (auto-disabled sub-hourly)
+6. Protocol                -- OUTPUT/PROTOCOLS/qc_[dataset]_[component]_protocol.txt
+7. Flags CSV               -- OUTPUT/CSV/qc_[dataset]_[component]_flags.csv
+8. Plots                   -- OUTPUT/IMG/
+```
+
+The section key in the JSON file is `"qc"`.
+
+---
+
+### 15.1 Top-level qc settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `temporal_enabled` | bool | `true` | Run Section 1: temporal coverage analysis. |
+| `stats_enabled` | bool | `true` | Run Section 2: descriptive statistics. |
+| `outlier_enabled` | bool | `true` | Run Section 3: outlier detection. |
+| `sampling_enabled` | bool | `true` | Run Section 4: sampling rate analysis. Always runs first (required by other sections). |
+| `seasonal_enabled` | bool | `true` | Run Section 5: seasonal consistency. Auto-disabled when median step > 3600 s. |
+| `hurst_enabled` | bool | `true` | Include Hurst exponent in descriptive stats (R/S analysis). Can be slow for large n. |
+| `ma_window_size` | int | `365` | Moving average window in samples for trend removal before outlier detection. Should cover one dominant period: daily data -> 365, 6-hourly -> 1461. |
+| `significance_level` | float | `0.05` | Alpha for the Jarque-Bera normality test. |
+| `uniformity_threshold` | float | `0.05` | Fraction of non-uniform time steps above which Lomb-Scargle is recommended over FFT. |
+| `min_span_years` | float | `10.0` | Minimum series span in years for MedianYearSeries gap filling to be recommended. |
+
+---
+
+### 15.2 qc.outlier
+
+Per-method outlier detection settings. Detectors operate on MA-detrended
+residuals (original values minus a centered moving average of width
+`ma_window_size`). Edge epochs within the MA half-window are excluded.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `iqr_enabled` | bool | `true` | Enable IQR-based outlier detection. |
+| `iqr_multiplier` | float | `1.5` | IQR fence multiplier. Standard: 1.5 (mild outliers). |
+| `mad_enabled` | bool | `true` | Enable MAD-based outlier detection. |
+| `mad_multiplier` | float | `3.0` | Normalised MAD multiplier (~sigma units under normality). |
+| `zscore_enabled` | bool | `true` | Enable Z-score outlier detection. |
+| `zscore_threshold` | float | `3.0` | Z-score threshold. Flags values with `|z| > threshold`. |
+
+> **On deseasonalization for QC**: unlike `loki_outlier` which supports
+> `median_year` deseasonalization, QC always uses a simple moving average
+> (`ma_window_size` samples) to estimate and remove the trend before running
+> detectors. This keeps QC self-contained with no dependency on series length
+> or calendar structure. Set `ma_window_size` to cover one dominant period.
+
+> **Interpreting multi-method results**: the three detectors have different
+> robustness characteristics. IQR is most sensitive to moderate deviations;
+> MAD is robust to clustered outliers; Z-score assumes approximate normality.
+> The protocol reports each method separately and the union count. The flags
+> CSV uses separate bits per method (see Section 15.5).
+
+---
+
+### 15.3 qc.seasonal
+
+Controls the seasonal consistency check (Section 5). Evaluates whether
+the series is suitable for `MEDIAN_YEAR` gap filling in downstream modules.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Enable the seasonal consistency check. Automatically overridden to `false` when median step > 3600 s (sub-hourly data). |
+| `min_years_per_slot` | int | `5` | Minimum valid years per MedianYearSeries slot for the profile to be considered reliable. |
+| `min_month_coverage` | float | `0.5` | Minimum fraction of expected epochs per calendar month below which a month is considered poorly covered. Years with more than 6 poorly-covered months are flagged. |
+
+> **Auto-disable for sub-hourly data**: if the median sampling step is
+> shorter than 3600 s (e.g. millisecond sensor data), the seasonal section
+> is automatically disabled regardless of the `enabled` flag. This is logged
+> at INFO level.
+
+> **MedianYearSeries feasibility**: the protocol and recommendations block
+> report whether `MEDIAN_YEAR` gap filling is feasible for this series based
+> on span >= `min_span_years` and per-month coverage >= `min_month_coverage`.
+> This recommendation is informational -- no gap filling is performed by QC.
+
+---
+
+### 15.4 Recommendations block
+
+The protocol ends with an explicit recommendation block covering four topics:
+
+| Topic | Logic |
+|---|---|
+| **Gap filling** | `MEDIAN_YEAR` if series is long and coverage is good; `LINEAR` otherwise; `FORWARD_FILL` for very short series. |
+| **Spectral method** | `LOMB_SCARGLE` if `uniformityFraction > uniformity_threshold`; `FFT` otherwise. |
+| **Outlier cleaning** | `RECOMMENDED` if any outliers detected, with count and percentage; `NOT REQUIRED` if none. |
+| **Homogeneity testing** | `CONSIDER` if span >= 3 years and completeness >= 70%; `SKIP` otherwise. |
+| **MedianYearSeries feasibility** | `FEASIBLE` or `NOT FEASIBLE` with reason. |
+
+---
+
+### 15.5 Flagging CSV
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `qc_[dataset]_[component]_flags.csv`
+
+```
+mjd ; utc ; value ; flag
+```
+
+| Column | Description |
+|---|---|
+| `mjd` | Modified Julian Date of the epoch |
+| `utc` | UTC string ("YYYY-MM-DD hh:mm:ss.sss") |
+| `value` | Original series value; `NaN` for missing epochs |
+| `flag` | Bitfield integer. See flag table below. |
+
+### Flag bit values
+
+| Bit | Value | Meaning |
+|---|---|---|
+| — | `0` | Valid -- no issues detected |
+| 0 | `1` | Gap -- epoch has a NaN value |
+| 1 | `2` | Outlier detected by IQR method |
+| 2 | `4` | Outlier detected by MAD method |
+| 3 | `8` | Outlier detected by Z-score method |
+
+Flags are OR-combined. For example, an epoch flagged by both IQR and MAD
+receives flag = `2 | 4 = 6`. An epoch that is simultaneously a gap and an
+outlier receives flag = `1 | 2 = 3` (gap takes priority in coverage plots).
+
+---
+
+### 15.6 Plots (qc pipeline)
+
+QC plot flags are set directly under `"plots"` (same convention as kalman
+and spectral modules, not inside an `"enabled"` sub-object).
+
+| Flag | Default | Description |
+|---|---|---|
+| `qc_coverage` | `true` | Time-axis bar chart coloured by worst flag per day (or per epoch for short series). Green = valid, orange = outlier, red = gap. |
+| `qc_histogram` | `true` | Value histogram with fitted normal curve overlay. |
+| `qc_acf` | `false` | ACF of valid observations up to `plot_options.acf_max_lag` lags. |
+
+> **Coverage plot aggregation**: for series with >= 1000 epochs, one bar per
+> calendar day is shown (colour = worst flag in that day). For series with
+> < 1000 epochs, one bar per epoch is shown. Colour priority:
+> **red (gap) > orange (outlier) > green (valid)**.
+
+> **Histogram and ACF**: both delegate to `loki::Plot` (core module).
+> The histogram uses `plot_options.histogram_bins` bins (default 30).
+> The ACF uses `plot_options.acf_max_lag` lags (default 40).
+
+---
+
+### 15.7 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `qc_[dataset]_[component]_protocol.txt`
+
+Sections:
+- **Section 1: Temporal coverage** -- start/end in MJD, UTC, GPS total seconds; span; expected vs actual epochs; completeness %; gap count, longest gap, median gap.
+- **Section 4: Sampling rate** -- median, min, max step in seconds; non-uniform step count.
+- **Section 2: Descriptive statistics** -- N valid, N NaN, mean, median, std, IQR, skewness, kurtosis, min, max, P05/P25/P75/P95, Hurst exponent, JB test result.
+- **Section 3: Outlier detection** -- per-method count and %, union count.
+- **Section 5: Seasonal consistency** -- MedianYearSeries feasibility, years with poor coverage.
+- **Recommendations** -- gap filling, spectral method, outlier cleaning, homogeneity, MedianYearSeries.
+
+---
+
+### 15.8 Example config
+
+```json
+"qc": {
+    "temporal_enabled":     true,
+    "stats_enabled":        true,
+    "outlier_enabled":      true,
+    "sampling_enabled":     true,
+    "seasonal_enabled":     true,
+    "hurst_enabled":        true,
+    "ma_window_size":       1461,
+    "significance_level":   0.05,
+    "uniformity_threshold": 0.05,
+    "min_span_years":       10.0,
+
+    "outlier": {
+        "iqr_enabled":      true,
+        "iqr_multiplier":   1.5,
+        "mad_enabled":      true,
+        "mad_multiplier":   3.0,
+        "zscore_enabled":   true,
+        "zscore_threshold": 3.0
+    },
+
+    "seasonal": {
+        "enabled":            true,
+        "min_years_per_slot": 5,
+        "min_month_coverage": 0.5
+    }
+}
+```
+
+```json
+"plots": {
+    "output_format": "png",
+    "qc_coverage":   true,
+    "qc_histogram":  true,
+    "qc_acf":        false
+}
+```
+
+#### Recommended starting configurations
+
+**Full diagnostic for long climatological series (6h, >= 10 years)**:
+```json
+"qc": {
+    "ma_window_size": 1461,
+    "hurst_enabled":  true,
+    "min_span_years": 10.0,
+    "outlier": { "iqr_multiplier": 1.5, "mad_multiplier": 3.0 },
+    "seasonal": { "enabled": true, "min_years_per_slot": 5 }
+}
+```
+
+**Fast diagnostic for short or high-rate sensor data**:
+```json
+"qc": {
+    "ma_window_size":  51,
+    "hurst_enabled":   false,
+    "seasonal_enabled": false,
+    "outlier": { "iqr_enabled": false, "mad_multiplier": 4.0 }
+}
+```
+
+**GNSS coordinate series (daily, 5-10 years)**:
+```json
+"qc": {
+    "ma_window_size":       365,
+    "min_span_years":       5.0,
+    "uniformity_threshold": 0.02,
+    "outlier": { "mad_multiplier": 3.5, "zscore_threshold": 3.5 },
+    "seasonal": { "min_years_per_slot": 3, "min_month_coverage": 0.3 }
+}
+```

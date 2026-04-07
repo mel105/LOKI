@@ -35,6 +35,7 @@ add_subdirectory(libs/loki_ssa)
 add_subdirectory(libs/loki_decomposition)
 add_subdirectory(libs/loki_spectral)
 add_subdirectory(libs/loki_kalman)
+add_subdirectory(libs/loki_qc)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
@@ -48,6 +49,7 @@ add_subdirectory(apps/loki_ssa)
 add_subdirectory(apps/loki_decomposition)
 add_subdirectory(apps/loki_spectral)
 add_subdirectory(apps/loki_kalman)
+add_subdirectory(apps/loki_qc)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)
