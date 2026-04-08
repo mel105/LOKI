@@ -8,8 +8,8 @@
 #include <string>
 
 using namespace loki;
-using namespace loki::stats;
-
+// using namespace loki::stats;
+namespace loki::stats{
 // ---------------------------------------------------------------------------
 //  Internal helpers
 // ---------------------------------------------------------------------------
@@ -245,3 +245,4 @@ PermutationResult correlationTest(
         "permutation-correlation"
     };
 }
+} // namespace loki::stats

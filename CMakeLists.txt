@@ -58,3 +58,9 @@ if(LOKI_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# ── Demos ─────────────────────────────────────────────────────────────────────
+option(LOKI_BUILD_DEMOS "Build demo executables" ON)
+if(LOKI_BUILD_DEMOS)
+    add_subdirectory(tests/demo)
+endif()

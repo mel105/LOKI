@@ -116,6 +116,27 @@ std::exception
 - [ ] Unused parameters marked with `/*paramName*/` syntax.
 - [ ] No `M_PI` -- use `std::numbers::pi` (C++20).
 
+### CRITICAL -- namespace for free functions in .cpp files
+- `using namespace loki::stats` (or any sub-namespace) is NOT sufficient for
+  defining free functions -- they will be compiled in the global namespace and
+  the linker will not find them.
+- Free functions declared in `namespace loki::stats` MUST be defined inside an
+  explicit `namespace loki::stats { }` block in the `.cpp` file.
+- `using namespace loki;` may remain outside the block (for exception names).
+- This applies to: `bootstrap.cpp`, `permutation.cpp`, `sampling.cpp`, and any
+  future `.cpp` files defining free functions in a sub-namespace.
+- Example correct pattern:
+  ```cpp
+  using namespace loki;  // for exceptions only
+
+  namespace loki::stats {
+
+  BootstrapResult percentileCI(...) { ... }
+  BootstrapResult bcaCI(...) { ... }
+
+  } // namespace loki::stats
+  ```
+
 ---
 
 ## Plot Output Naming Convention
@@ -239,12 +260,10 @@ loki/
 |   |       +-- timeseries/   (timeSeries, timeStamp, gapFiller, deseasonalizer,
 |   |       |                  medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
-|   |       |                  wCorrelation, sampling*, bootstrap*, permutation*)
-|   |       |                  -- * PLANNED additions
+|   |       |                  wCorrelation, sampling, bootstrap, permutation)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
-|   |                          lagMatrix, embedMatrix, randomizedSvd, spline*)
-|   |                          -- * PLANNED addition
+|   |                          lagMatrix, embedMatrix, randomizedSvd, spline)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -262,23 +281,19 @@ loki/
 |   +-- loki_kriging/                <- PLANNED
 |   +-- loki_spline/                 <- PLANNED
 +-- tests/
+|   +-- CMakeLists.txt               <- Catch2 unit tests only, nemeneny
+|   +-- demo/
+|   |   +-- CMakeLists.txt           <- demo executables (LOKI_BUILD_DEMOS=ON)
+|   |   +-- demo_sampling.cpp        <- Sampler demo
+|   |   +-- demo_bootstrap.cpp       <- Bootstrap CI demo
+|   |   +-- demo_permutation.cpp     <- Permutation tests demo
+|   |   +-- input/                   <- gitignored, CLIM_DATA_EX1.txt sem
+|   |   +-- png/                     <- gitignored
+|   |   +-- protocol/                <- gitignored
+|   +-- unit/
 +-- config/
-|   +-- outlier.json
-|   +-- regression.json
-|   +-- stationarity.json
-|   +-- arima.json
-|   +-- ssa.json
-|   +-- decomposition.json
-|   +-- spectral.json
-|   +-- kalman.json
-|   +-- qc.json
-|   +-- clustering.json
-|   +-- simulate.json                <- PLANNED
-|   +-- evt.json                     <- PLANNED
-|   +-- kriging.json                 <- PLANNED
-|   +-- spline.json                  <- PLANNED
 +-- scripts/
-|   +-- loki.sh
+|   +-- loki.sh                      <- supports demo_sampling/bootstrap/permutation
 +-- docs/
 ```
 
@@ -301,8 +316,18 @@ loki/
 ```bash
 ./scripts/loki.sh build clustering --copy-dlls
 ./scripts/loki.sh run clustering
+./scripts/loki.sh run demo_sampling
+./scripts/loki.sh run demo_bootstrap
+./scripts/loki.sh run demo_permutation
 ./scripts/loki.sh test --rebuild
 ```
+
+### Demo executables
+- Spravované cez `LOKI_BUILD_DEMOS=ON` (automaticky v debug preset).
+- Spúšťajú sa bez config argumentu -- `cmd_run` to ošetruje prázdnym `APP_CONFIG`.
+- Input dáta: `tests/demo/input/CLIM_DATA_EX1.txt` (gitignored).
+- Output: `tests/demo/png/`, `tests/demo/protocol/` (gitignored).
+- `.gitignore` ignoruje: `tests/demo/png/`, `tests/demo/protocol/`, `tests/demo/input/`.
 
 ### CMake target name collision
 Executable: `loki_qc_app` with `OUTPUT_NAME "loki_qc"`.
@@ -332,6 +357,9 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ["kalman"]="loki_kalman_app"
 ["qc"]="loki_qc_app"
 ["clustering"]="loki_clustering_app"
+["demo_sampling"]=""        <- no config, runs directly
+["demo_bootstrap"]=""       <- no config, runs directly
+["demo_permutation"]=""     <- no config, runs directly
 ["simulate"]="loki_simulate_app"    <- PLANNED
 ["evt"]="loki_evt_app"              <- PLANNED
 ["kriging"]="loki_kriging_app"      <- PLANNED
@@ -362,11 +390,12 @@ target_include_directories(loki_core SYSTEM PUBLIC
                   `QcConfig` with `QcOutlierConfig`, `QcSeasonalConfig`,
                   `ClusteringConfig` with `ClusteringFeatureConfig`,
                   `KMeansClusteringConfig`, `DbscanClusteringConfig`,
-                  `ClusteringOutlierConfig`
-- `configLoader.hpp / .cpp` -- `_parseKalman()`, `_parseQc()`, `_parseClustering()` added
+                  `ClusteringOutlierConfig`,
+                  `SplineFilterConfig` (subsampleStep, bc) -- pre loki_filter
+- `configLoader.hpp / .cpp` -- vsetky parse metody vratane `_parseFilter` so spline sekciou
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
-- `gapFiller.hpp / .cpp`
+- `gapFiller.hpp / .cpp` -- Strategy::SPLINE pridana, fillSpline() implementovana
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
 - `descriptive.hpp / .cpp` -- includes `hurstExponent()` and `summarize()`
@@ -375,6 +404,9 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `hypothesis.hpp / .cpp`
 - `metrics.hpp / .cpp`
 - `wCorrelation.hpp / .cpp`
+- `sampling.hpp / .cpp` -- `Sampler` class, vsetky distribucie + bootstrap indices
+- `bootstrap.hpp / .cpp` -- `percentileCI`, `bcaCI`, `blockCI`
+- `permutation.hpp / .cpp` -- `oneSampleTest`, `twoSampleTest`, `correlationTest`
 - `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
 - `gnuplot.hpp / .cpp` -- `-persist` flag REMOVED
 - `plot.hpp / .cpp`
@@ -389,11 +421,12 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `lagMatrix.hpp / .cpp`
 - `embedMatrix.hpp / .cpp`
 - `randomizedSvd.hpp / .cpp`
+- `spline.hpp / .cpp` -- `CubicSpline`, `BoundaryCondition`, `CubicSplineConfig`
 
 ### loki_outlier -- complete (O1-O4)
-### loki_homogeneity -- complete
+### loki_homogeneity -- complete (Yao&Davis only; SNHT/PELT/BOCPD PLANNED)
 ### loki_stationarity -- complete
-### loki_filter -- complete (SplineFilter NOT YET implemented)
+### loki_filter -- complete (vrátane SplineFilter)
 ### loki_regression -- complete (R1-R8)
 ### loki_arima -- complete
 ### loki_ssa -- complete (S1-S5)
@@ -403,169 +436,143 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ### loki_qc -- complete
 ### loki_clustering -- complete
 
+### loki_filter -- FilterAnalyzer
+- `filterAnalyzer.hpp / .cpp` -- orchestrates full pipeline (gap fill, filter, protocol, CSV, plots)
+- Protokol obsahuje: filter params, residual stats, J-B test, Durbin-Watson, ACF lag-1, tuning hints
+- Vzor rovnaky ako `DecompositionAnalyzer` -- `run(ts, datasetName)` pattern
+
+---
+
+## GapFiller::Strategy::SPLINE -- Deployment Status
+
+`GapFiller::Strategy::SPLINE` je implementovana v `gapFiller.cpp`. String `"spline"` sa
+konvertuje na enum v kazdom `apps/loki_*/main.cpp` samostatne. Status patchov:
+
+| App | Status |
+|---|---|
+| `loki_filter` | DONE -- `filterAnalyzer.cpp` obsahuje konverziu |
+| `loki_homogeneity` | NEEDS PATCH |
+| `loki_regression` | NEEDS PATCH |
+| `loki_arima` | NEEDS PATCH |
+| `loki_ssa` | NEEDS PATCH |
+| `loki_decomposition` | NEEDS PATCH |
+| `loki_spectral` | NEEDS PATCH |
+| `loki_kalman` | NEEDS PATCH |
+| `loki_stationarity` | NEEDS PATCH |
+| `loki_qc` | NEEDS PATCH |
+| `loki_clustering` | NEEDS PATCH |
+
+Vzor patchu (rovnaky pre vsetky apps) -- najdi blok kde sa konvertuje `gapFillStrategy`
+string a pridaj vetvu:
+```cpp
+else if (s == "spline") gfc.strategy = loki::GapFiller::Strategy::SPLINE;
+```
+
+JSON konfig pre spline gap filling (platne pre vsetky moduly):
+```json
+"gap_filling": {
+    "strategy": "spline",
+    "max_fill_length": 0,
+    "gap_threshold_factor": 1.5,
+    "min_series_years": 10
+}
+```
+Poznamka: `min_series_years` sa pre SPLINE ignoruje (relevantne len pre MEDIAN_YEAR).
+
+---
+
+## Planned Extensions to loki_homogeneity
+
+### Architektura novych change point metod
+
+`MultiChangePointDetector` je dispatcher pre vsetky metody. Metoda sa voli cez
+`"method"` kluc v `homogeneity.json`. Kazda metoda ma vlastny blok v JSON.
+
+```json
+{
+  "homogeneity": {
+    "method": "yao_davis",  ///< default metoda je yao davis.
+    "yao_davis": { "significance": 0.05 }, /// bude potreba prerobit json podla novych metod. Pytaj si aj stavajuci json.
+    "snht": { "significance": 0.05, "min_segment_length": 30 },
+    "pelt": { "penalty": "bic", "min_segment_length": 30 },
+    "bocpd": { "hazard_lambda": 250, "prior_mean": 0.0, "prior_var": 1.0 }
+  }
+}
+```
+
+Pipeline pre vsetky metody - ale poriadne nastaduju stavajuci stav:
+1. Gap filling (strategia z config)
+2. Volanie prislusneho detektora cez `MultiChangePointDetector`
+3. `SeriesAdjuster` -- uprava segmentov
+4. `Homogenizer` -- finalna homogenizacia
+5. Protokol + CSV + plots
+
+### SNHT (Alexandersson 1986) -- snhtDetector.hpp/.cpp
+- Standard Normal Homogeneity Test
+- T-statistika porovnava pomer priemerov segmentov k celkovemu priemeru
+- Hlada **jeden** dominantny change point
+- `MultiChangePointDetector` ho vola iterativne (najde CP, rozdeli, opakuje)
+- Config key: `"method": "snht"`
+- Subory: `libs/loki_homogeneity/include/loki/homogeneity/snhtDetector.hpp`
+          `libs/loki_homogeneity/src/snhtDetector.cpp`
+- POZOR: tieto subory su v repozitari ako prazdne (systemova vec z davnych cias)
+  -- treba ich naplnit, nie vytvorit nove
+
+### PELT (Killick et al. 2012) -- peltDetector.hpp/.cpp
+- Pruned Exact Linear Time
+- Globalna optimalizacia -- priamo vracia viacero change pointov
+- O(n) amortizovana zlozitost
+- `MultiChangePointDetector` ho vola raz, dostane vsetky body naraz
+- Config key: `"method": "pelt"`
+- Penalty options: `"bic"` (default), `"aic"`, `"mbic"`, alebo fixna hodnota
+
+### BOCPD (Adams & MacKay 2007) -- bocpdDetector.hpp/.cpp
+- Bayesian Online Change Point Detection
+- Vracia **pravdepodobnostny rad** (posterior probability per time step)
+- Vhodne pre streaming/real-time data
+- `MultiChangePointDetector` prahuje pravdepodobnosti na diskretne CP
+- Config key: `"method": "bocpd"`
+- Vystup je iny ako ostatne -- treba osobitnu vizualizaciu
+
+### Co bude potrebovat nove vlakno pre SNHT/PELT/BOCPD
+Prilozte tieto subory:
+- `libs/loki_homogeneity/include/loki/homogeneity/snhtDetector.hpp` (prazdny)
+- `libs/loki_homogeneity/src/snhtDetector.cpp` (prazdny)
+- `libs/loki_homogeneity/include/loki/homogeneity/changePointDetector.hpp`
+- `libs/loki_homogeneity/include/loki/homogeneity/multiChangePointDetector.hpp`
+- `libs/loki_homogeneity/src/multiChangePointDetector.cpp`
+- `libs/loki_core/include/loki/core/config.hpp` -- HomogeneityConfig cast
+- `libs/loki_core/src/core/configLoader.cpp` -- _parseHomogeneity cast
+- `apps/loki_homogeneity/main.cpp`
+- `libs/loki_homogeneity/CMakeLists.txt`
+
 ---
 
 ## Planned Extensions to loki_core
 
-### stats/sampling.hpp / .cpp
-Random number generators for statistical distributions via `std::mt19937`.
-Distributions: Normal, Student-t, Chi2, F, Uniform, Exponential, Poisson,
-Binomial, Beta, Gamma, Laplace.
-Foundation for bootstrap, Monte Carlo simulation, and loki_simulate.
-No external dependencies beyond `<random>`.
+### stats/sampling.hpp / .cpp -- COMPLETE
+### stats/bootstrap.hpp / .cpp -- COMPLETE
+### stats/permutation.hpp / .cpp -- COMPLETE
+### math/spline.hpp / .cpp -- COMPLETE
 
-### stats/bootstrap.hpp / .cpp
-- Percentile bootstrap -- simplest, for large samples.
-- BCa (bias-corrected accelerated) -- standard for small samples.
-- **Block bootstrap** -- for dependent (autocorrelated) time series.
-  Block length selection: fixed, optimal (Politis & White 2004), or manual.
-  Block bootstrap is REQUIRED for climatological/GNSS data. iid bootstrap
-  is invalid for autocorrelated series.
-Use cases: CI for Hurst exponent, SNHT critical values, regression coefficients.
+### GapFiller -- SPLINE strategy -- COMPLETE
+Cubic spline interpolation cez vsetky platne body.
+Poziadavky: aspon 3 platne body, inak fallback na LINEAR s LOKI_WARNING.
 
-### stats/permutation.hpp / .cpp
-Non-parametric permutation tests as alternative to parametric hypothesis tests.
-Complements `hypothesis.hpp`. Useful when normality assumption is violated.
-
-### math/spline.hpp / .cpp
-Cubic spline interpolation with boundary condition options:
-- Natural (second derivative = 0 at endpoints)
-- Clamped (specified first derivative at endpoints)
-- Not-a-knot (third derivative continuous at second and second-to-last knots)
-
-This is **shared infrastructure** used by:
-- `GapFiller` (new SPLINE strategy) -- smoother gap filling than linear
-- `SplineFilter` in loki_filter (currently NOT YET implemented)
-- `loki_spline` app (advanced fitting -- uses this as foundation)
-
----
-
-## Planned Extensions to Existing Modules
-
-### GapFiller -- new SPLINE strategy
-Requires `loki_core/math/spline.hpp` first.
-New `Strategy::SPLINE` using cubic spline interpolation.
-Particularly useful for sub-daily sensor data where linear interpolation
-introduces artificial kinks at gap boundaries.
-
-### SplineFilter in loki_filter
-Currently placeholder. Implementable once `math/spline.hpp` exists.
-Smoothing spline with roughness penalty -- trade-off between data fidelity
-and smoothness controlled by lambda parameter.
-
-### loki_homogeneity -- new change point detectors
-The existing `changePointDetector.cpp` uses **Yao & Davis (1986)**
-likelihood-ratio test with Gumbel asymptotic approximation and
-Bartlett-window long-run variance correction. This is NOT Alexandersson SNHT.
-
-New detectors added alongside existing one, selectable via `method` config key:
-
-**SNHT** (`snhtDetector.hpp / .cpp`) -- Alexandersson (1986):
-Standard Normal Homogeneity Test. T-statistic compares the ratio of segment
-means to overall mean. Widely used in climatological homogenisation literature.
-Config: `"method": "snht"`
-
-**PELT** (`peltDetector.hpp / .cpp`) -- Killick et al. (2012):
-Pruned Exact Linear Time algorithm. Finds the globally optimal set of change
-points (minimises penalised cost function) in O(n) amortised time.
-Handles multiple change points efficiently without binary segmentation bias.
-Config: `"method": "pelt"`
-
-**BOCPD** (`bocpdDetector.hpp / .cpp`) -- Adams & MacKay (2007):
-Bayesian Online Change Point Detection. Computes posterior probability of a
-change point at each time step. Suitable for streaming/real-time sensor data.
-Outputs a probability series rather than a single detected index.
-Config: `"method": "bocpd"`
-
-The `MultiChangePointDetector` dispatcher updated to route to all four methods.
+### SplineFilter in loki_filter -- COMPLETE
+- `subsampleStep`: kazdy k-ty bod ako uzol (0 = auto: n/200, min 1)
+- `bc`: "natural" | "not_a_knot" | "clamped"
+- `SplineFilterConfig` je definovana v `config.hpp` (NIE v `splineFilter.hpp`)
+  -- redefinition error ak by bola na oboch miestach
 
 ---
 
 ## Planned New Applications
 
-### loki_simulate
-Monte Carlo simulation and synthetic time series generation.
-
-Pipeline:
-- Generate synthetic AR(p)/MA(q)/ARIMA(p,d,q) series from fitted parameters
-  (reuses loki_arima coefficient output).
-- Generate Kalman state-space model realisations from estimated Q and R
-  (reuses loki_kalman EM output).
-- Monte Carlo integration for probability estimation.
-- Parametric bootstrap: refit model on each simulated realisation, build
-  distribution of parameter estimates and CI.
-- Validation use case: generate series with known change point position and
-  magnitude, verify loki_homogeneity detection rate.
-
-Depends on: loki_core (sampling), loki_arima, loki_kalman.
-
-### loki_evt
-Extreme Value Theory for tail probability modelling.
-
-Methods:
-- **GEV** (Generalized Extreme Value): Gumbel (xi=0), Frechet (xi>0),
-  Weibull (xi<0) as special cases. Block maxima method.
-- **GPD** (Generalized Pareto Distribution): Peaks over Threshold (POT) method.
-  Preferred over GEV for small datasets as it uses all threshold exceedances.
-- Return level estimation: T-year return level with confidence intervals
-  via profile likelihood or bootstrap.
-- Threshold selection for POT: mean excess plot, stability plots.
-- Goodness-of-fit: Anderson-Darling test adapted for GEV/GPD.
-- Probability-probability and quantile-quantile plots for EVT distributions.
-
-Primary use case: **SIL 4 safety analysis** (IEC 61508) where error intensity
-must be < 1e-8 per hour. EVT provides statistically principled extrapolation
-to very small probabilities from limited observed failure data without
-assuming a specific parametric distribution for the bulk of the data.
-
-Depends on: loki_core only.
-
-### loki_kriging
-Gaussian process-based spatial and temporal interpolation.
-
-Components:
-- **Empirical variogram**: compute semi-variance as function of lag distance.
-  Supports isotropic and directional variograms.
-- **Variogram model fitting**: spherical, exponential, Gaussian, nugget+sill.
-  Weighted least squares fit. Visual inspection essential -- automated fitting
-  is a starting point only.
-- **Simple Kriging**: known stationary mean. Best linear unbiased predictor.
-- **Ordinary Kriging**: unknown mean, estimated from data. Most commonly used.
-  Unbiasedness constraint via Lagrange multiplier.
-- **Universal Kriging**: non-stationary mean modelled as linear combination
-  of known functions (trend surface). Generalises ordinary Kriging.
-- **Cross-validation**: leave-one-out error for variogram model selection.
-  Standardised residuals should be approximately N(0,1) for correct model.
-
-Use cases: spatial interpolation of GNSS station networks (dN, dE, dU fields),
-temporal interpolation of irregularly sampled climate records, filling spatial
-gaps in measurement networks.
-
-Depends on: loki_core only (Eigen3 for kriging system solving).
-
-### loki_spline
-Advanced spline fitting, B-spline, and NURBS.
-
-Uses `loki_core/math/spline.hpp` as foundation (shared with GapFiller).
-This app handles the analytical/fitting use cases beyond basic interpolation.
-
-Components:
-- **B-spline**: basis functions with configurable degree (1=linear, 2=quadratic,
-  3=cubic, ...) and knot vector. Knot selection: uniform, chord-length,
-  centripetal parametrisation.
-- **NURBS** (Non-Uniform Rational B-Splines): weighted control points.
-  Exact representation of conic sections (circles, ellipses, parabolas).
-  Useful for smooth reconstruction of vehicle trajectories and sensor paths
-  with geometric constraints.
-- **Smoothing splines**: minimise sum of squared residuals + lambda * integral
-  of squared second derivative. Lambda controls smoothness vs data fidelity.
-  Generalised cross-validation (GCV) for automatic lambda selection.
-- **Knot insertion/removal**: de Boor algorithm for evaluation.
-  Adaptive knot placement at high-curvature regions.
-- Output: fitted curve sampled at user-defined resolution, CSV export,
-  control points, knot vector, residuals.
-
-Depends on: loki_core only.
+### loki_simulate -- PLANNED
+### loki_evt -- PLANNED
+### loki_kriging -- PLANNED
+### loki_spline -- PLANNED
 
 ---
 
@@ -584,6 +591,23 @@ into static libraries on Windows/GCC. Workarounds in place:
 3. `SsaAnalyzer` uses randomized SVD (small internal matrices only).
 4. `loki_kalman` uses `Eigen::LLT` for covariance updates -- safe in static libs.
 Do NOT use `BDCSVD` in any `.cpp` compiled into a static library.
+
+### Free functions in sub-namespaces -- CRITICAL
+`using namespace loki::stats` v `.cpp` NESTACI pre definicie volnych funkcii.
+Funkcie su potom v globalnom namespace a linker ich nenajde.
+Riesenie: obalit vsetky definicie do explicitneho `namespace loki::stats { }` bloku.
+Postihuje: `bootstrap.cpp`, `permutation.cpp` a vsetky buducte `.cpp` so
+slobodnymi funkciami v sub-namespacoch.
+
+### bcaCI -- degeneratny jackknife
+Pre statistiky s malym rozptylom (napr. mean na velkych seriach) je jackknife
+distribucia takmer konstantna -> `den < 1e-15` -> fallback na percentile CI
+s `LOKI_WARNING`. NIE vynimka.
+
+### SplineFilterConfig redefinition
+`SplineFilterConfig` je definovana **iba** v `config.hpp`.
+`splineFilter.hpp` pouziva `using Config = SplineFilterConfig` (z config.hpp).
+Nesmie byt definovana v oboch suboroch -- redefinition error.
 
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
@@ -645,7 +669,8 @@ for (const auto& r : loadResults) {
 
 ### loki_homogeneity -- detector identity
 The existing `changePointDetector.cpp` uses **Yao & Davis (1986)** -- NOT SNHT.
-SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
+SNHT (Alexandersson 1986) bude separatny `snhtDetector.hpp / .cpp`.
+Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 
 ---
 
@@ -663,18 +688,15 @@ SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
 - ACF of Kalman innovations lag-1 negative for atmospheric data -- expected.
 - EVT/SIL 4: GPD/POT preferred over GEV/block-maxima for small datasets.
   Block maxima wastes data; POT uses all exceedances above threshold.
-  For error intensity < 1e-8/h, threshold selection and GPD shape parameter
-  estimation are the critical steps.
 - Bootstrap: standard iid bootstrap INVALID for autocorrelated time series.
   Block bootstrap required. Block length >= effective decorrelation length
   (lag where ACF < 1.96/sqrt(n)).
-- Kriging: variogram fitting is the most sensitive step. Visual inspection
-  of empirical variogram essential before automated fitting. Nugget effect
-  = measurement noise + micro-scale variability below sampling resolution.
+- bcaCI jackknife degeneruje pre statistiky s malym rozptylom (napr. mean)
+  na velkych seriach -- fallback na percentile CI je spravne chovanie.
+- SplineFilter subsampleStep=0 (auto) = n/200, vhodne pre vacsinu klimatologickych
+  dat. Pre kratke serie (n<200) = 1 (presna interpolacia).
+- Kriging: variogram fitting is the most sensitive step.
 - NURBS vs B-spline: NURBS allows exact conic sections via rational weights.
-  For general curve fitting without geometric constraints, B-spline sufficient.
-- Spline in GapFiller: cubic spline preferred over linear for smooth signals
-  (IWV, GNSS coordinates). Linear interpolation introduces kinks at gap edges.
 
 ---
 
@@ -689,15 +711,17 @@ SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
 | done | `loki_kalman` | app | COMPLETE |
 | done | `loki_qc` | app | COMPLETE |
 | done | `loki_clustering` | app | COMPLETE |
-| 1 | `loki_core/math/spline` | core extension | PLANNED |
-| 1 | `loki_core/stats/sampling` | core extension | PLANNED |
-| 1 | `loki_core/stats/bootstrap` | core extension | PLANNED |
-| 1 | `loki_core/stats/permutation` | core extension | PLANNED |
-| 2 | `GapFiller` SPLINE strategy | core extension | PLANNED (needs spline first) |
-| 2 | `SplineFilter` in loki_filter | module extension | PLANNED (needs spline first) |
+| done | `loki_core/math/spline` | core extension | COMPLETE |
+| done | `loki_core/stats/sampling` | core extension | COMPLETE |
+| done | `loki_core/stats/bootstrap` | core extension | COMPLETE |
+| done | `loki_core/stats/permutation` | core extension | COMPLETE |
+| done | `GapFiller` SPLINE strategy | core extension | COMPLETE |
+| done | `SplineFilter` in loki_filter | module extension | COMPLETE |
+| done | `FilterAnalyzer` in loki_filter | module extension | COMPLETE |
 | 2 | SNHT in loki_homogeneity | module extension | PLANNED |
 | 2 | PELT in loki_homogeneity | module extension | PLANNED |
 | 2 | BOCPD in loki_homogeneity | module extension | PLANNED |
+| 2 | GapFiller SPLINE patche (apps) | patche | NEEDS PATCH (11 apps) |
 | 3 | `loki_simulate` | new app | PLANNED |
 | 3 | `loki_evt` | new app | PLANNED |
 | 4 | `loki_kriging` | new app | PLANNED |
@@ -721,13 +745,13 @@ SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp`, `embedMatrix.hpp`,
-  `randomizedSvd.hpp` are in `loki_core/math/`.
-- `wCorrelation.hpp` is in `loki_core/stats/`.
+  `randomizedSvd.hpp`, `spline.hpp` are in `loki_core/math/`.
+- `wCorrelation.hpp`, `sampling.hpp`, `bootstrap.hpp`, `permutation.hpp`
+  are in `loki_core/stats/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
 - `window` parameters in filters and SSA are in samples, not time units.
 - `HatMatrixDetector` does NOT inherit from `OutlierDetector`.
 - `NonlinearRegressor` does NOT inherit from `Regressor`.
-- `SplineFilter` is NOT YET IMPLEMENTED -- requires `math/spline.hpp` first.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
 - TimeStamp: `.mjd()` | `.utcString()` | `.gpsTotalSeconds()`
 - loki_qc seasonal section: auto-disable when median step > 3600s.
@@ -739,3 +763,8 @@ SNHT (Alexandersson 1986) will be a separate `snhtDetector.hpp / .cpp`.
 - loki_evt: SIL 4 use case (< 1e-8/h). GPD/POT preferred for small datasets.
 - loki_kriging: Simple / Ordinary / Universal variants. Variogram fitting critical.
 - Block bootstrap required for autocorrelated series; iid bootstrap invalid.
+- `SplineFilterConfig` definovana TYLKO v `config.hpp`, nie v `splineFilter.hpp`.
+- `bootstrap.cpp`, `permutation.cpp`: funkcie musia byt v `namespace loki::stats { }`
+  bloku, nie len cez `using namespace`.
+- `snhtDetector.hpp/.cpp` existuju ako PRAZDNE subory -- naplnit v novom vlakne.
+- `tests/demo/` gitignore: `png/`, `protocol/`, `input/` adresare ignorovat.

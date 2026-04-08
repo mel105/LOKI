@@ -19,11 +19,14 @@
 #   stationarity     apps/loki_stationarity/loki_stationarity.exe
 #   arima            apps/loki_arima/loki_arima.exe
 #   ssa              apps/loki_ssa/loki_ssa.exe
-#   decomposition    apps/loki_ssa/loki_decomposition.exe
-#   spectral         apps/loki_ssa/loki_spectral.exe
+#   decomposition    apps/loki_decomposition/loki_decomposition.exe
+#   spectral         apps/loki_spectral/loki_spectral.exe
 #   kalman           apps/loki_kalman/loki_kalman.exe
 #   qc               apps/loki_qc/loki_qc.exe
-#   clustering       apps/loki_qc/loki_clustering.exe
+#   clustering       apps/loki_clustering/loki_clustering.exe
+#   demo_sampling    tests/demo/demo_sampling.exe
+#   demo_bootstrap   tests/demo/demo_bootstrap.exe
+#   demo_permutation tests/demo/demo_permutation.exe
 #   all              All apps (build/clean only).
 #
 # Options:
@@ -50,6 +53,9 @@
 #   ./scripts/loki.sh run homogenization config/homogenization.json
 #   ./scripts/loki.sh run outlier
 #   ./scripts/loki.sh run outlier config/outlier.json
+#   ./scripts/loki.sh run demo_sampling
+#   ./scripts/loki.sh run demo_bootstrap
+#   ./scripts/loki.sh run demo_permutation
 #   ./scripts/loki.sh test
 #   ./scripts/loki.sh test --filter exceptions --verbose
 #   ./scripts/loki.sh test --rebuild
@@ -86,6 +92,9 @@ declare -A APP_EXE=(
     [kalman]="apps/loki_kalman/loki_kalman.exe"
     [qc]="apps/loki_qc/loki_qc.exe"
     [clustering]="apps/loki_clustering/loki_clustering.exe"
+    [demo_sampling]="tests/demo/demo_sampling.exe"
+    [demo_bootstrap]="tests/demo/demo_bootstrap.exe"
+    [demo_permutation]="tests/demo/demo_permutation.exe"
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -101,6 +110,9 @@ declare -A APP_CONFIG=(
     [kalman]="config/kalman.json"
     [qc]="config/qc.json"
     [clustering]="config/clustering.json"
+    [demo_sampling]=""
+    [demo_bootstrap]=""
+    [demo_permutation]=""
 )
 
 # -----------------------------------------------------------------------------
@@ -128,7 +140,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|all)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|all|demo_sampling|demo_bootstrap|demo_permutation)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;
@@ -167,6 +179,7 @@ done
 
 BUILD_DIR="build/${PRESET}"
 TESTS_DIR="${BUILD_DIR}/tests"
+DEMO_DIR="${BUILD_DIR}/tests/demo"
 
 # -----------------------------------------------------------------------------
 # Sanity checks
@@ -218,6 +231,11 @@ do_cmake_configure() {
     [ "${BUILD_TESTS}" -eq 1 ] && tests_flag="-DLOKI_BUILD_TESTS=ON" \
                                 || tests_flag="-DLOKI_BUILD_TESTS=OFF"
 
+    # Demos are enabled automatically in debug builds.
+    local demos_flag
+    [ "${PRESET}" = "debug" ] && demos_flag="-DLOKI_BUILD_DEMOS=ON" \
+                               || demos_flag="-DLOKI_BUILD_DEMOS=OFF"
+
     local build_type
     [ "${PRESET}" = "release" ] && build_type="Release" || build_type="Debug"
 
@@ -229,7 +247,8 @@ do_cmake_configure() {
         -DCMAKE_BUILD_TYPE="${build_type}" \
         -DCMAKE_CXX_COMPILER="${CXX_COMPILER}" \
         -DCMAKE_MAKE_PROGRAM="${MAKE}" \
-        "${tests_flag}"
+        "${tests_flag}" \
+        "${demos_flag}"
 }
 
 do_make() {
@@ -241,14 +260,17 @@ do_make() {
 do_copy_dlls() {
     [ "${COPY_DLLS}" -eq 0 ] && return 0
 
-    # Copy to all known app dirs
+    # Copy to all known app dirs.
     for app_key in "${!APP_EXE[@]}"; do
         local exe_dir="${BUILD_DIR}/$(dirname "${APP_EXE[$app_key]}")"
         copy_dlls_to "${exe_dir}"
     done
 
-    # Copy to tests dir if it exists
+    # Copy to tests dir if it exists.
     copy_dlls_to "${TESTS_DIR}"
+
+    # Copy to demo dir if it exists.
+    copy_dlls_to "${DEMO_DIR}"
 
     echo "[LOKI] DLLs ready."
 }
@@ -304,9 +326,9 @@ cmd_clean() {
 }
 
 cmd_run() {
-    # Validate app
+    # Validate app.
     if [ "${APP}" = "all" ]; then
-        echo "[LOKI] ERROR: 'run' does not support app=all. Specify: loki | homogenization | outlier" >&2
+        echo "[LOKI] ERROR: 'run' does not support app=all. Specify an app name." >&2
         exit 1
     fi
     if [ -z "${APP_EXE[$APP]+x}" ]; then
@@ -321,16 +343,22 @@ cmd_run() {
 
     local exe_dir="${BUILD_DIR}/$(dirname "${APP_EXE[$APP]}")"
     local exe="${BUILD_DIR}/${APP_EXE[$APP]}"
-    local config="${CONFIG_OVERRIDE:-${APP_CONFIG[$APP]}}"
+    local config="${CONFIG_OVERRIDE:-${APP_CONFIG[$APP]:-}}"
 
     echo "[LOKI] Building (incremental)..."
     "${MAKE}" -C "${BUILD_DIR}" -j${JOBS}
 
     check_dlls_in "${exe_dir}"
 
-    echo "[LOKI] Running: ${exe} ${config}"
-    echo "-----------------------------------------------"
-    "${exe}" "${config}"
+    if [ -n "${config}" ]; then
+        echo "[LOKI] Running: ${exe} ${config}"
+        echo "-----------------------------------------------"
+        "${exe}" "${config}"
+    else
+        echo "[LOKI] Running: ${exe}"
+        echo "-----------------------------------------------"
+        "${exe}"
+    fi
 }
 
 cmd_test() {

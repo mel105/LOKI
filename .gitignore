@@ -2,6 +2,11 @@
 build/
 out/
 
+# Demo output directories -- do not commit
+tests/demo/png/
+tests/demo/protocol/
+tests/demo/input/
+
 # Old codes and programs
 __backup__
 

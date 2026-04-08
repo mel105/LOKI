@@ -10,8 +10,8 @@
 #include <string>
 
 using namespace loki;
-using namespace loki::stats;
-
+// using namespace loki::stats;
+namespace loki::stats {
 // ---------------------------------------------------------------------------
 //  Internal helpers
 // ---------------------------------------------------------------------------
@@ -224,9 +224,18 @@ BootstrapResult bcaCI(
     den = std::pow(den, 1.5);
 
     if (std::abs(den) < 1e-15) {
-        throw AlgorithmException(
-            "bcaCI: degenerate jackknife distribution -- acceleration undefined. "
-            "The statistic may be constant across leave-one-out subsets.");
+        // Degenerate jackknife -- fall back to percentile CI.
+        LOKI_WARNING("bcaCI: degenerate jackknife (statistic nearly constant "
+                    "across leave-one-out subsets) -- falling back to percentile CI.");
+        std::sort(boot.begin(), boot.end());
+        double bootMean = 0.0, bootSe = 0.0;
+        bootStats(boot, bootMean, bootSe);
+        const double lower = quantileSorted(boot, cfg.alpha / 2.0);
+        const double upper = quantileSorted(boot, 1.0 - cfg.alpha / 2.0);
+        return BootstrapResult{
+            estimate, lower, upper,
+            bootMean - estimate, bootSe, cfg.nResamples
+        };
     }
 
     const double a = num / (6.0 * den);
@@ -323,3 +332,4 @@ BootstrapResult blockCI(
         cfg.nResamples
     };
 }
+} // namespace loki::stats
