@@ -187,7 +187,7 @@ loki_core
 loki_outlier          (depends on loki_core only)
     ^
     |
-loki_homogeneity      (depends on loki_core + loki_outlier)
+loki_homogeneity      (depends on loki_core + loki_outlier)        <- COMPLETE
 
 loki_filter           (depends on loki_core only)
 
@@ -424,7 +424,17 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `spline.hpp / .cpp` -- `CubicSpline`, `BoundaryCondition`, `CubicSplineConfig`
 
 ### loki_outlier -- complete (O1-O4)
-### loki_homogeneity -- complete (Yao&Davis only; SNHT/PELT/BOCPD PLANNED)
+### loki_homogeneity -- complete
+- `changePointDetector.hpp / .cpp`   -- Yao & Davis (1986), recursive binary splitting
+- `snhtDetector.hpp / .cpp`          -- SNHT (Alexandersson 1986), Monte Carlo p-value
+- `peltDetector.hpp / .cpp`          -- PELT (Killick et al. 2012), O(n) global optimisation
+- `bocpdDetector.hpp / .cpp`         -- BOCPD (Adams & MacKay 2007), NIX conjugate model
+- `multiChangePointDetector.hpp / .cpp` -- dispatcher: yao_davis/snht use recursive split(),
+                                           pelt/bocpd call detectAll() directly (single pass)
+- `seriesAdjuster.hpp / .cpp`
+- `homogenizer.hpp / .cpp`
+- `homogeneityAnalyzer.hpp / .cpp`   -- full pipeline orchestrator, protocol, CSV, plots
+- `plotHomogeneity.hpp / .cpp`
 ### loki_stationarity -- complete
 ### loki_filter -- complete (vrátane SplineFilter)
 ### loki_regression -- complete (R1-R8)
@@ -478,73 +488,6 @@ JSON konfig pre spline gap filling (platne pre vsetky moduly):
 }
 ```
 Poznamka: `min_series_years` sa pre SPLINE ignoruje (relevantne len pre MEDIAN_YEAR).
-
----
-
-## Planned Extensions to loki_homogeneity
-
-### Architektura novych change point metod
-
-`MultiChangePointDetector` je dispatcher pre vsetky metody. Metoda sa voli cez
-`"method"` kluc v `homogeneity.json`. Kazda metoda ma vlastny blok v JSON.
-
-```json
-{
-  "homogeneity": {
-    "method": "yao_davis",  ///< default metoda je yao davis.
-    "yao_davis": { "significance": 0.05 }, /// bude potreba prerobit json podla novych metod. Pytaj si aj stavajuci json.
-    "snht": { "significance": 0.05, "min_segment_length": 30 },
-    "pelt": { "penalty": "bic", "min_segment_length": 30 },
-    "bocpd": { "hazard_lambda": 250, "prior_mean": 0.0, "prior_var": 1.0 }
-  }
-}
-```
-
-Pipeline pre vsetky metody - ale poriadne nastaduju stavajuci stav:
-1. Gap filling (strategia z config)
-2. Volanie prislusneho detektora cez `MultiChangePointDetector`
-3. `SeriesAdjuster` -- uprava segmentov
-4. `Homogenizer` -- finalna homogenizacia
-5. Protokol + CSV + plots
-
-### SNHT (Alexandersson 1986) -- snhtDetector.hpp/.cpp
-- Standard Normal Homogeneity Test
-- T-statistika porovnava pomer priemerov segmentov k celkovemu priemeru
-- Hlada **jeden** dominantny change point
-- `MultiChangePointDetector` ho vola iterativne (najde CP, rozdeli, opakuje)
-- Config key: `"method": "snht"`
-- Subory: `libs/loki_homogeneity/include/loki/homogeneity/snhtDetector.hpp`
-          `libs/loki_homogeneity/src/snhtDetector.cpp`
-- POZOR: tieto subory su v repozitari ako prazdne (systemova vec z davnych cias)
-  -- treba ich naplnit, nie vytvorit nove
-
-### PELT (Killick et al. 2012) -- peltDetector.hpp/.cpp
-- Pruned Exact Linear Time
-- Globalna optimalizacia -- priamo vracia viacero change pointov
-- O(n) amortizovana zlozitost
-- `MultiChangePointDetector` ho vola raz, dostane vsetky body naraz
-- Config key: `"method": "pelt"`
-- Penalty options: `"bic"` (default), `"aic"`, `"mbic"`, alebo fixna hodnota
-
-### BOCPD (Adams & MacKay 2007) -- bocpdDetector.hpp/.cpp
-- Bayesian Online Change Point Detection
-- Vracia **pravdepodobnostny rad** (posterior probability per time step)
-- Vhodne pre streaming/real-time data
-- `MultiChangePointDetector` prahuje pravdepodobnosti na diskretne CP
-- Config key: `"method": "bocpd"`
-- Vystup je iny ako ostatne -- treba osobitnu vizualizaciu
-
-### Co bude potrebovat nove vlakno pre SNHT/PELT/BOCPD
-Prilozte tieto subory:
-- `libs/loki_homogeneity/include/loki/homogeneity/snhtDetector.hpp` (prazdny)
-- `libs/loki_homogeneity/src/snhtDetector.cpp` (prazdny)
-- `libs/loki_homogeneity/include/loki/homogeneity/changePointDetector.hpp`
-- `libs/loki_homogeneity/include/loki/homogeneity/multiChangePointDetector.hpp`
-- `libs/loki_homogeneity/src/multiChangePointDetector.cpp`
-- `libs/loki_core/include/loki/core/config.hpp` -- HomogeneityConfig cast
-- `libs/loki_core/src/core/configLoader.cpp` -- _parseHomogeneity cast
-- `apps/loki_homogeneity/main.cpp`
-- `libs/loki_homogeneity/CMakeLists.txt`
 
 ---
 
@@ -718,9 +661,10 @@ Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 | done | `GapFiller` SPLINE strategy | core extension | COMPLETE |
 | done | `SplineFilter` in loki_filter | module extension | COMPLETE |
 | done | `FilterAnalyzer` in loki_filter | module extension | COMPLETE |
-| 2 | SNHT in loki_homogeneity | module extension | PLANNED |
-| 2 | PELT in loki_homogeneity | module extension | PLANNED |
-| 2 | BOCPD in loki_homogeneity | module extension | PLANNED |
+| done | SNHT in loki_homogeneity          | module extension | COMPLETE |
+| done | PELT in loki_homogeneity          | module extension | COMPLETE |
+| done | BOCPD in loki_homogeneity         | module extension | COMPLETE |
+| done | HomogeneityAnalyzer + protocol    | module extension | COMPLETE |
 | 2 | GapFiller SPLINE patche (apps) | patche | NEEDS PATCH (11 apps) |
 | 3 | `loki_simulate` | new app | PLANNED |
 | 3 | `loki_evt` | new app | PLANNED |
@@ -766,5 +710,15 @@ Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 - `SplineFilterConfig` definovana TYLKO v `config.hpp`, nie v `splineFilter.hpp`.
 - `bootstrap.cpp`, `permutation.cpp`: funkcie musia byt v `namespace loki::stats { }`
   bloku, nie len cez `using namespace`.
-- `snhtDetector.hpp/.cpp` existuju ako PRAZDNE subory -- naplnit v novom vlakne.
+- SNHT v rekurzívnom móde: min_segment_points >= 3-4 roky (4383-5844 pri 6h).
+  Dominantný parameter je min_segment_points, nie n_permutations.
+  n_permutations ovplyvňuje len presnosť p-value, nie počet detekovaných CP.
+- PELT mbic je najkonzervatívnejší penalty typ -- odporúčaný default pre klimatologické dáta.
+  min_segment_length v pelt sekcii je nezávislý od top-level min_segment_points.
+- BOCPD vyžaduje kalibráciu prior_beta blízko skutočnému sigma^2 série.
+  Pre GPS IWV residuály: sigma^2 ~ 0.001, použiť prior_beta ~ 0.002.
+  Pre dlhé série (n > 30000) s malými posunmi je BOCPD ťažko kalibrovateľný --
+  yao_davis alebo pelt sú spoľahlivejšie.
+- HomogeneityAnalyzer vzor: run(ts, datasetName) -- rovnaký ako FilterAnalyzer.
+  buildHomogenizerConfig je teraz _buildHomogenizerConfig() vnútri analyzera.
 - `tests/demo/` gitignore: `png/`, `protocol/`, `input/` adresare ignorovat.

@@ -9,6 +9,7 @@ add_library(loki_homogeneity STATIC
     src/seriesAdjuster.cpp
     src/homogenizer.cpp
     src/plotHomogeneity.cpp
+    src/homogeneityAnalyzer.cpp
 )
 
 target_include_directories(loki_homogeneity
