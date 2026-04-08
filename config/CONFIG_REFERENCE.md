@@ -363,8 +363,6 @@ of the residuals.
     }
 }
 ```
-```
-
 
 ---
 
@@ -388,35 +386,42 @@ The homogenization pipeline runs the following steps in order:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `apply_gap_filling` | bool | `true` | Enable gap filling step |
-| `strategy` | string | `linear` | Fill strategy: `linear`, `forward_fill`, `mean`, `none` |
+| `strategy` | string | `linear` | Fill strategy: `linear`, `forward_fill`, `mean`, `spline`, `none` |
 | `max_fill_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
 | `gap_threshold_factor` | float | `1.5` | Multiplier on expected step to detect a gap. |
-| `min_series_years` | int | `10` | Minimum span for `median_year` gap filling. |
+| `min_series_years` | int | `10` | Minimum span for `median_year` gap filling. Ignored for `spline`. |
 
 ### 6.2 homogeneity.pre_outlier
 
 Coarse outlier removal on the raw (gap-filled) series before deseasonalization.
-Intended to remove physically impossible values only. Use a large multiplier.
+Intended to remove physically impossible values only. Use a large multiplier (>= 5.0).
+Detection runs on original-scale values -- no seasonal subtraction occurs here.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable pre-outlier removal |
-| `method` | string | `mad_bounds` | Detection method (same options as outlier.detection.method) |
+| `method` | string | `mad_bounds` | Detection method: `mad_bounds`, `mad`, `iqr`, `zscore` |
 | `mad_multiplier` | float | `5.0` | Use high value (5.0+) for coarse filtering only |
 | `iqr_multiplier` | float | `1.5` | IQR fence width |
 | `zscore_threshold` | float | `3.0` | Z-score threshold |
-| `replacement_strategy` | string | `linear` | Fill strategy for detected positions |
+| `replacement_strategy` | string | `linear` | Fill strategy for detected positions: `linear`, `forward_fill`, `mean` |
 | `max_fill_length` | int | `0` | Maximum consecutive positions to fill |
 
 ### 6.3 homogeneity.deseasonalization
 
-Same options as [outlier.deseasonalization](#51-outlierdeseasonalization).
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | string | `median_year` | Deseasonalization method: `median_year`, `moving_average`, `none` |
+| `ma_window_size` | int | `365` | Window size in samples for `moving_average` strategy |
+| `median_year_min_years` | int | `5` | Minimum years of data required to build the median year profile |
 
-Default `strategy` here is `median_year` (climatological data assumed).
+Default `strategy` is `median_year` (recommended for climatological data).
+For 6-hour resolution data, use `ma_window_size: 1461` (1 year = 4 x 365.25 samples).
 
 ### 6.4 homogeneity.post_outlier
 
 Fine outlier removal on deseasonalized residuals, before change point detection.
+Detection operates directly on residuals -- seasonal component is already removed in step 3.
 Use a tighter multiplier than pre_outlier.
 
 Same keys as [pre_outlier](#62-homogeneitypre_outlier).
@@ -424,16 +429,179 @@ Recommended defaults: `method: mad`, `mad_multiplier: 3.0`.
 
 ### 6.5 homogeneity.detection
 
-Controls the change point detector (SNHT-based).
+Controls the change point detection method and its parameters.
+
+#### 6.5.1 Method selection
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `min_segment_points` | int | `60` | Minimum number of observations per segment |
-| `min_segment_duration` | string | `""` | Human-readable minimum segment duration. Overrides `min_segment_seconds` if set. Format: `"1y"`, `"180d"`, `"6h"`, `"30m"`, `"60s"`. |
-| `min_segment_seconds` | float | `0.0` | Minimum segment duration in seconds (alternative to `min_segment_duration`) |
-| `significance_level` | float | `0.05` | p-value threshold for accepting a change point |
-| `acf_dependence_limit` | float | `0.2` | ACF lag-1 limit above which dependence correction is applied |
-| `correct_for_dependence` | bool | `true` | Apply ACF-based effective sample size correction |
+| `method` | string | `yao_davis` | Detection algorithm: `yao_davis`, `snht`, `pelt`, `bocpd` |
+| `min_segment_points` | int | `60` | Minimum number of observations per segment. Applied by `MultiChangePointDetector` before calling the detector. Ignored by `pelt` and `bocpd` (use their own `min_segment_length` instead). |
+| `min_segment_duration` | string | `""` | Human-readable minimum segment duration. Format: `"1y"`, `"180d"`, `"6h"`. Overrides `min_segment_seconds`. |
+| `min_segment_seconds` | float | `0.0` | Minimum segment duration in seconds. |
+| `significance_level` | float | `0.05` | p-value threshold for `yao_davis` and `snht`. Not used by `pelt` or `bocpd`. |
+| `acf_dependence_limit` | float | `0.2` | ACF lag-1 limit above which dependence correction is applied (`yao_davis` only). |
+| `correct_for_dependence` | bool | `true` | Apply ACF-based sigmaStar correction (`yao_davis` only). |
+
+#### 6.5.2 Method comparison
+
+| Method | Algorithm | CP search | Hypothesis test | Best for |
+|---|---|---|---|---|
+| `yao_davis` | Yao & Davis (1986) T-statistic with ACF correction | Recursive binary splitting | Asymptotic Gumbel + sigmaStar | General purpose, well-validated |
+| `snht` | Alexandersson (1986) SNHT T-statistic | Recursive binary splitting | Monte Carlo permutation | Climate station data, reference series |
+| `pelt` | Killick et al. (2012) penalised cost | Single global pass O(n) | Penalised likelihood (no p-value) | Fast, many potential CPs, deterministic |
+| `bocpd` | Adams & MacKay (2007) Bayesian online | Left-to-right online | Posterior probability threshold | Streaming data, needs careful prior calibration |
+
+**Key behavioural differences:**
+
+- `yao_davis` and `snht` use **recursive binary splitting** -- each call finds one CP, then recurses on both halves. `min_segment_points` controls the recursion depth.
+- `pelt` and `bocpd` find **all CPs in a single pass** -- `min_segment_points` is ignored; use their own `min_segment_length` parameter instead.
+- Only `yao_davis` and `snht` produce meaningful `p-value` fields in the output. PELT sets `p=0.0` (no hypothesis test). BOCPD sets `p` to the posterior CP probability at the detected position.
+
+#### 6.5.3 yao_davis settings
+
+No additional JSON block required. Parameters are taken from the top-level `detection` keys:
+`significance_level`, `acf_dependence_limit`, `correct_for_dependence`.
+
+**Recommended settings for 6h climatological GPS IWV data:**
+```json
+"detection": {
+    "method": "yao_davis",
+    "min_segment_points": 1461,
+    "significance_level": 0.005,
+    "acf_dependence_limit": 0.2,
+    "correct_for_dependence": true
+}
+```
+Typical result: 7-10 change points on a 25-year series.
+
+#### 6.5.4 snht settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `snht.n_permutations` | int | `999` | Number of Monte Carlo permutations for p-value estimation. Use `4999` for publication-quality results. |
+| `snht.seed` | int | `0` | RNG seed. `0` = non-deterministic. Set a fixed value (e.g. `42`) for reproducibility. |
+
+The SNHT p-value is estimated via permutation -- minimum achievable p-value is `1/(n_permutations+1)`.
+With `n_permutations=999`, minimum p is `0.001`. With `4999`, minimum p is `0.0002`.
+
+**Recommended settings for 6h climatological GPS IWV data:**
+```json
+"detection": {
+    "method": "snht",
+    "min_segment_points": 5804,
+    "significance_level": 0.005,
+    "snht": {
+        "n_permutations": 999,
+        "seed": 42
+    }
+}
+```
+Typical result: 10-15 change points on a 25-year series (more sensitive than `yao_davis`).
+
+**Tuning guidance for SNHT:**
+SNHT is inherently more sensitive than Yao&Davis because its T-statistic responds
+more strongly to small mean shifts. When used in recursive binary splitting mode,
+sensitivity is controlled primarily by `min_segment_points` and secondarily by
+`significance_level`.
+
+| Too many CPs | Too few CPs |
+|---|---|
+| Increase `min_segment_points` | Decrease `min_segment_points` |
+| Decrease `significance_level` (e.g. `0.001`) | Increase `significance_level` (e.g. `0.01`) |
+| Increase `n_permutations` (improves p-value resolution) | -- |
+
+At 6h resolution (4 obs/day): `1461` = 1 year, `2922` = 2 years, `4383` = 3 years, `5844` = 4 years.
+`n_permutations` has minimal effect on the number of detected CPs -- it only affects p-value
+precision. The dominant control is `min_segment_points`.
+
+#### 6.5.5 pelt settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `pelt.penalty_type` | string | `bic` | Penalty function: `bic`, `aic`, `mbic`, `fixed` |
+| `pelt.fixed_penalty` | float | `0.0` | Penalty value when `penalty_type == "fixed"` |
+| `pelt.min_segment_length` | int | `2` | Minimum observations in any segment |
+
+**Penalty formulas** (sigma^2 estimated via MAD of first differences):
+
+| Type | Formula | Character |
+|---|---|---|
+| `aic` | `2 * sigma^2` | Liberal -- more CPs |
+| `bic` | `log(n) * sigma^2` | Moderate -- good default |
+| `mbic` | `3 * log(n) * sigma^2` | Conservative -- fewer CPs |
+| `fixed` | user-specified | Full manual control |
+
+**Recommended settings for 6h climatological GPS IWV data:**
+```json
+"detection": {
+    "method": "pelt",
+    "pelt": {
+        "penalty_type": "mbic",
+        "min_segment_length": 3652
+    }
+}
+```
+Typical result: 7-9 change points on a 25-year series with `mbic`.
+
+**Tuning guidance for PELT:**
+
+| Too many CPs | Too few CPs |
+|---|---|
+| Switch `aic` -> `bic` -> `mbic` | Switch `mbic` -> `bic` -> `aic` |
+| Increase `min_segment_length` | Decrease `min_segment_length` |
+| Use `fixed` with manually increased penalty | Use `fixed` with manually decreased penalty |
+
+PELT does not produce p-values. The `p=0.0` in the output is expected -- the decision
+is based entirely on the penalty, not a hypothesis test.
+
+#### 6.5.6 bocpd settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `bocpd.hazard_lambda` | float | `250.0` | Expected run length (average samples between CPs). Set to expected segment length in samples. |
+| `bocpd.prior_mean` | float | `0.0` | Prior mean of the segment mean (NIX model). Set to the expected mean of deseasonalized residuals. |
+| `bocpd.prior_var` | float | `1.0` | Prior precision weight kappa_0. Smaller = vaguer prior on mean. |
+| `bocpd.prior_alpha` | float | `1.0` | InverseGamma shape prior. Use >= 2.0 for well-defined prior variance mean. |
+| `bocpd.prior_beta` | float | `1.0` | InverseGamma scale prior. Set close to actual series variance. |
+| `bocpd.threshold` | float | `0.5` | Posterior probability threshold for declaring a CP. Range (0, 1). |
+| `bocpd.min_segment_length` | int | `30` | Minimum samples between consecutive detected CPs. |
+
+**Critical calibration note:** BOCPD performance is highly sensitive to `prior_beta`.
+This parameter must be set close to the actual within-segment variance of the series.
+For deseasonalized GPS IWV residuals: `std ~ 0.034`, so `sigma^2 ~ 0.001`,
+use `prior_beta ~ 0.001-0.003`. Using the default `prior_beta=1.0` on such data
+will result in zero detections because the model's predictive distribution is far
+too wide to concentrate posterior mass on any run length.
+
+**Recommended settings for 6h climatological GPS IWV data:**
+```json
+"detection": {
+    "method": "bocpd",
+    "bocpd": {
+        "hazard_lambda": 4383.0,
+        "prior_mean": 0.0,
+        "prior_var": 0.01,
+        "prior_alpha": 2.0,
+        "prior_beta": 0.002,
+        "threshold": 0.3,
+        "min_segment_length": 1461
+    }
+}
+```
+
+**Tuning guidance for BOCPD:**
+
+| Problem | Remedy |
+|---|---|
+| Zero detections | Lower `threshold` (try 0.15-0.2); set `prior_beta` close to actual `sigma^2` |
+| Too many detections | Increase `threshold` (try 0.5-0.7); increase `hazard_lambda`; increase `min_segment_length` |
+| Very slow | BOCPD is O(n^2) in memory per step before pruning. Long series (n>10000) may be slow. |
+
+BOCPD is best suited for **shorter series or streaming scenarios** where segments
+are well-separated and the hazard rate is known approximately. For long climatological
+archives (25+ years, n>30000) with small mean shifts, `yao_davis` or `pelt` are more
+reliable choices with less calibration effort.
 
 ### 6.6 homogeneity.apply_adjustment
 
@@ -441,14 +609,19 @@ Controls the change point detector (SNHT-based).
 |---|---|---|---|
 | `apply_adjustment` | bool | `true` | Apply shift corrections to produce the homogenized series. Set `false` to detect only without modifying the series. |
 
-### Example
+The first detected segment is always the **reference segment** -- it is left unchanged.
+All subsequent segments are shifted toward the mean level of the first segment.
+
+### 6.7 Complete example
 
 ```json
 "homogeneity": {
     "apply_gap_filling": true,
     "gap_filling": {
         "strategy": "linear",
-        "max_fill_length": 30
+        "max_fill_length": 0,
+        "gap_threshold_factor": 1.5,
+        "min_series_years": 10
     },
     "pre_outlier": {
         "enabled": true,
@@ -459,6 +632,7 @@ Controls the change point detector (SNHT-based).
     },
     "deseasonalization": {
         "strategy": "median_year",
+        "ma_window_size": 1461,
         "median_year_min_years": 5
     },
     "post_outlier": {
@@ -469,13 +643,60 @@ Controls the change point detector (SNHT-based).
         "max_fill_length": 0
     },
     "detection": {
-        "min_segment_duration": "1y",
-        "significance_level": 0.05,
+        "method": "pelt",
+        "min_segment_points": 1461,
+        "min_segment_duration": "365d",
+        "significance_level": 0.005,
         "acf_dependence_limit": 0.2,
-        "correct_for_dependence": true
+        "correct_for_dependence": true,
+        "snht": {
+            "n_permutations": 999,
+            "seed": 42
+        },
+        "pelt": {
+            "penalty_type": "mbic",
+            "fixed_penalty": 0.0,
+            "min_segment_length": 3652
+        },
+        "bocpd": {
+            "hazard_lambda": 4383.0,
+            "prior_mean": 0.0,
+            "prior_var": 0.01,
+            "prior_alpha": 2.0,
+            "prior_beta": 0.002,
+            "threshold": 0.3,
+            "min_segment_length": 1461
+        }
     },
     "apply_adjustment": true
 }
+```
+
+### 6.8 Method selection guide
+
+```
+Is the series long (n > 10000) with small expected shifts?
+  YES --> yao_davis or pelt
+          yao_davis: well-validated, produces p-values, slower (recursive)
+          pelt:      fast O(n), no p-values, deterministic, easy to tune via penalty
+
+Is computation time critical?
+  YES --> pelt (single pass, O(n) amortised)
+  NO  --> yao_davis or snht
+
+Is the series a climate station record compared to a reference series?
+  YES --> snht (designed for this use case)
+          Tune min_segment_points to 3-4 years in samples
+
+Is the data arriving as a stream or near-real-time?
+  YES --> bocpd (online algorithm, processes left-to-right)
+          Requires careful prior_beta calibration to actual series variance
+
+Typical result on 25-year 6h GPS IWV data (n~36500):
+  yao_davis : ~7-8 CP   (min_segment=1461, significance=0.005)
+  snht      : ~10-15 CP (min_segment=5800, significance=0.005)
+  pelt mbic : ~7-9 CP   (min_segment=3652)
+  bocpd     : variable, needs calibration
 ```
 
 ---

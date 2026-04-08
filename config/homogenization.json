@@ -76,11 +76,34 @@
             "max_fill_length": 0
         },
         "detection": {
-            "min_segment_points": 60,
-            "min_segment_duration": "180d",
+            "method": "yao_davis",
+
+            "min_segment_points": 1461,
+            "min_segment_duration": "365d",
             "min_segment_seconds": 0.0,
-            "significance_level": 0.01,
-            "acf_dependence_limit": 0.2
+            "significance_level": 0.005,
+            "acf_dependence_limit": 0.2,
+
+            "snht": {
+                "n_permutations": 999,
+                "seed": 42
+            },
+            
+            "pelt": {
+                "penalty_type": "mbic",
+                "fixed_penalty": 0.0,
+                "min_segment_length": 3652
+            },
+            
+            "bocpd": {
+                "hazard_lambda": 4383.0,
+                "prior_mean": 0.0,
+                "prior_var": 0.01,
+                "prior_alpha": 2.0,
+                "prior_beta": 0.002,
+                "threshold": 0.3,
+                "min_segment_length": 1461
+            }
         },
         "apply_adjustment": true
     }

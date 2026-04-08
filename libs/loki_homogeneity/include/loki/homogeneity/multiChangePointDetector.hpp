@@ -2,9 +2,13 @@
 
 #include <loki/homogeneity/changePointDetector.hpp>
 #include <loki/homogeneity/changePointResult.hpp>
+#include <loki/homogeneity/snhtDetector.hpp>
+#include <loki/homogeneity/peltDetector.hpp>
+#include <loki/homogeneity/bocpdDetector.hpp>
 
 #include <cstddef>
 #include <vector>
+#include <string>
 
 namespace loki::homogeneity {
 
@@ -14,16 +18,26 @@ namespace loki::homogeneity {
  * Defined outside the class to avoid a GCC bug with nested structs
  * that have member initializers used as default constructor arguments.
  */
+//struct MultiChangePointDetectorConfig {
+//    /// Minimum number of points a segment must have to be tested.
+//    std::size_t minSegmentPoints{60};
+//
+//    /// Minimum time span [seconds] a segment must cover to be tested.
+//    /// Ignored when the times vector passed to detect() is empty.
+//    double minSegmentSeconds{0.0};
+//
+//    /// Configuration forwarded to the single-segment ChangePointDetector.
+//    ChangePointDetectorConfig detectorConfig{};
+//};
+
 struct MultiChangePointDetectorConfig {
-    /// Minimum number of points a segment must have to be tested.
-    std::size_t minSegmentPoints{60};
-
-    /// Minimum time span [seconds] a segment must cover to be tested.
-    /// Ignored when the times vector passed to detect() is empty.
-    double minSegmentSeconds{0.0};
-
-    /// Configuration forwarded to the single-segment ChangePointDetector.
+    std::string               method{"yao_davis"};  ///< "yao_davis" | "snht" | "pelt" | "bocpd"
+    std::size_t               minSegmentPoints{60};
+    double                    minSegmentSeconds{0.0};
     ChangePointDetectorConfig detectorConfig{};
+    SnhtDetectorConfig        snhtConfig{};
+    PeltDetectorConfig        peltConfig{};
+    BocpdDetectorConfig       bocpdConfig{};
 };
 
 /**

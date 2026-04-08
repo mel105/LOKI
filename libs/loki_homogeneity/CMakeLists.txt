@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.25)
 add_library(loki_homogeneity STATIC
     src/changePointDetector.cpp
     src/multiChangePointDetector.cpp
+    src/snhtDetector.cpp
+    src/peltDetector.cpp
+    src/bocpdDetector.cpp
     src/seriesAdjuster.cpp
     src/homogenizer.cpp
     src/plotHomogeneity.cpp

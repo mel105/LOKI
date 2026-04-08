@@ -221,13 +221,43 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
     if (j.contains("post_outlier"))
         cfg.postOutlier = _parseOutlierFilter(j.at("post_outlier"), 3.0);
 
+    //if (j.contains("detection")) {
+    //    const auto& d = j.at("detection");
+    //    cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",     0.05,  false);
+    //    cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",   0.2,   false);
+    //    cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true,  false);
+    //    cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",     60,    false);
+    //    cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",   "",    false);
+    //}
     if (j.contains("detection")) {
         const auto& d = j.at("detection");
+        cfg.detection.method               = getOrDefault<std::string>(d, "method",                 "yao_davis", false);
         cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",     0.05,  false);
         cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",   0.2,   false);
         cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true,  false);
         cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",     60,    false);
         cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",   "",    false);
+        if (d.contains("snht")) {
+            const auto& sn = d.at("snht");
+            cfg.detection.snht.nPermutations = getOrDefault<int>     (sn, "n_permutations", 999, false);
+            cfg.detection.snht.seed          = getOrDefault<uint64_t>(sn, "seed",           0,   false);
+        }
+        if (d.contains("pelt")) {
+            const auto& p = d.at("pelt");
+            cfg.detection.pelt.penaltyType     = getOrDefault<std::string>(p, "penalty_type",      "bic", false);
+            cfg.detection.pelt.fixedPenalty    = getOrDefault<double>     (p, "fixed_penalty",     0.0,   false);
+            cfg.detection.pelt.minSegmentLength = getOrDefault<int>       (p, "min_segment_length", 2,    false);
+        }
+        if (d.contains("bocpd")) {
+            const auto& b = d.at("bocpd");
+            cfg.detection.bocpd.hazardLambda     = getOrDefault<double>(b, "hazard_lambda",      250.0, false);
+            cfg.detection.bocpd.priorMean        = getOrDefault<double>(b, "prior_mean",          0.0,  false);
+            cfg.detection.bocpd.priorVar         = getOrDefault<double>(b, "prior_var",           1.0,  false);
+            cfg.detection.bocpd.priorAlpha       = getOrDefault<double>(b, "prior_alpha",         1.0,  false);
+            cfg.detection.bocpd.priorBeta        = getOrDefault<double>(b, "prior_beta",          1.0,  false);
+            cfg.detection.bocpd.threshold        = getOrDefault<double>(b, "threshold",           0.5,  false);
+            cfg.detection.bocpd.minSegmentLength = getOrDefault<int>   (b, "min_segment_length",  30,   false);
+        }
     }
 
     return cfg;

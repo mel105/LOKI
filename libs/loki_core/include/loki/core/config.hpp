@@ -110,13 +110,38 @@ struct DeseasonalizationConfig {
 //  DetectionConfig
 // -----------------------------------------------------------------------------
 
+struct SnhtSection {
+    int      nPermutations{999};
+    uint64_t seed{0};
+};
+
+struct PeltSection {
+    std::string penaltyType{"bic"};   ///< "bic" | "aic" | "mbic" | "fixed"
+    double      fixedPenalty{0.0};
+    int         minSegmentLength{2};
+};
+
+struct BocpdSection {
+    double hazardLambda{250.0};
+    double priorMean{0.0};
+    double priorVar{1.0};
+    double priorAlpha{1.0};
+    double priorBeta{1.0};
+    double threshold{0.5};
+    int    minSegmentLength{30};
+};
+
 struct DetectionConfig {
-    int         minSegmentPoints{60};
-    double      minSegmentSeconds{0.0};
-    std::string minSegmentDuration{""};
-    double      significanceLevel{0.05};
-    double      acfDependenceLimit{0.2};
-    bool        correctForDependence{true};
+    std::string  method{"yao_davis"};  ///< "yao_davis" | "snht" | "pelt" | "bocpd"
+    int          minSegmentPoints{60};
+    double       minSegmentSeconds{0.0};
+    std::string  minSegmentDuration{""};
+    double       significanceLevel{0.05};
+    double       acfDependenceLimit{0.2};
+    bool         correctForDependence{true};
+    SnhtSection  snht{};
+    PeltSection  pelt{};
+    BocpdSection bocpd{};
 };
 
 // -----------------------------------------------------------------------------

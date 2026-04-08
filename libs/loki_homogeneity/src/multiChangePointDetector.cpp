@@ -30,8 +30,19 @@ std::vector<ChangePoint> MultiChangePointDetector::detect(
             "MultiChangePointDetector::detect: times.size() != z.size()");
     }
 
+    // PELT and BOCPD find all change points in a single pass -- no recursion.
+    if (m_cfg.method == "pelt") {
+        PeltDetector det(m_cfg.peltConfig);
+        return det.detectAll(z, times);
+    }
+    if (m_cfg.method == "bocpd") {
+        BocpdDetector det(m_cfg.bocpdConfig);
+        return det.detectAll(z, times);
+    }
+
+    // yao_davis and snht use recursive binary splitting via split().
     std::vector<ChangePoint> result;
-    result.reserve(16); // typical series rarely has more than ~10 change points
+    result.reserve(16);
 
     split(z, times, 0, z.size(), result);
 
@@ -73,8 +84,16 @@ void MultiChangePointDetector::split(
     }
 
     // --- Run single-segment detector on [begin, end) ---
-    ChangePointDetector detector(m_cfg.detectorConfig);
-    const ChangePointResult cp = detector.detect(z, begin, end);
+    // ChangePointDetector detector(m_cfg.detectorConfig);
+    // const ChangePointResult cp = detector.detect(z, begin, end);
+    ChangePointResult cp;
+    if (m_cfg.method == "snht") {
+        SnhtDetector detector(m_cfg.snhtConfig);
+        cp = detector.detect(z, begin, end);
+    } else {
+        ChangePointDetector detector(m_cfg.detectorConfig);
+        cp = detector.detect(z, begin, end);
+    }
 
     if (!cp.detected) {
         return; // segment is stationary -- stop recursion here

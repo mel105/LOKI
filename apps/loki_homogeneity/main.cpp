@@ -114,11 +114,35 @@ buildHomogenizerConfig(const loki::AppConfig& cfg)
         hcfg.deseasonalizer.maWindowSize = h.deseasonalization.maWindowSize;
     }
 
-    hcfg.detector.minSegmentPoints         = static_cast<std::size_t>(
+   // hcfg.detector.minSegmentPoints         = static_cast<std::size_t>(
+   //     std::max(0, h.detection.minSegmentPoints));
+   // hcfg.detector.minSegmentSeconds        = h.detection.minSegmentSeconds;
+   // hcfg.detector.detectorConfig.significanceLevel  = h.detection.significanceLevel;
+   // hcfg.detector.detectorConfig.acfDependenceLimit = h.detection.acfDependenceLimit;
+
+    hcfg.detector.method                            = h.detection.method;
+    hcfg.detector.minSegmentPoints                  = static_cast<std::size_t>(
         std::max(0, h.detection.minSegmentPoints));
-    hcfg.detector.minSegmentSeconds        = h.detection.minSegmentSeconds;
+    hcfg.detector.minSegmentSeconds                 = h.detection.minSegmentSeconds;
     hcfg.detector.detectorConfig.significanceLevel  = h.detection.significanceLevel;
     hcfg.detector.detectorConfig.acfDependenceLimit = h.detection.acfDependenceLimit;
+    hcfg.detector.snhtConfig.significance           = h.detection.significanceLevel;
+    hcfg.detector.snhtConfig.nPermutations          = h.detection.snht.nPermutations;
+    hcfg.detector.snhtConfig.seed                   = h.detection.snht.seed;
+    hcfg.detector.snhtConfig.minSegmentLength       =
+        std::max(0, h.detection.minSegmentPoints);
+        
+    hcfg.detector.peltConfig.penaltyType      = h.detection.pelt.penaltyType;
+    hcfg.detector.peltConfig.fixedPenalty     = h.detection.pelt.fixedPenalty;
+    hcfg.detector.peltConfig.minSegmentLength = h.detection.pelt.minSegmentLength;
+
+    hcfg.detector.bocpdConfig.hazardLambda     = h.detection.bocpd.hazardLambda;
+    hcfg.detector.bocpdConfig.priorMean        = h.detection.bocpd.priorMean;
+    hcfg.detector.bocpdConfig.priorVar         = h.detection.bocpd.priorVar;
+    hcfg.detector.bocpdConfig.priorAlpha       = h.detection.bocpd.priorAlpha;
+    hcfg.detector.bocpdConfig.priorBeta        = h.detection.bocpd.priorBeta;
+    hcfg.detector.bocpdConfig.threshold        = h.detection.bocpd.threshold;
+    hcfg.detector.bocpdConfig.minSegmentLength = h.detection.bocpd.minSegmentLength;
 
     hcfg.applyAdjustment = h.applyAdjustment;
 
