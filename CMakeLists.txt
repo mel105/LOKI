@@ -39,6 +39,7 @@ add_subdirectory(libs/loki_qc)
 add_subdirectory(libs/loki_clustering)
 add_subdirectory(libs/loki_simulate)
 add_subdirectory(libs/loki_evt)
+add_subdirectory(libs/loki_kriging)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
@@ -56,6 +57,7 @@ add_subdirectory(apps/loki_qc)
 add_subdirectory(apps/loki_clustering)
 add_subdirectory(apps/loki_simulate)
 add_subdirectory(apps/loki_evt)
+add_subdirectory(apps/loki_kriging)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

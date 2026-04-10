@@ -460,6 +460,11 @@ struct PlotConfig {
     bool evtReturnLevels {true};   ///< Return level plot with CI band.
     bool evtExceedances  {true};   ///< Empirical CDF of exceedances vs GPD fit.
     bool evtGpdFit       {true};   ///< GPD Q-Q plot.
+
+    // -- Kriging pipeline plots ---------------------------------------------------
+    bool krigingVariogram   {true};   ///< Empirical variogram bins + fitted model curve.
+    bool krigingPredictions {true};   ///< Original series + Kriging estimates + CI band.
+    bool krigingCrossval    {true};   ///< LOO cross-validation errors + std error histogram.
 };
 
 // -----------------------------------------------------------------------------
@@ -1012,6 +1017,108 @@ struct EvtConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  KrigingConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+ 
+/**
+ * @brief Describes a single station entry for spatial Kriging.
+ *
+ * Used only when KrigingConfig::mode = "spatial" or "space_time".
+ * Not used in temporal Kriging.
+ *
+ * PLACEHOLDER -- spatial Kriging is not yet implemented.
+ * Spatial coordinates are expected in the same unit system as the data
+ * (e.g. decimal degrees for GNSS networks, metres for local surveys).
+ */
+struct KrigingSpatialStation {
+    std::string file = "";   ///< Input file path (relative to INPUT/).
+    double      x    = 0.0; ///< Spatial coordinate X (e.g. longitude / easting).
+    double      y    = 0.0; ///< Spatial coordinate Y (e.g. latitude  / northing).
+};
+ 
+/**
+ * @brief Variogram model fitting configuration.
+ *
+ * The empirical semi-variance is computed from observation pairs binned
+ * by lag distance (temporal: days; spatial: coordinate units).
+ * A theoretical model is then fitted via weighted least squares (WLS),
+ * with weights proportional to the number of pairs per bin.
+ *
+ * Supported theoretical models:
+ *   "spherical"    -- bounded, most commonly used in practice
+ *   "exponential"  -- unbounded sill approach, lighter tail than Gaussian
+ *   "gaussian"     -- smooth parabolic behaviour near origin (differentiable)
+ *   "power"        -- unbounded, suitable for intrinsic processes (no sill)
+ *   "nugget"       -- pure nugget (no spatial correlation); rarely useful alone
+ *
+ * FUTURE: anisotropic variogram (directional gamma(h, theta)) for space-time.
+ */
+struct KrigingVariogramConfig {
+    std::string model    = "spherical"; ///< Theoretical model name (see above).
+    int         nLagBins = 20;          ///< Number of equally-spaced lag bins.
+    double      maxLag   = 0.0;         ///< Max lag for binning. 0 = auto (half range).
+    double      nugget   = 0.0;         ///< Initial nugget for WLS (0 = estimate from data).
+    double      sill     = 0.0;         ///< Initial sill   for WLS (0 = estimate from data).
+    double      range    = 0.0;         ///< Initial range  for WLS (0 = estimate from data).
+};
+ 
+/**
+ * @brief Configuration for Kriging prediction at arbitrary target points.
+ *
+ * In temporal mode, targets are specified as MJD values or as a uniform
+ * forecast horizon beyond the last observation.
+ *
+ * When prediction.enabled = false, only the observation grid is interpolated
+ * (useful as a gap-fill alternative).
+ *
+ * FUTURE: in spatial mode, targets will be (x, y) coordinate pairs.
+ */
+struct KrigingPredictionConfig {
+    bool                enabled     = false; ///< Enable prediction beyond observation grid.
+    std::vector<double> targetMjd   = {};    ///< Explicit MJD targets (optional).
+    double              horizonDays = 0.0;   ///< Forecast horizon in days (0 = disabled).
+    int                 nSteps      = 10;    ///< Uniform steps within horizon.
+};
+ 
+/**
+ * @brief Top-level configuration for the loki_kriging pipeline.
+ *
+ * Kriging mode:
+ *   "temporal"   -- 1-D Kriging in time (h = |t_i - t_j| in MJD days).
+ *                   Implemented in v1. Suitable for gap filling, interpolation,
+ *                   and short-range prediction on a single station time series.
+ *   "spatial"    -- 2-D Kriging over a network of stations (h = Euclidean dist).
+ *                   PLACEHOLDER: structure prepared, not yet implemented.
+ *   "space_time" -- Combined spatio-temporal Kriging.
+ *                   PLACEHOLDER: design reserved for future implementation.
+ *
+ * Kriging method:
+ *   "simple"    -- known constant mean (mu = knownMean).
+ *   "ordinary"  -- unknown local mean, sum-of-weights = 1 constraint. DEFAULT.
+ *   "universal" -- mean is a polynomial trend of degree trendDegree.
+ *                  Drift functions are powers of time: {1, t, t^2, ...}.
+ */
+struct KrigingConfig {
+    std::string mode              = "temporal";  ///< "temporal"|"spatial"|"space_time"
+    std::string method            = "ordinary";  ///< "simple"|"ordinary"|"universal"
+    std::string gapFillStrategy   = "linear";    ///< Pre-processing gap fill strategy.
+    int         gapFillMaxLength  = 0;           ///< Max gap length (0 = unlimited).
+    double      knownMean         = 0.0;         ///< Simple Kriging: assumed global mean.
+    int         trendDegree       = 1;           ///< Universal Kriging: polynomial degree.
+    bool        crossValidate     = true;        ///< Run leave-one-out cross-validation.
+    double      confidenceLevel   = 0.95;        ///< CI confidence level.
+    double      significanceLevel = 0.05;        ///< Significance level for diagnostics.
+ 
+    KrigingVariogramConfig    variogram  {};
+    KrigingPredictionConfig   prediction {};
+ 
+    // -- Spatial mode (PLACEHOLDER -- not yet implemented) --------------------
+    // These fields are parsed and stored but ignored in temporal mode.
+    // Future spatial implementation will use them to load and register stations.
+    std::vector<KrigingSpatialStation> stations {}; ///< Station list (spatial mode only).
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -1036,6 +1143,7 @@ struct AppConfig {
     ClusteringConfig    clustering;
     SimulateConfig      simulate;
     EvtConfig           evt;
+    KrigingConfig       kriging;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

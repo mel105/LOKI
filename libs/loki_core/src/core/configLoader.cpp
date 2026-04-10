@@ -95,6 +95,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.clustering    = _parseClustering   (j.value("clustering",   json::object()));
     cfg.simulate      = _parseSimulate     (j.value("simulate",     json::object()));
     cfg.evt           = _parseEvt          (j.value("evt",          json::object()));
+    cfg.kriging       = _parseKriging      (j.value("kriging",      json::object()));
 
     return cfg;
 }
@@ -592,6 +593,24 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("clustering_labels"))     cfg.clusteringLabels     = j["clustering_labels"].get<bool>();
     if (j.contains("clustering_scatter"))    cfg.clusteringScatter    = j["clustering_scatter"].get<bool>();
     if (j.contains("clustering_silhouette")) cfg.clusteringSilhouette = j["clustering_silhouette"].get<bool>();
+
+    // Simulate flags at top level of "plots" block
+    if (j.contains("simulate_overlay"))        cfg.simulateOverlay       = j["simulate_overlay"].get<bool>();
+    if (j.contains("simulate_envelope"))       cfg.simulateEnvelope      = j["simulate_envelope"].get<bool>();
+    if (j.contains("simulate_bootstrap_dist")) cfg.simulateBootstrapDist = j["simulate_bootstrap_dist"].get<bool>();
+    if (j.contains("simulate_acf_comparison")) cfg.simulateAcfComparison = j["simulate_acf_comparison"].get<bool>();
+
+    // EVT flags at top level of "plots" block
+    if (j.contains("evt_mean_excess"))   cfg.evtMeanExcess   = j["evt_mean_excess"].get<bool>();
+    if (j.contains("evt_stability"))     cfg.evtStability    = j["evt_stability"].get<bool>();
+    if (j.contains("evt_return_levels")) cfg.evtReturnLevels = j["evt_return_levels"].get<bool>();
+    if (j.contains("evt_exceedances"))   cfg.evtExceedances  = j["evt_exceedances"].get<bool>();
+    if (j.contains("evt_gpd_fit"))       cfg.evtGpdFit       = j["evt_gpd_fit"].get<bool>();
+
+    // Kriging flags at top level of "plots" block
+    if (j.contains("kriging_variogram"))   cfg.krigingVariogram   = j["kriging_variogram"].get<bool>();
+    if (j.contains("kriging_predictions")) cfg.krigingPredictions = j["kriging_predictions"].get<bool>();
+    if (j.contains("kriging_crossval"))    cfg.krigingCrossval    = j["kriging_crossval"].get<bool>();
 
     return cfg;
 }
@@ -1794,6 +1813,113 @@ EvtConfig ConfigLoader::_parseEvt(const nlohmann::json& j)
         }
     }
 
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseKriging
+// -----------------------------------------------------------------------------
+ 
+KrigingConfig ConfigLoader::_parseKriging(const nlohmann::json& j)
+{
+    KrigingConfig cfg;
+ 
+    cfg.mode             = getOrDefault<std::string>(j, "mode",              "temporal", false);
+    cfg.method           = getOrDefault<std::string>(j, "method",            "ordinary", false);
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy", "linear",   false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length", 0,         false);
+    cfg.knownMean        = getOrDefault<double>     (j, "known_mean",        0.0,         false);
+    cfg.trendDegree      = getOrDefault<int>        (j, "trend_degree",      1,           false);
+    cfg.crossValidate    = getOrDefault<bool>       (j, "cross_validate",    true,        false);
+    cfg.confidenceLevel  = getOrDefault<double>     (j, "confidence_level",  0.95,        false);
+    cfg.significanceLevel= getOrDefault<double>     (j, "significance_level",0.05,        false);
+ 
+    // Validate mode
+    if (cfg.mode != "temporal" && cfg.mode != "spatial" && cfg.mode != "space_time") {
+        throw ConfigException(
+            "ConfigLoader: kriging.mode '" + cfg.mode
+            + "' not recognised. Valid: temporal, spatial (placeholder), "
+            "space_time (placeholder).");
+    }
+ 
+    // Validate method
+    if (cfg.method != "simple" && cfg.method != "ordinary" && cfg.method != "universal") {
+        throw ConfigException(
+            "ConfigLoader: kriging.method '" + cfg.method
+            + "' not recognised. Valid: simple, ordinary, universal.");
+    }
+ 
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: kriging.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
+    }
+ 
+    if (cfg.trendDegree < 1 || cfg.trendDegree > 5) {
+        throw ConfigException(
+            "ConfigLoader: kriging.trend_degree must be in [1, 5], got "
+            + std::to_string(cfg.trendDegree) + ".");
+    }
+ 
+    // ---- variogram sub-section ----------------------------------------------
+    if (j.contains("variogram")) {
+        const auto& v = j.at("variogram");
+        cfg.variogram.model    = getOrDefault<std::string>(v, "model",     "spherical", false);
+        cfg.variogram.nLagBins = getOrDefault<int>        (v, "n_lag_bins", 20,          false);
+        cfg.variogram.maxLag   = getOrDefault<double>     (v, "max_lag",    0.0,          false);
+        cfg.variogram.nugget   = getOrDefault<double>     (v, "nugget",     0.0,          false);
+        cfg.variogram.sill     = getOrDefault<double>     (v, "sill",       0.0,          false);
+        cfg.variogram.range    = getOrDefault<double>     (v, "range",      0.0,          false);
+ 
+        if (cfg.variogram.model != "spherical"   &&
+            cfg.variogram.model != "exponential" &&
+            cfg.variogram.model != "gaussian"    &&
+            cfg.variogram.model != "power"       &&
+            cfg.variogram.model != "nugget")
+        {
+            throw ConfigException(
+                "ConfigLoader: kriging.variogram.model '" + cfg.variogram.model
+                + "' not recognised. Valid: spherical, exponential, gaussian, "
+                "power, nugget.");
+        }
+ 
+        if (cfg.variogram.nLagBins < 3) {
+            throw ConfigException(
+                "ConfigLoader: kriging.variogram.n_lag_bins must be >= 3, got "
+                + std::to_string(cfg.variogram.nLagBins) + ".");
+        }
+    }
+ 
+    // ---- prediction sub-section ---------------------------------------------
+    if (j.contains("prediction")) {
+        const auto& p = j.at("prediction");
+        cfg.prediction.enabled      = getOrDefault<bool>  (p, "enabled",       false, false);
+        cfg.prediction.horizonDays  = getOrDefault<double>(p, "horizon_days",   0.0,   false);
+        cfg.prediction.nSteps       = getOrDefault<int>   (p, "n_steps",        10,    false);
+ 
+        if (p.contains("target_mjd") && p.at("target_mjd").is_array()) {
+            cfg.prediction.targetMjd =
+                p.at("target_mjd").get<std::vector<double>>();
+        }
+ 
+        if (cfg.prediction.nSteps < 1) {
+            throw ConfigException(
+                "ConfigLoader: kriging.prediction.n_steps must be >= 1, got "
+                + std::to_string(cfg.prediction.nSteps) + ".");
+        }
+    }
+ 
+    // ---- stations sub-section (spatial placeholder) -------------------------
+    if (j.contains("stations") && j.at("stations").is_array()) {
+        for (const auto& s : j.at("stations")) {
+            KrigingSpatialStation st;
+            st.file = getOrDefault<std::string>(s, "file", "", false);
+            st.x    = getOrDefault<double>     (s, "x",    0.0, false);
+            st.y    = getOrDefault<double>     (s, "y",    0.0, false);
+            cfg.stations.push_back(st);
+        }
+    }
+ 
     return cfg;
 }
 
