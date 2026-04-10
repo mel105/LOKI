@@ -32,17 +32,17 @@ void DecompositionAnalyzer::run(const TimeSeries& ts,
 
     LOKI_INFO("DecompositionAnalyzer: processing component '" + compName + "'");
 
-    // Step 1: gap filling.
     GapFiller::Config gfCfg;
-    gfCfg.strategy      = GapFiller::Strategy::LINEAR;
-    gfCfg.maxFillLength = static_cast<std::size_t>(
-        dcfg.gapFillMaxLength > 0 ? dcfg.gapFillMaxLength : 0);
-
-    if (dcfg.gapFillStrategy == "forward_fill") {
-        gfCfg.strategy = GapFiller::Strategy::FORWARD_FILL;
-    } else if (dcfg.gapFillStrategy == "mean") {
-        gfCfg.strategy = GapFiller::Strategy::MEAN;
+    {
+        const std::string& s = dcfg.gapFillStrategy;
+        if      (s == "forward_fill") gfCfg.strategy = GapFiller::Strategy::FORWARD_FILL;
+        else if (s == "mean")         gfCfg.strategy = GapFiller::Strategy::MEAN;
+        else if (s == "spline")       gfCfg.strategy = GapFiller::Strategy::SPLINE;
+        else if (s == "none")         gfCfg.strategy = GapFiller::Strategy::NONE;
+        else                          gfCfg.strategy = GapFiller::Strategy::LINEAR;
     }
+    gfCfg.maxFillLength = static_cast<std::size_t>(
+        std::max(0, dcfg.gapFillMaxLength));
 
     const GapFiller gf{gfCfg};
     const TimeSeries filled = gf.fill(ts);

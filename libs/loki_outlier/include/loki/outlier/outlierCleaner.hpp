@@ -29,7 +29,7 @@ namespace loki::outlier {
  * OutlierDetector subclass.
  *
  * GapFiller::Strategy::MEDIAN_YEAR is not supported here; use LINEAR,
- * FORWARD_FILL, or MEAN for outlier replacement.
+ * FORWARD_FILL, MEAN, or SPLINE for outlier replacement.
  */
 class OutlierCleaner {
 public:
@@ -44,6 +44,7 @@ public:
     struct Config {
         /// Gap-filling strategy used to replace outlier positions.
         /// MEDIAN_YEAR and NONE are not permitted; ConfigException is thrown.
+        /// Supported: LINEAR, FORWARD_FILL, MEAN, SPLINE.
         GapFiller::Strategy fillStrategy{GapFiller::Strategy::LINEAR};
 
         /// Maximum number of consecutive outlier positions to replace.
@@ -84,7 +85,8 @@ public:
      *
      * @param cfg      Configuration.
      * @param detector Outlier detector to use. Must outlive this object.
-     * @throws ConfigException if cfg.fillStrategy is MEDIAN_YEAR or NONE.
+     * @throws ConfigException    if cfg.fillStrategy is MEDIAN_YEAR or NONE.
+     *                            SPLINE is supported for outlier replacement.
      */
     OutlierCleaner(Config cfg, const OutlierDetector& detector);
 

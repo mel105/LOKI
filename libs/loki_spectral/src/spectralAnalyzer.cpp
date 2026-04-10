@@ -56,6 +56,7 @@ void SpectralAnalyzer::run(const loki::TimeSeries& ts, const std::string& datase
         if      (scfg.gapFillStrategy == "linear")       gfCfg.strategy = loki::GapFiller::Strategy::LINEAR;
         else if (scfg.gapFillStrategy == "forward_fill") gfCfg.strategy = loki::GapFiller::Strategy::FORWARD_FILL;
         else if (scfg.gapFillStrategy == "mean")         gfCfg.strategy = loki::GapFiller::Strategy::MEAN;
+        else if (scfg.gapFillStrategy == "spline")       gfCfg.strategy = loki::GapFiller::Strategy::SPLINE;
         else if (scfg.gapFillStrategy == "none")         gfCfg.strategy = loki::GapFiller::Strategy::NONE;
         else {
             LOKI_WARNING("SpectralAnalyzer: unknown gap_fill_strategy '"
@@ -63,7 +64,7 @@ void SpectralAnalyzer::run(const loki::TimeSeries& ts, const std::string& datase
             gfCfg.strategy = loki::GapFiller::Strategy::LINEAR;
         }
         gfCfg.maxFillLength = static_cast<std::size_t>(
-            scfg.gapFillMaxLength > 0 ? scfg.gapFillMaxLength : 0);
+            std::max(0, scfg.gapFillMaxLength));
 
         loki::GapFiller gf(gfCfg);
         working = gf.fill(working);

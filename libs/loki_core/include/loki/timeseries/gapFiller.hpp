@@ -54,6 +54,7 @@ struct GapInfo {
  *   - MEDIAN_YEAR   Looks up the median annual profile value for each missing epoch.
  *                   Requires a ProfileLookup function supplied to fill(). If called
  *                   via the single-argument fill() without a lookup, throws ConfigException.
+ *   - SPLINE        Spline interpolation.
  *   - NONE          Detection only; the series is returned unchanged.
  *
  * GapFiller does not depend on MedianYearSeries directly. The caller constructs

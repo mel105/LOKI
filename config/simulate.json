@@ -1,0 +1,70 @@
+{
+    "workspace": "C:/Users/eliasmichal/Dokumenty/Osobne",
+
+    "input": {
+        "mode": "single_file",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_seconds",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "simulate": {
+        "mode": "bootstrap",
+        "model": "arima",
+        "n": 2000,
+        "seed": 42,
+        "n_simulations": 100,
+        "gap_fill_strategy": "linear",
+        "gap_fill_max_length": 0,
+        "bootstrap_method": "block",
+        "confidence_level": 0.95,
+        "significance_level": 0.05,
+
+        "arima": {
+            "p": 2,
+            "d": 0,
+            "q": 1,
+            "sigma": 1.0
+        },
+
+        "kalman": {
+            "model": "constant_velocity",
+            "Q": 0.01,
+            "R": 0.001
+        },
+
+        "inject_outliers": {
+            "enabled": false,
+            "fraction": 0.01,
+            "magnitude": 5.0
+        },
+
+        "inject_gaps": {
+            "enabled": false,
+            "n_gaps": 5,
+            "max_length": 10
+        },
+
+        "inject_shifts": {
+            "enabled": false,
+            "n_shifts": 2,
+            "magnitude": 1.0
+        }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "simulate_overlay": true,
+        "simulate_envelope": true,
+        "simulate_bootstrap_dist": true,
+        "simulate_acf_comparison": true
+    }
+}

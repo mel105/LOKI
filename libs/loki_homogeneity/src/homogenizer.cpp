@@ -41,8 +41,11 @@ buildCleanerConfig(const OutlierConfig& cfg)
     const std::string& rs = cfg.replacementStrategy;
     if      (rs == "forward_fill") { c.fillStrategy = GapFiller::Strategy::FORWARD_FILL; }
     else if (rs == "mean")         { c.fillStrategy = GapFiller::Strategy::MEAN;         }
-    else                           { c.fillStrategy = GapFiller::Strategy::LINEAR;        }
+    else if (rs == "spline")       { c.fillStrategy = GapFiller::Strategy::SPLINE;       }
+    else                           { c.fillStrategy = GapFiller::Strategy::LINEAR;       }
+
     c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.maxFillLength));
+    
     return c;
 }
 

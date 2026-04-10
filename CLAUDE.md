@@ -460,17 +460,17 @@ konvertuje na enum v kazdom `apps/loki_*/main.cpp` samostatne. Status patchov:
 
 | App | Status |
 |---|---|
-| `loki_filter` | DONE -- `filterAnalyzer.cpp` obsahuje konverziu |
-| `loki_homogeneity` | NEEDS PATCH |
-| `loki_regression` | NEEDS PATCH |
-| `loki_arima` | NEEDS PATCH |
-| `loki_ssa` | NEEDS PATCH |
-| `loki_decomposition` | NEEDS PATCH |
-| `loki_spectral` | NEEDS PATCH |
-| `loki_kalman` | NEEDS PATCH |
-| `loki_stationarity` | NEEDS PATCH |
-| `loki_qc` | NEEDS PATCH |
-| `loki_clustering` | NEEDS PATCH |
+| `loki_filter` | DONE |
+| `loki_homogeneity` | DONE -- `homogeneityAnalyzer.cpp`, `homogenizer.cpp`, `outlierCleaner.hpp` |
+| `loki_regression` | DONE -- `buildGapFillerConfig()` v `main.cpp` |
+| `loki_arima` | DONE -- `main.cpp` Step 1 |
+| `loki_ssa` | DONE -- `main.cpp` Step 1 |
+| `loki_decomposition` | DONE -- `decompositionAnalyzer.cpp` Step 1 |
+| `loki_spectral` | DONE -- `spectralAnalyzer.cpp` gap fill blok |
+| `loki_kalman` | DONE -- `fillGaps()` refactored + spline pridany |
+| `loki_stationarity` | DONE -- `main.cpp` + `StationarityConfig` v `config.hpp` |
+| `loki_qc` | N/A -- GapFiller sa nepouiva priamo |
+| `loki_clustering` | DONE |
 
 Vzor patchu (rovnaky pre vsetky apps) -- najdi blok kde sa konvertuje `gapFillStrategy`
 string a pridaj vetvu:
@@ -513,6 +513,129 @@ Poziadavky: aspon 3 platne body, inak fallback na LINEAR s LOKI_WARNING.
 ## Planned New Applications
 
 ### loki_simulate -- PLANNED
+
+### loki_simulate -- Implementation Notes
+
+**Architecture decision: Analyzer pattern**
+Rovnaký vzor ako ostatné moduly -- `SimulationAnalyzer` trieda s metódou
+`run(const std::string& datasetName)`. Nie priamo v `main()`.
+Dôvod: konzistencia, testovateľnosť, čistý main().
+
+**Dependencies (files to request at thread start):**
+Pri otvorení nového threadu požiadaj o tieto súbory:
+
+From loki_core:
+- `config.hpp` -- pre pridanie SimulateConfig
+- `configLoader.hpp` + `configLoader.cpp` -- pre parsovanie nového JSON bloku
+- `timeSeries.hpp` -- API pripomienka
+- `gapFiller.hpp` -- ak budeme injektovať gaps
+
+From loki_core/stats:
+- `bootstrap.hpp` -- percentileCI, bcaCI, blockCI (StatFn, BootstrapConfig, BootstrapResult)
+- `sampling.hpp`  -- Sampler trieda (seed, mt19937_64, bootstrap indices)
+
+From loki_arima:
+- `arimaAnalyzer.hpp` -- API pre fit + residuals
+- `arimaForecaster.hpp` -- API pre simuláciu dopredných krokov
+
+From loki_kalman:
+- `kalmanAnalyzer.hpp` -- API
+- `kalmanModel.hpp` + `kalmanModelBuilder.hpp` -- pre state-space simuláciu
+- `kalmanFilter.hpp` -- pre forward simulation
+
+From existing apps (for main() pipeline inspiration):
+- `apps/loki_arima/main.cpp` -- vzor gap fill + deseasonalize + analyze pipeline
+- `apps/loki_kalman/main.cpp` -- vzor fillGaps() + estimateNoise() pattern
+
+**Output files:**
+- `OUTPUT/LOG/` -- logger (automaticky)
+- `OUTPUT/PROTOCOLS/simulate_[dataset]_[param]_protocol.txt` -- pekne formátované výsledky
+- `OUTPUT/IMG/simulate_[dataset]_[param]_[plottype].png` -- grafy
+- `OUTPUT/CSV/simulate_[dataset]_[param]_simulations.csv` -- ak bootstrap/MC
+
+**Plot types (new -- plotSimulation.hpp/cpp):**
+- `simulate_overlay` -- originálna séria + simulované repliky (polopriesvitné)
+- `simulate_envelope` -- percentilový obal simulácií (5/25/50/75/95)
+- `simulate_bootstrap_dist` -- histogramy bootstrap distribúcií odhadov
+- `simulate_acf_comparison` -- ACF originál vs ACF simulovaných radov
+Základné grafy (histogram, ACF, QQ) delegovať na `loki::Plot`.
+
+**SimulateConfig structure (draft):**
+```cpp
+struct SimulateInjectOutliersConfig {
+    bool   enabled   {false};
+    double fraction  {0.01};
+    double magnitude {5.0};
+};
+
+struct SimulateInjectGapsConfig {
+    bool        enabled   {false};
+    int         nGaps     {5};
+    int         maxLength {10};
+};
+
+struct SimulateInjectShiftsConfig {
+    bool   enabled   {false};
+    int    nShifts   {2};
+    double magnitude {1.0};
+};
+
+struct SimulateArimaConfig {
+    int    p     {1};
+    int    d     {0};
+    int    q     {0};
+    double sigma {1.0};
+};
+
+struct SimulateKalmanConfig {
+    std::string model {"local_level"};
+    double      Q     {0.001};
+    double      R     {0.01};
+};
+
+struct SimulateConfig {
+    std::string                  model           {"arima"};
+    int                          n               {1000};
+    uint64_t                     seed            {42};
+    int                          nSimulations    {100};
+    std::string                  gapFillStrategy {"linear"};
+    int                          gapFillMaxLength{0};
+    SimulateArimaConfig          arima           {};
+    SimulateKalmanConfig         kalman          {};
+    SimulateInjectOutliersConfig injectOutliers  {};
+    SimulateInjectGapsConfig     injectGaps      {};
+    SimulateInjectShiftsConfig   injectShifts    {};
+    double                       confidenceLevel {0.95};
+    double                       significanceLevel{0.05};
+};
+```
+
+**Key implementation notes:**
+- Simulácia ARIMA: generuj white noise epsilon ~ N(0, sigma^2), aplikuj
+  AR a MA polynómy rekurzívne. Pre d>0 kumulatívne sumuj.
+- Simulácia Kalman: x_{t+1} = F*x_t + w_t kde w_t ~ N(0,Q),
+  y_t = H*x_t + v_t kde v_t ~ N(0,R). Použiť KalmanModelBuilder.
+- Random number generation: `std::mt19937_64` so seed z configu.
+  seed=0 znamená náhodný seed (std::random_device).
+- Bootstrap workflow: (1) fit model na vstupných dátach,
+  (2) generuj B simulácií z fitted modelu,
+  (3) pre každú simuláciu refit model,
+  (4) zbieraj distribúcie odhadovaných parametrov.
+- Injektovanie posunov: vyber náhodné indexy, pridaj konštantu
+  od daného indexu do konca segmentu (step change).
+- CSV output: jeden riadok = jedna simulácia, stĺpce = časové kroky.
+  Pre veľké n*B môže byť CSV obrovský -- zvážiť len summary statistiky.
+- Bootstrap CI pre parametre: pre autocorrelované simulované rady pouzi
+  blockCI() s automatickym blockLength (cfg.blockLength=0).
+  Pre iid statistiky (napr. mean syntetickej serie) postaci percentileCI().
+- StatFn vzor pre ARIMA parameter:
+  [&analyzer](const std::vector<double>& v) {
+      return analyzer.analyze(v).arCoeffs[0];
+  }
+- Sampler inicializacia: Sampler sampler(cfg.seed == 0
+      ? std::random_device{}()
+      : cfg.seed);
+
 ### loki_evt -- PLANNED
 ### loki_kriging -- PLANNED
 ### loki_spline -- PLANNED
@@ -615,6 +738,23 @@ The existing `changePointDetector.cpp` uses **Yao & Davis (1986)** -- NOT SNHT.
 SNHT (Alexandersson 1986) bude separatny `snhtDetector.hpp / .cpp`.
 Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 
+### GapFiller SPLINE -- outlier replacement warning
+SplineFilter/SPLINE strategy je nevhodna pre outlier replacement
+(replacement_strategy v OutlierConfig). Spline overshootuje (Runge fenomen)
+okolo jednotlivych outlier bodov. Pre replacement_strategy pouzivat LINEAR
+alebo FORWARD_FILL. SPLINE ma zmysel len pre gap_fill_strategy (dlhe useky).
+
+### StationarityConfig -- gap fill fieldy
+StationarityConfig v config.hpp neobsahovala gapFillStrategy / gapFillMaxLength
+-- boli doplnene v tomto threade. Vzor rovnaky ako SsaConfig, ArimaConfig.
+
+### GapFiller parsovanie -- best practice vzor
+Referencny vzor pre parsovanie gapFillStrategy stringu je filterAnalyzer.cpp
+a regression/main.cpp (buildGapFillerConfig() helper). Kalman fillGaps()
+je referencny vzor pre dlhsie funkcie s MEDIAN_YEAR + auto logikou:
+parsovanie oddelene od konstrukcie GapFiller, jedna GapFiller instancia,
+MEDIAN_YEAR rieseny na jednom mieste.
+
 ---
 
 ## Statistical / Domain Key Learnings
@@ -665,7 +805,7 @@ Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 | done | PELT in loki_homogeneity          | module extension | COMPLETE |
 | done | BOCPD in loki_homogeneity         | module extension | COMPLETE |
 | done | HomogeneityAnalyzer + protocol    | module extension | COMPLETE |
-| 2 | GapFiller SPLINE patche (apps) | patche | NEEDS PATCH (11 apps) |
+| done | GapFiller SPLINE patche (apps) | patche | COMPLETE |
 | 3 | `loki_simulate` | new app | PLANNED |
 | 3 | `loki_evt` | new app | PLANNED |
 | 4 | `loki_kriging` | new app | PLANNED |
@@ -722,3 +862,178 @@ Subory uz existuju v repozitari ako PRAZDNE -- naplnit, nie vytvorit.
 - HomogeneityAnalyzer vzor: run(ts, datasetName) -- rovnaký ako FilterAnalyzer.
   buildHomogenizerConfig je teraz _buildHomogenizerConfig() vnútri analyzera.
 - `tests/demo/` gitignore: `png/`, `protocol/`, `input/` adresare ignorovat.
+- CRITICAL: snhtDetector.hpp a snhtDetector.cpp existuju v repozitari. Poznámka, že sú dané 
+  ako ako PRAZDNE subory -- ide o systemovu vec - skús si ju u seba vymazať. NIKDY sa nepytaj ci su
+  prilozene alebo nie. Jednoducho ich naplnit podla dizajnu. TOTO PRAVIDLO NEMAZES a v dalsich vlaknach 
+  poznamkou o snhtDetector neotravuj.
+
+  ## Planned New Applications -- Design Notes
+
+### loki_simulate
+**Purpose:** Generovanie syntetických časových radov a validácia ostatných modulov.
+**Dependencies:** loki_core + loki_arima + loki_kalman
+
+**Functionality:**
+- Generovanie AR/ARIMA procesov so zadanými koeficientmi (p, d, q) a sigma
+- Generovanie Kalman state-space radov (local_level, local_trend, constant_velocity)
+- Pridávanie kontrolovaného šumu (Gaussian, uniform, outliers, gaps)
+- Monte Carlo integrácia -- opakované simulácie s rôznymi seed hodnotami
+- Parametrický bootstrap -- fit modelu na reálnych dátach, generovanie B replikácií,
+  refitting na každej replikácii -> empirická distribúcia odhadov
+
+**Use cases:**
+- Validácia loki_arima: simuluj ARIMA(p,d,q), odhadni model, porovnaj koeficienty
+- Validácia loki_kalman: simuluj state-space model, over konvergenciu filtra
+- Validácia loki_homogeneity: simuluj rad s umelými posunmi, over detekciu
+- Bootstrap CI pre change point lokáciu a shift magnitude
+
+**Config pattern:**
+```json
+"simulate": {
+    "model": "arima",          // "arima" | "kalman" | "ar"
+    "n": 5000,
+    "seed": 42,
+    "n_simulations": 1000,
+    "arima": { "p": 2, "d": 1, "q": 0, "sigma": 1.0 },
+    "kalman": { "model": "local_level", "Q": 0.001, "R": 0.01 },
+    "inject_outliers": { "enabled": true, "fraction": 0.01, "magnitude": 5.0 },
+    "inject_gaps": { "enabled": true, "n_gaps": 5, "max_length": 10 },
+    "inject_shifts": { "enabled": true, "n_shifts": 2, "magnitude": 1.0 }
+}
+```
+
+---
+
+### loki_evt
+**Purpose:** Extreme Value Theory -- modelovanie extrémnych udalostí a odhad
+return levels pre SIL analýzy.
+**Dependencies:** loki_core only
+
+**Functionality:**
+- **Block maxima / GEV:** rozdeliť rad na bloky (napr. ročné maximá), fitovať
+  GEV distribúciu (shape xi, scale sigma, location mu). Špeciálne prípady:
+  xi=0 Gumbel, xi>0 Fréchet, xi<0 Weibull.
+- **POT / GPD:** vybrať exceedances nad prahovú hodnotu u, fitovať GPD.
+  Preferovaná metóda pre malé datasety -- využíva všetky extrémy, nie len blokové maximá.
+- **Return level odhady:** T-ročná návratová hodnota s CI (profile likelihood alebo bootstrap).
+- **Threshold selection:** mean excess plot, stability plot pre xi a sigma.
+- **GoF testy:** Anderson-Darling, Kolmogorov-Smirnov pre EVT fit.
+- **SIL 4 use case:** modelovanie chybových intervalov pri pravdepodobnostiach
+  < 1e-8/h. GPD/POT preferovaný -- block maxima plytvá dátami.
+
+**Key domain knowledge:**
+- Pre GPS/IWV dáta: extrémy troposférického oneskorenia pri búrkových udalostiach.
+- Pre train senzory: extrémy vibrácií, zrýchlení, teplotných šokov.
+- Return period T = 1/p kde p = pravdepodobnosť exceedance za jednotku času.
+- CI pre return levels: profile likelihood stabilnejší ako delta metóda pre malé n.
+
+**Config pattern:**
+```json
+"evt": {
+    "method": "pot",           // "pot" | "block_maxima"
+    "threshold_auto": true,    // auto via mean excess plot elbow
+    "threshold": 0.0,          // manual threshold (ak auto=false)
+    "block_size": 365,         // pre block_maxima (v sampoch)
+    "return_periods": [10, 50, 100, 1000, 1000000],
+    "confidence_level": 0.95,
+    "ci_method": "profile_likelihood",  // "profile_likelihood" | "bootstrap"
+    "n_bootstrap": 1000,
+    "significance_level": 0.05
+}
+```
+
+---
+
+### loki_kriging
+**Purpose:** Priestorová/časová interpolácia pomocou Kriging metód.
+**Dependencies:** loki_core only
+
+**Functionality:**
+- **Simple Kriging (SK):** predpokladá známy priemer mu. Vhodné keď je
+  stacionarita zaručená a priemer odhadnutý z dlhých radov.
+- **Ordinary Kriging (OK):** neznámy lokálny priemer -- najčastejšie používaný.
+  Podmienka: suma váh = 1. Vhodné pre väčšinu praktických aplikácií.
+- **Universal Kriging (UK):** priemer je polynomický trend. Vhodné keď je
+  v dátach deterministický trend (napr. výšková závislosť teploty).
+- **Variogram modelovanie:**
+  - Empirický variogram: gamma(h) = 0.5 * mean[(Z(x+h) - Z(x))^2]
+  - Teoretické modely: sférický, exponenciálny, Gaussovský, nugget, power
+  - Fitting: WLS (weighted least squares) na empirický variogram
+  - Nugget efekt: diskontinuita pri h=0 (merací šum + mikrovariabilita)
+- **Cross-validácia:** leave-one-out -- pre každý bod odhadni hodnotu z okolia,
+  porovnaj s meranou. RMSE a standardized residuals ako diagnostika.
+- **Kriging variance:** automatický výstup -- udáva neistotu odhadu v každom bode.
+
+**Key domain knowledge:**
+- Variogram fitting je najcitlivejší krok -- zlý variogram -> zlé predikcie.
+- Sill = celková variancia procesu (asymptota variogramu).
+- Range = vzdialenosť kde variogram dosahuje sill (dosah priestorovej korelácie).
+- Pre GNSS siete: interpolácia troposférického oneskorenia medzi stanicami.
+- Pre klimatologické dáta: priestorová interpolácia medzi meraniami.
+- Anizotropia: variogram závisí od smeru (napr. horizontálne vs vertikálne).
+  Základná implementácia predpokladá izotropiu.
+
+**Config pattern:**
+```json
+"kriging": {
+    "method": "ordinary",      // "simple" | "ordinary" | "universal"
+    "variogram_model": "spherical",  // "spherical" | "exponential" | "gaussian" | "power"
+    "nugget": 0.0,             // 0 = fit automaticky
+    "sill": 0.0,               // 0 = fit automaticky
+    "range": 0.0,              // 0 = fit automaticky
+    "trend_degree": 1,         // pre universal kriging
+    "cross_validate": true,
+    "known_mean": 0.0,         // pre simple kriging
+    "significance_level": 0.05
+}
+```
+
+---
+
+### loki_spline
+**Purpose:** Pokročilá spline interpolácia a aproximácia -- rozšírenie nad rámec
+cubic spline ktorý je v loki_core/math/spline.hpp.
+**Dependencies:** loki_core only
+
+**Functionality:**
+- **Cubic spline:** základ existuje v `loki_core/math/spline.hpp` (CubicSpline,
+  BoundaryCondition: NATURAL / NOT_A_KNOT / CLAMPED). Táto aplikácia ho exponuje
+  priamo ako samostatný analytický nástroj.
+- **B-spline:** basis spline s kontrolnými bodmi. Nekopíruje dáta -- aproximuje.
+  Stupeň k (typicky 3 = cubic). Knot vector určuje tvar krivky.
+  Výhoda oproti interpolačnému spline: hladší výsledok, menej citlivý na šum.
+- **NURBS (Non-Uniform Rational B-Splines):** rozšírenie B-spline o váhy.
+  Umožňuje presné reprezentácie kužeľosečiek (kruh, elipsa, parabola).
+  Relevantné pre rekonštrukciu trajektórie vlaku/vozidla zo senzorových dát
+  kde krivky obsahujú oblúky a prechodnice.
+- **Knot placement stratégie:** uniformné, chord-length parametrizácia,
+  centripetal parametrizácia (lepšia pre krivky s veľkými zmenami smeru).
+- **Smoothing spline:** minimalizácia kompromisu medzi fitom a hladkosťou
+  (lambda parameter). Vhodné pre zašumené senzorové dáta.
+
+**Key domain knowledge:**
+- Pre train/vehicle senzorové dáta (1000 Hz): rekonštrukcia plynulej trajektórie
+  z diskrétnych meraní polohy/rýchlosti/zrýchlenia.
+- NURBS má zmysel ak trajektória obsahuje geometricky definované úseky
+  (oblúky konštantného polomeru, prechodnice).
+- B-spline aproximácia preferovaná pred interpoláciou pre zašumené dáta --
+  interpolácia prechádza každým bodom vrátane šumových špičiek.
+- SplineFilter v loki_filter už používa cubic spline z loki_core/math.
+  loki_spline je samostatná aplikácia zameraná na analýzu a vizualizáciu
+  spline modelov, nie len filtrovanie.
+- NURBS implementácia: de Boor algoritmus pre evaluáciu, homogénne súradnice
+  pre racionálne váhy.
+
+**Config pattern:**
+```json
+"spline": {
+    "method": "cubic",         // "cubic" | "bspline" | "nurbs" | "smoothing"
+    "degree": 3,               // stupeň B-spline / NURBS
+    "bc": "not_a_knot",        // pre cubic: "natural" | "not_a_knot" | "clamped"
+    "knot_placement": "chord_length",  // "uniform" | "chord_length" | "centripetal"
+    "smoothing_lambda": 0.0,   // 0 = interpolacia, >0 = smoothing spline
+    "n_control_points": 0,     // 0 = auto (= n/10)
+    "gap_fill_strategy": "linear",
+    "gap_fill_max_length": 0
+}
+```

@@ -444,9 +444,15 @@ struct PlotConfig {
     bool qcAcf       {false};  ///< ACF of valid observations.
 
     // -- Clustering pipeline plots --------------------------------------------
-    bool clusteringLabels    {true};  ///< Time axis coloured by cluster label.
-    bool clusteringScatter   {true};  ///< 2-D feature scatter coloured by label (>= 2 features).
-    bool clusteringSilhouette{true};  ///< Silhouette plot (k-means only).
+    bool clusteringLabels     {true};  ///< Time axis coloured by cluster label.
+    bool clusteringScatter    {true};  ///< 2-D feature scatter coloured by label (>= 2 features).
+    bool clusteringSilhouette {true};  ///< Silhouette plot (k-means only).
+
+    // -- Simulate pipeline plots ------------------------------------------------
+    bool simulateOverlay       {true};
+    bool simulateEnvelope      {true};
+    bool simulateBootstrapDist {true};
+    bool simulateAcfComparison {true};
 };
 
 // -----------------------------------------------------------------------------
@@ -501,6 +507,8 @@ struct StationarityTestsConfig {
  * @brief Top-level configuration for the loki_stationarity pipeline.
  */
 struct StationarityConfig {
+    std::string                    gapFillStrategy   {"linear"};
+    int                            gapFillMaxLength  {0};
     DeseasonalizationConfig        deseasonalization {};
     StationarityDifferencingConfig differencing      {};
     StationarityTestsConfig        tests             {};
@@ -857,6 +865,78 @@ struct ClusteringConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  SimulateConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Outlier injection settings for synthetic simulation.
+ */
+struct SimulateInjectOutliersConfig {
+    bool   enabled   = false;
+    double fraction  = 0.01;   ///< Fraction of samples to perturb.
+    double magnitude = 5.0;    ///< Shift magnitude in units of sigma.
+};
+
+/**
+ * @brief Gap injection settings for synthetic simulation.
+ */
+struct SimulateInjectGapsConfig {
+    bool enabled   = false;
+    int  nGaps     = 5;    ///< Number of gap regions to inject.
+    int  maxLength = 10;   ///< Maximum gap length in samples.
+};
+
+/**
+ * @brief Mean shift injection settings for synthetic simulation.
+ */
+struct SimulateInjectShiftsConfig {
+    bool   enabled   = false;
+    int    nShifts   = 2;    ///< Number of step changes to inject.
+    double magnitude = 1.0;  ///< Shift magnitude (applied with random sign).
+};
+
+/**
+ * @brief ARIMA/AR model parameters for synthetic generation.
+ */
+struct SimulateArimaConfig {
+    int    p     = 1;    ///< AR order.
+    int    d     = 0;    ///< Differencing order.
+    int    q     = 0;    ///< MA order.
+    double sigma = 1.0;  ///< Innovation standard deviation.
+};
+
+/**
+ * @brief Kalman state-space model parameters for synthetic generation.
+ */
+struct SimulateKalmanConfig {
+    std::string model = "local_level";  ///< "local_level"|"local_trend"|"constant_velocity"
+    double      Q     = 0.001;          ///< Process noise variance.
+    double      R     = 0.01;           ///< Observation noise variance.
+};
+
+/**
+ * @brief Top-level configuration for the loki_simulate pipeline.
+ */
+struct SimulateConfig {
+    std::string mode             = "synthetic";  ///< "synthetic" | "bootstrap"
+    std::string model            = "arima";      ///< "arima" | "ar" | "kalman"
+    int         n                = 1000;         ///< Series length to generate.
+    uint64_t    seed             = 42;           ///< RNG seed (0 = random).
+    int         nSimulations     = 100;          ///< Number of simulations / bootstrap replicas.
+    std::string gapFillStrategy  = "linear";     ///< Gap fill before bootstrap fitting.
+    int         gapFillMaxLength = 0;            ///< Max gap length to fill (0 = unlimited).
+    std::string bootstrapMethod  = "block";      ///< "percentile" | "bca" | "block"
+    double      confidenceLevel  = 0.95;         ///< CI confidence level.
+    double      significanceLevel = 0.05;        ///< Significance level for diagnostics.
+
+    SimulateArimaConfig          arima          {};
+    SimulateKalmanConfig         kalman         {};
+    SimulateInjectOutliersConfig injectOutliers {};
+    SimulateInjectGapsConfig     injectGaps     {};
+    SimulateInjectShiftsConfig   injectShifts   {};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -879,6 +959,7 @@ struct AppConfig {
     KalmanConfig        kalman;
     QcConfig            qc;
     ClusteringConfig    clustering;
+    SimulateConfig      simulate;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

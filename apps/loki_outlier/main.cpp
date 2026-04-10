@@ -97,7 +97,8 @@ buildCleanerConfig(const loki::OutlierConfig& cfg)
     const std::string& rs = cfg.replacement.strategy;
     if      (rs == "forward_fill") { c.fillStrategy = loki::GapFiller::Strategy::FORWARD_FILL; }
     else if (rs == "mean")         { c.fillStrategy = loki::GapFiller::Strategy::MEAN;         }
-    else                           { c.fillStrategy = loki::GapFiller::Strategy::LINEAR;        }
+    else if (rs == "spline")       { c.fillStrategy = loki::GapFiller::Strategy::SPLINE;       }
+    else                           { c.fillStrategy = loki::GapFiller::Strategy::LINEAR;       }
     c.maxFillLength = static_cast<std::size_t>(std::max(0, cfg.replacement.maxFillLength));
     return c;
 }
@@ -112,6 +113,7 @@ replacementStrategy(const loki::OutlierConfig& cfg)
     const std::string& rs = cfg.replacement.strategy;
     if (rs == "forward_fill") return loki::GapFiller::Strategy::FORWARD_FILL;
     if (rs == "mean")         return loki::GapFiller::Strategy::MEAN;
+    if (rs == "spline")       return loki::GapFiller::Strategy::SPLINE;
     return loki::GapFiller::Strategy::LINEAR;
 }
 

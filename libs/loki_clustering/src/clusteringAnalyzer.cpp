@@ -46,6 +46,7 @@ ClusteringResult ClusteringAnalyzer::run(const TimeSeries& series,
         if      (strat == "linear")       gfCfg.strategy = GapFiller::Strategy::LINEAR;
         else if (strat == "forward_fill") gfCfg.strategy = GapFiller::Strategy::FORWARD_FILL;
         else if (strat == "mean")         gfCfg.strategy = GapFiller::Strategy::MEAN;
+        else if (strat == "spline")       gfCfg.strategy = GapFiller::Strategy::SPLINE;
         else                              gfCfg.strategy = GapFiller::Strategy::LINEAR;
         gfCfg.maxFillLength = static_cast<std::size_t>(
             m_cfg.clustering.gapFillMaxLength);

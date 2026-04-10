@@ -27,6 +27,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 14. [loki_kalman](#14-loki_kalman)
 15. [loki_qc](#15-loki_qc)
 16. [loki_clustering](#16-loki_clustering)
+17. [loki_simulate](#17-loki_simulate)
 
 ---
 
@@ -4082,3 +4083,465 @@ kalman and spectral modules).
 - At 1 Hz: phases lasting >= 30 s → `slope_window = 15..20`.
 - Larger windows give smoother slope estimates but delay phase transition
   detection.
+
+  ## 17. loki_simulate
+
+**Program:** `loki_simulate.exe`
+**Default config:** `config/simulate.json`
+
+Generates synthetic time series realizations and performs parametric bootstrap
+analysis. Two modes are available: synthetic (no input data required) and
+bootstrap (fits a model on real data and generates replicas).
+
+The pipeline runs the following steps in order:
+
+```
+Synthetic mode:
+1. ArimaSimulator / KalmanSimulator  -- generate nSim independent realizations
+2. (optional) Anomaly injection      -- outliers, gaps, mean shifts
+3. Envelope computation              -- 5/25/50/75/95 percentiles per time step
+4. CSV export                        -- envelope + simulation matrix (if nSim <= 50)
+5. Protocol                          -- summary statistics
+6. Plots                             -- overlay, envelope
+
+Bootstrap mode:
+1. GapFiller                         -- fill missing values
+2. ArimaAnalyzer / KalmanSimulator   -- fit model on real data
+3. Simulator                         -- generate nSim replicas from fitted model
+4. (optional) Anomaly injection      -- outliers, gaps, mean shifts per replica
+5. Bootstrap CI                      -- block/percentile/BCa CI for key parameters
+6. Envelope computation
+7. CSV export
+8. Protocol
+9. Plots                             -- overlay, envelope, bootstrap dist, ACF comparison
+```
+
+The section key in the JSON file is `"simulate"`.
+
+---
+
+### 17.1 simulate.mode / model
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mode` | string | `synthetic` | Pipeline mode. `"synthetic"` or `"bootstrap"`. |
+| `model` | string | `arima` | Generative model. `"arima"`, `"ar"` (alias for arima with q=0), or `"kalman"`. |
+
+| Mode | Input required | What it does |
+|---|---|---|
+| `synthetic` | No | Generates nSim realizations from ARIMA or Kalman parameters. No real data needed. |
+| `bootstrap` | Yes | Fits the model on the loaded series, generates B replicas, computes bootstrap CIs. |
+
+> **`"ar"` vs `"arima"`**: `"ar"` is an alias for `"arima"` with `q=0`. The
+> two are interchangeable; `"ar"` is provided for clarity when the MA component
+> is intentionally absent.
+
+---
+
+### 17.2 simulate.n / seed / n_simulations
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `n` | int | `1000` | Length of each generated series in samples. Must be >= 1. Used only in synthetic mode; in bootstrap mode the length is taken from the input series. |
+| `seed` | uint64 | `42` | RNG seed for reproducibility. `0` = non-deterministic (random_device). Each simulation uses `seed + simIndex` internally. |
+| `n_simulations` | int | `100` | Number of independent realizations to generate (B). Must be >= 1. |
+
+> **Reproducibility**: setting the same `seed` and `n_simulations` always
+> produces identical output. Changing only `n_simulations` does not affect
+> the first B simulations -- new simulations are appended deterministically.
+
+> **n_simulations trade-off**: more simulations give a smoother envelope and
+> tighter bootstrap CIs, but increase computation time linearly.
+> Recommended values:
+>
+> | Purpose | n_simulations |
+> |---|---|
+> | Quick exploration | 20--50 |
+> | Standard analysis | 100--200 |
+> | Publication-quality bootstrap CIs | 500--1000 |
+
+---
+
+### 17.3 simulate.arima
+
+Controls ARIMA(p,d,q) parametric generation. Used when `model = "arima"` or `"ar"`.
+
+In **synthetic mode**: AR and MA coefficients are set automatically to
+`phi_i = 0.5 / p` (AR) and `theta_j = 0.3 / q` (MA) -- stable, generic
+autocorrelated process.
+
+In **bootstrap mode**: coefficients are taken from the `ArimaAnalyzer` fit
+result on the input series. The `arima` sub-section in the JSON is used only
+as an initial hint for `ArimaConfig` (p, q, autoOrder). The actual simulated
+process uses the fitted coefficients.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `p` | int | `1` | AR order. |
+| `d` | int | `0` | Differencing order. `0` = stationary process. `1` = integrated (random walk character). |
+| `q` | int | `0` | MA order. |
+| `sigma` | float | `1.0` | Innovation standard deviation. Must be > 0. |
+
+> **ARIMA(p,d,q) quick reference**:
+>
+> | Model | d | Character | Envelope shape |
+> |---|---|---|---|
+> | AR(1) | 0 | Short memory, stationary | Constant-width band around 0 |
+> | AR(2) | 0 | Short memory, can oscillate | Constant-width band, slight oscillatory texture |
+> | ARIMA(1,1,0) | 1 | Random walk with AR(1) | Diverging lievik, grows as sqrt(t) |
+> | ARIMA(2,0,1) | 0 | Mixed AR+MA, stationary | Similar to AR(2), slightly smoother |
+>
+> For **stationary** simulation use `d=0`. For **non-stationary** (integrated
+> process) simulation use `d=1`. Note that `d=1` causes the envelope to
+> diverge over time -- this is correct behaviour, not a bug.
+
+> **sigma and model variance**: the total variance of a stationary AR(p)
+> process is `sigma^2 / (1 - sum(phi_i^2))`. With the default equal
+> coefficients, a synthetic AR(2) with `sigma=1.0` produces series with
+> std approximately 1.05--1.30 depending on p. This is expected and
+> visible in the protocol as `simStdMean > sigma`.
+
+---
+
+### 17.4 simulate.kalman
+
+Controls Kalman state-space generation. Used when `model = "kalman"`.
+
+In **bootstrap mode**: the simulator uses the Q and R values from this
+sub-section directly (manual noise mode). EM-estimated Q/R from the actual
+`loki_kalman` module is not performed inside `loki_simulate` -- use
+`loki_kalman` first to determine appropriate Q and R, then configure them
+here.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model` | string | `local_level` | State space model. `"local_level"`, `"local_trend"`, or `"constant_velocity"`. |
+| `Q` | float | `0.001` | Process noise variance. Must be > 0. |
+| `R` | float | `0.01` | Observation noise variance. Must be > 0. |
+
+> **Critical: Q/R ratio determines simulation behaviour.** An incorrect Q/R
+> ratio is the most common cause of diverging simulations in bootstrap mode.
+>
+> | Q/R ratio | Kalman gain K | Simulation character |
+> |---|---|---|
+> | >> 1 (Q >> R) | K near 1 | Filter tracks measurements; state is nearly a random walk. Simulations diverge. |
+> | ~1 | K ~ 0.5 | Balanced tracking and smoothing. |
+> | << 1 (Q << R) | K near 0 | Filter trusts the model; state evolves slowly. Simulations are smooth and bounded. |
+>
+> **For sensor data (e.g. WIG_SPEED)**: the raw velocity series is highly
+> autocorrelated and does NOT behave like a local_level random walk. A naive
+> Kalman bootstrap with large Q will produce diverging simulations (lievik
+> shape). Either:
+> (a) Use `model = "arima"` in bootstrap mode, which captures the true
+>     autocorrelation structure; or
+> (b) Use `model = "kalman"` with `Q` set to a very small value relative to
+>     the actual series variance (e.g. Q = 1e-6, R = 0.01 for unit-variance
+>     data).
+
+> **Diagnostic: if the envelope diverges in bootstrap mode**, the ACF
+> comparison plot will confirm: simulated ACF will show near-unit persistence
+> while the original ACF decays quickly. This indicates the model has too much
+> process noise relative to the autocorrelation structure of the data. Reduce
+> Q by 2--3 orders of magnitude.
+
+---
+
+### 17.5 simulate.gap_fill_strategy / gap_fill_max_length
+
+Used only in **bootstrap mode** to fill gaps in the input series before
+model fitting. The simulator itself always generates gap-free series.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `gap_fill_strategy` | string | `linear` | Gap fill strategy. `"linear"`, `"forward_fill"`, `"median_year"`, `"spline"`, `"none"`. |
+| `gap_fill_max_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+
+---
+
+### 17.6 simulate.bootstrap_method / confidence_level
+
+Used only in **bootstrap mode**.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `bootstrap_method` | string | `block` | Bootstrap CI method for parameter estimation. See options below. |
+| `confidence_level` | float | `0.95` | Confidence level for all bootstrap CIs. Must be in (0, 1). |
+| `significance_level` | float | `0.05` | Reserved for future diagnostics. |
+
+### bootstrap_method options
+
+| Value | Description | When to use |
+|---|---|---|
+| `block` | Moving block bootstrap. Resamples contiguous blocks to preserve autocorrelation structure. Block length auto-selected from ACF. | **Recommended default** for all autocorrelated series (climatological, GNSS, most sensor data). |
+| `percentile` | IID resampling with replacement. Ignores autocorrelation structure. | Only for series confirmed to be near-iid (ACF lag-1 < 0.1). Slightly faster. |
+| `bca` | Bias-corrected accelerated bootstrap. Corrects for bias and acceleration. Falls back to percentile if jackknife is degenerate (nearly-constant statistic). | Small samples (n < 200) or when bias correction is important. |
+
+> **block vs percentile for autocorrelated data**: the standard iid bootstrap
+> (percentile) is statistically invalid for autocorrelated time series -- it
+> breaks the dependence structure and produces CIs that are too narrow.
+> Always use `block` for climatological, GNSS, or sensor data with significant
+> autocorrelation (ACF lag-1 > 0.2). The block length is selected automatically
+> from the ACF and logged at INFO level.
+
+> **bca degenerate fallback**: for statistics with very small variance across
+> bootstrap samples (e.g. the mean of a long, stable series), the BCa
+> jackknife distribution is nearly constant. In this case the implementation
+> falls back to percentile CI with a LOKI_WARNING. This is correct behaviour.
+
+---
+
+### 17.7 simulate.inject_outliers / inject_gaps / inject_shifts
+
+Optional anomaly injection applied **per replica** after generation.
+Each anomaly type is independent and uses a deterministic sub-seed
+derived from the base `seed` for reproducibility.
+
+#### inject_outliers
+
+Randomly selects a fraction of samples and adds a signed spike of specified
+magnitude.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable outlier injection. |
+| `fraction` | float | `0.01` | Fraction of samples to perturb. Range [0, 1]. `0.01` = 1% of samples. |
+| `magnitude` | float | `5.0` | Spike magnitude in units of the series. Applied with a random sign per outlier. |
+
+#### inject_gaps
+
+Randomly places zero-filled segments of random length within each replica.
+Intended to simulate instrument outages.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable gap injection. |
+| `n_gaps` | int | `5` | Number of gap regions per replica. |
+| `max_length` | int | `10` | Maximum gap length in samples. Actual length is uniform in [1, max_length]. |
+
+#### inject_shifts
+
+Randomly selects positions and adds a permanent step change from that
+position to the end of the series (cumulative shift).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable mean shift injection. |
+| `n_shifts` | int | `2` | Number of step changes per replica. |
+| `magnitude` | float | `1.0` | Shift magnitude. Applied with random sign. |
+
+> **Use case: homogeneity validation**. Generate synthetic series with
+> controlled shifts using `inject_shifts`, then export individual simulations
+> from the CSV and run them through `loki_homogeneity` to measure detection
+> power as a function of shift magnitude and segment length.
+>
+> Recommended setup:
+> ```json
+> "n_simulations": 50,
+> "n": 3000,
+> "inject_shifts": { "enabled": true, "n_shifts": 2, "magnitude": 2.0 }
+> ```
+> The `nSim <= 50` threshold causes the full simulation matrix CSV to be
+> written, giving you 50 individual series to process.
+
+> **Injection order**: outliers are injected first, then gaps (zero-fill),
+> then shifts. Gaps do not overwrite the shift baseline -- they set affected
+> samples to zero regardless of the shift.
+
+---
+
+### 17.8 Plots (simulate pipeline)
+
+Simulate plot flags are set directly under `"plots"`.
+
+| Flag | Default | Description |
+|---|---|---|
+| `simulate_overlay` | `true` | First 20 replicas overlaid as thin light-blue lines + median (dark blue) + original series if in bootstrap mode (red). |
+| `simulate_envelope` | `true` | Filled percentile bands: 5--95% (light blue) and 25--75% (medium blue) + median line + original if available. |
+| `simulate_bootstrap_dist` | `true` | Histogram of per-simulation means with CI bounds (blue = lower/upper, red = estimate). Bootstrap mode only. |
+| `simulate_acf_comparison` | `true` | ACF impulse plot of the original series (red) vs mean ACF of simulations (blue dots). Bootstrap mode only. |
+
+> **`simulate_bootstrap_dist` and `simulate_acf_comparison`** are silently
+> skipped in synthetic mode even if set to `true`.
+
+> **Reading the ACF comparison plot**: the most important diagnostic in
+> bootstrap mode. If the simulated mean ACF (blue) closely tracks the original
+> ACF (red impulses), the model captures the autocorrelation structure of the
+> data well. Deviations indicate model misspecification:
+>
+> | Observation | Interpretation |
+> |---|---|
+> | Sim ACF decays much slower than original | Model has too much memory. Reduce p (ARIMA) or reduce Q (Kalman). |
+> | Sim ACF decays much faster than original | Model has too little memory. Increase p or increase Q. |
+> | Sim ACF near zero at all lags | Model generating near-white-noise. Check that autoOrder is working. |
+> | Both ACFs high at all lags shown | Both series have long memory; may need `d=1` or a different model. |
+
+---
+
+### 17.9 CSV output
+
+**Envelope CSV** (always written):
+Filename: `simulate_[dataset]_[component]_envelope.csv`
+
+```
+t ; p05 ; p25 ; p50 ; p75 ; p95 [; original]
+```
+
+The `original` column is appended in bootstrap mode only.
+
+**Simulation matrix CSV** (written only when `n_simulations <= 50`):
+Filename: `simulate_[dataset]_[component]_simulations.csv`
+
+```
+t ; sim_0 ; sim_1 ; ... ; sim_N
+```
+
+One column per simulation. Use this for feeding individual realizations
+into other LOKI modules (e.g. `loki_homogeneity` for validation).
+
+> **Large nSim**: for `n_simulations > 50` the matrix CSV is suppressed to
+> avoid files of hundreds of megabytes. Only the envelope summary is written.
+> If you need the full matrix, set `n_simulations <= 50` and increase the
+> threshold manually in `simulateAnalyzer.cpp` if needed.
+
+---
+
+### 17.10 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `simulate_[dataset]_[component]_protocol.txt`
+
+Sections:
+- **Header**: dataset, component, mode, model, n, nSim.
+- **Simulation summary**: mean/std of per-simulation means and std devs.
+- **Bootstrap CIs** (bootstrap mode only): parameter table with estimate, lower, upper, bias, SE.
+- **Envelope sample**: first 5 and last 5 time steps with all five percentiles.
+
+---
+
+### 17.11 Method selection guide
+
+```
+What is your goal?
+
+Test whether ARIMA or Kalman can reproduce the autocorrelation structure of my data?
+  --> mode: bootstrap, model: arima (start here; ARIMA is more flexible for short memory)
+  --> Check: ACF comparison plot. If sim ACF tracks original, model is valid.
+
+Generate realizations with known properties for module validation?
+  --> mode: synthetic
+  --> arima with d=0 for stationary, d=1 for random walk
+  --> inject_shifts for change point detection validation
+  --> inject_outliers for outlier detector sensitivity testing
+
+Get bootstrap CIs for the mean and variance of my series?
+  --> mode: bootstrap, bootstrap_method: block (for autocorrelated data)
+  --> Check: bootstrap_dist plot, CI table in protocol
+
+Understand how much a Kalman model varies across realizations?
+  --> mode: synthetic, model: kalman
+  --> Use Q/R from a prior loki_kalman run on your real data
+  --> Check: envelope plot (should not diverge for local_level with small Q)
+```
+
+---
+
+### 17.12 Common issues and remedies
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Envelope diverges (lievik shape) with Kalman bootstrap | Q/R ratio too large; model behaves like random walk | Reduce Q by 2--3 orders of magnitude, or switch to `model: arima` |
+| ACF of simulations much higher than original | Model has too much memory | Reduce AR order p or reduce Q (Kalman) |
+| Envelope constant width but original has visible trend | ARIMA with `d=0` on a non-stationary series | Set `d=1` or detrend the series before bootstrap |
+| `bootstrap_dist` plot CI lines outside histogram | BCa fallback to percentile; CI estimated from original not replicas | Expected for nearly constant statistics; check LOKI_WARNING in log |
+| Simulation matrix CSV not written | `n_simulations > 50` | Reduce to <= 50 to enable full matrix output |
+| Protocol shows `simStdStd` very large | High between-simulation variance; model is non-stationary | Check d, Q/R; inspect overlay plot for divergence |
+| `simulate_acf_comparison` plot not generated | Running in synthetic mode | Expected; plot only available in bootstrap mode |
+| Injected shifts not visible in envelope | Shifts are random in position and sign; they average out | Inspect overlay plot or individual simulations from CSV |
+
+---
+
+### 17.13 Example configs
+
+**Synthetic ARIMA(2,0,1) -- stationary exploration:**
+```json
+"simulate": {
+    "mode": "synthetic",
+    "model": "arima",
+    "n": 2000,
+    "seed": 42,
+    "n_simulations": 100,
+    "arima": { "p": 2, "d": 0, "q": 1, "sigma": 1.0 }
+}
+```
+
+**Synthetic ARIMA(1,1,0) -- random walk / integrated process:**
+```json
+"simulate": {
+    "mode": "synthetic",
+    "model": "arima",
+    "n": 1000,
+    "seed": 7,
+    "n_simulations": 50,
+    "arima": { "p": 1, "d": 1, "q": 0, "sigma": 0.5 }
+}
+```
+
+**Synthetic Kalman local_level -- smooth signal:**
+```json
+"simulate": {
+    "mode": "synthetic",
+    "model": "kalman",
+    "n": 3000,
+    "seed": 42,
+    "n_simulations": 100,
+    "kalman": { "model": "local_level", "Q": 0.0001, "R": 0.01 }
+}
+```
+
+**Synthetic with shift injection -- homogeneity validation:**
+```json
+"simulate": {
+    "mode": "synthetic",
+    "model": "arima",
+    "n": 3000,
+    "n_simulations": 50,
+    "arima": { "p": 1, "d": 0, "q": 0, "sigma": 1.0 },
+    "inject_shifts": { "enabled": true, "n_shifts": 2, "magnitude": 2.0 }
+}
+```
+
+**Bootstrap ARIMA on real data -- block CI:**
+```json
+"simulate": {
+    "mode": "bootstrap",
+    "model": "arima",
+    "n_simulations": 200,
+    "seed": 42,
+    "gap_fill_strategy": "linear",
+    "bootstrap_method": "block",
+    "confidence_level": 0.95,
+    "arima": { "p": 2, "d": 0, "q": 1, "sigma": 1.0 }
+}
+```
+
+**Bootstrap Kalman -- smooth physical signal:**
+```json
+"simulate": {
+    "mode": "bootstrap",
+    "model": "kalman",
+    "n_simulations": 100,
+    "seed": 99,
+    "bootstrap_method": "percentile",
+    "kalman": { "model": "local_level", "Q": 0.000001, "R": 0.01 }
+}
+```
+
+```json
+"plots": {
+    "output_format": "png",
+    "simulate_overlay": true,
+    "simulate_envelope": true,
+    "simulate_bootstrap_dist": true,
+    "simulate_acf_comparison": true
+}
+```

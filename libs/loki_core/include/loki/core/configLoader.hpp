@@ -64,6 +64,7 @@ private:
     static KalmanConfig          _parseKalman           (const nlohmann::json& j);
     static QcConfig              _parseQc               (const nlohmann::json& j);
     static ClusteringConfig      _parseClustering       (const nlohmann::json& j);
+    static SimulateConfig        _parseSimulate         (const nlohmann::json& j);
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
     static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,

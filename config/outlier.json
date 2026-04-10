@@ -50,13 +50,13 @@
             "median_year_min_years": 5
         },
         "detection": {
-            "method": "hat_matrix",
+            "method": "iqr",
             "iqr_multiplier": 1.5,
             "mad_multiplier": 3.0,
             "zscore_threshold": 3.0
         },
         "replacement": {
-            "strategy": "linear",
+            "strategy": "spline",
             "max_fill_length": 0
         },
         "hat_matrix": {

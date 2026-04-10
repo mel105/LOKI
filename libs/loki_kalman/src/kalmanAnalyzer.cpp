@@ -156,34 +156,18 @@ TimeSeries KalmanAnalyzer::fillGaps(const TimeSeries& series) const
     GapFiller::Config gfCfg;
     gfCfg.maxFillLength = static_cast<std::size_t>(m_cfg.kalman.gapFillMaxLength);
 
-    // Choose strategy
     const std::string& stratStr = m_cfg.kalman.gapFillStrategy;
 
-    if (stratStr == "none") {
-        gfCfg.strategy = GapFiller::Strategy::NONE;
-        GapFiller gf(gfCfg);
-        return gf.fill(series);
-    }
-
-    if (stratStr == "linear") {
-        gfCfg.strategy = GapFiller::Strategy::LINEAR;
-        GapFiller gf(gfCfg);
-        return gf.fill(series);
-    }
-
-    if (stratStr == "median_year") {
-        gfCfg.strategy = GapFiller::Strategy::MEDIAN_YEAR;
-        GapFiller gf(gfCfg);
-        // Build median year profile
-        MedianYearSeries mys(series);
-        return gf.fill(series, [&mys](const ::TimeStamp& ts) {
-            return mys.valueAt(ts);
-        });
-    }
-
-    if (stratStr == "auto") {
-        // Auto: use MEDIAN_YEAR for 6h climatological data with long series,
-        // otherwise LINEAR.
+    // Resolve strategy string -> enum
+    if      (stratStr == "none")         gfCfg.strategy = GapFiller::Strategy::NONE;
+    else if (stratStr == "linear")       gfCfg.strategy = GapFiller::Strategy::LINEAR;
+    else if (stratStr == "forward_fill") gfCfg.strategy = GapFiller::Strategy::FORWARD_FILL;
+    else if (stratStr == "mean")         gfCfg.strategy = GapFiller::Strategy::MEAN;
+    else if (stratStr == "spline")       gfCfg.strategy = GapFiller::Strategy::SPLINE;
+    else if (stratStr == "median_year")  gfCfg.strategy = GapFiller::Strategy::MEDIAN_YEAR;
+    else if (stratStr == "auto") {
+        
+        // Auto: MEDIAN_YEAR for 6h climatological data with long series, else LINEAR.
         const double dtDays = [&]() -> double {
             if (series.size() < 2) { return 1.0; }
             std::vector<double> diffs;
@@ -194,30 +178,28 @@ TimeSeries KalmanAnalyzer::fillGaps(const TimeSeries& series) const
             std::nth_element(diffs.begin(), diffs.begin() + diffs.size() / 2, diffs.end());
             return diffs[diffs.size() / 2];
         }();
-
         const double spanYears = (series.size() > 1)
             ? (series[series.size()-1].time.mjd() - series[0].time.mjd()) / 365.25
             : 0.0;
-
-        if (dtDays < DT_6H_MAX_DAYS && spanYears >= gfCfg.minSeriesYears) {
-            gfCfg.strategy = GapFiller::Strategy::MEDIAN_YEAR;
-            GapFiller gf(gfCfg);
-            MedianYearSeries mys(series);
-            return gf.fill(series, [&mys](const ::TimeStamp& ts) {
-                return mys.valueAt(ts);
-            });
-        }
-
+        gfCfg.strategy = (dtDays < DT_6H_MAX_DAYS && spanYears >= gfCfg.minSeriesYears)
+            ? GapFiller::Strategy::MEDIAN_YEAR
+            : GapFiller::Strategy::LINEAR;
+    } else {
+        LOKI_WARNING("KalmanAnalyzer: unknown gap_fill_strategy '" + stratStr
+                     + "' -- using linear.");
         gfCfg.strategy = GapFiller::Strategy::LINEAR;
-        GapFiller gf(gfCfg);
-        return gf.fill(series);
     }
 
-    // Fallback
-    LOKI_WARNING("KalmanAnalyzer: unknown gap_fill_strategy '" + stratStr
-                 + "' -- using linear.");
-    gfCfg.strategy = GapFiller::Strategy::LINEAR;
+    // Single construction point
     GapFiller gf(gfCfg);
+
+    if (gfCfg.strategy == GapFiller::Strategy::MEDIAN_YEAR) {
+        MedianYearSeries mys(series);
+        return gf.fill(series, [&mys](const ::TimeStamp& ts) {
+            return mys.valueAt(ts);
+        });
+    }
+
     return gf.fill(series);
 }
 

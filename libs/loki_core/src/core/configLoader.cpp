@@ -93,6 +93,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.kalman        = _parseKalman       (j.value("kalman",       json::object()));
     cfg.qc            = _parseQc           (j.value("qc",           json::object()));
     cfg.clustering    = _parseClustering   (j.value("clustering",   json::object()));
+    cfg.simulate      = _parseSimulate     (j.value("simulate",     json::object()));
 
     return cfg;
 }
@@ -220,15 +221,7 @@ HomogeneityConfig ConfigLoader::_parseHomogeneity(const nlohmann::json& j)
 
     if (j.contains("post_outlier"))
         cfg.postOutlier = _parseOutlierFilter(j.at("post_outlier"), 3.0);
-
-    //if (j.contains("detection")) {
-    //    const auto& d = j.at("detection");
-    //    cfg.detection.significanceLevel    = getOrDefault<double>     (d, "significance_level",     0.05,  false);
-    //    cfg.detection.acfDependenceLimit   = getOrDefault<double>     (d, "acf_dependence_limit",   0.2,   false);
-    //    cfg.detection.correctForDependence = getOrDefault<bool>       (d, "correct_for_dependence", true,  false);
-    //    cfg.detection.minSegmentPoints     = getOrDefault<int>        (d, "min_segment_points",     60,    false);
-    //    cfg.detection.minSegmentDuration   = getOrDefault<std::string>(d, "min_segment_duration",   "",    false);
-    //}
+   
     if (j.contains("detection")) {
         const auto& d = j.at("detection");
         cfg.detection.method               = getOrDefault<std::string>(d, "method",                 "yao_davis", false);
@@ -1539,6 +1532,142 @@ ClusteringConfig ConfigLoader::_parseClustering(const nlohmann::json& j)
     if (j.contains("outlier")) {
         const auto& o = j.at("outlier");
         cfg.outlier.enabled = getOrDefault<bool>(o, "enabled", false, false);
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseSimulate
+// -----------------------------------------------------------------------------
+
+SimulateConfig ConfigLoader::_parseSimulate(const nlohmann::json& j)
+{
+    SimulateConfig cfg;
+
+    cfg.mode             = getOrDefault<std::string>(j, "mode",               "synthetic", false);
+    cfg.model            = getOrDefault<std::string>(j, "model",              "arima",     false);
+    cfg.n                = getOrDefault<int>        (j, "n",                  1000,        false);
+    cfg.seed             = getOrDefault<uint64_t>   (j, "seed",               uint64_t{42},false);
+    cfg.nSimulations     = getOrDefault<int>        (j, "n_simulations",      100,         false);
+    cfg.gapFillStrategy  = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear",    false);
+    cfg.gapFillMaxLength = getOrDefault<int>        (j, "gap_fill_max_length",0,           false);
+    cfg.bootstrapMethod  = getOrDefault<std::string>(j, "bootstrap_method",   "block",     false);
+    cfg.confidenceLevel  = getOrDefault<double>     (j, "confidence_level",   0.95,        false);
+    cfg.significanceLevel= getOrDefault<double>     (j, "significance_level", 0.05,        false);
+
+    if (cfg.mode != "synthetic" && cfg.mode != "bootstrap") {
+        throw ConfigException(
+            "ConfigLoader: simulate.mode '" + cfg.mode
+            + "' not recognised. Valid: synthetic, bootstrap.");
+    }
+    if (cfg.model != "arima" && cfg.model != "ar" && cfg.model != "kalman") {
+        throw ConfigException(
+            "ConfigLoader: simulate.model '" + cfg.model
+            + "' not recognised. Valid: arima, ar, kalman.");
+    }
+    if (cfg.n < 1) {
+        throw ConfigException(
+            "ConfigLoader: simulate.n must be >= 1, got " + std::to_string(cfg.n) + ".");
+    }
+    if (cfg.nSimulations < 1) {
+        throw ConfigException(
+            "ConfigLoader: simulate.n_simulations must be >= 1, got "
+            + std::to_string(cfg.nSimulations) + ".");
+    }
+    if (cfg.bootstrapMethod != "percentile"
+        && cfg.bootstrapMethod != "bca"
+        && cfg.bootstrapMethod != "block")
+    {
+        throw ConfigException(
+            "ConfigLoader: simulate.bootstrap_method '" + cfg.bootstrapMethod
+            + "' not recognised. Valid: percentile, bca, block.");
+    }
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: simulate.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
+    }
+
+    // ---- arima sub-section --------------------------------------------------
+    if (j.contains("arima")) {
+        const auto& a = j.at("arima");
+        cfg.arima.p     = getOrDefault<int>   (a, "p",     1,   false);
+        cfg.arima.d     = getOrDefault<int>   (a, "d",     0,   false);
+        cfg.arima.q     = getOrDefault<int>   (a, "q",     0,   false);
+        cfg.arima.sigma = getOrDefault<double>(a, "sigma", 1.0, false);
+
+        if (cfg.arima.p < 0)
+            throw ConfigException("ConfigLoader: simulate.arima.p must be >= 0.");
+        if (cfg.arima.d < 0)
+            throw ConfigException("ConfigLoader: simulate.arima.d must be >= 0.");
+        if (cfg.arima.q < 0)
+            throw ConfigException("ConfigLoader: simulate.arima.q must be >= 0.");
+        if (cfg.arima.sigma <= 0.0)
+            throw ConfigException("ConfigLoader: simulate.arima.sigma must be > 0, got "
+                                  + std::to_string(cfg.arima.sigma) + ".");
+    }
+
+    // ---- kalman sub-section -------------------------------------------------
+    if (j.contains("kalman")) {
+        const auto& k = j.at("kalman");
+        cfg.kalman.model = getOrDefault<std::string>(k, "model", "local_level", false);
+        cfg.kalman.Q     = getOrDefault<double>     (k, "Q",     0.001,         false);
+        cfg.kalman.R     = getOrDefault<double>     (k, "R",     0.01,          false);
+
+        if (cfg.kalman.model != "local_level"
+            && cfg.kalman.model != "local_trend"
+            && cfg.kalman.model != "constant_velocity")
+        {
+            throw ConfigException(
+                "ConfigLoader: simulate.kalman.model '" + cfg.kalman.model
+                + "' not recognised. Valid: local_level, local_trend, constant_velocity.");
+        }
+        if (cfg.kalman.Q <= 0.0)
+            throw ConfigException("ConfigLoader: simulate.kalman.Q must be > 0, got "
+                                  + std::to_string(cfg.kalman.Q) + ".");
+        if (cfg.kalman.R <= 0.0)
+            throw ConfigException("ConfigLoader: simulate.kalman.R must be > 0, got "
+                                  + std::to_string(cfg.kalman.R) + ".");
+    }
+
+    // ---- inject_outliers sub-section ----------------------------------------
+    if (j.contains("inject_outliers")) {
+        const auto& io = j.at("inject_outliers");
+        cfg.injectOutliers.enabled   = getOrDefault<bool>  (io, "enabled",   false, false);
+        cfg.injectOutliers.fraction  = getOrDefault<double>(io, "fraction",  0.01,  false);
+        cfg.injectOutliers.magnitude = getOrDefault<double>(io, "magnitude", 5.0,   false);
+
+        if (cfg.injectOutliers.fraction < 0.0 || cfg.injectOutliers.fraction > 1.0)
+            throw ConfigException(
+                "ConfigLoader: simulate.inject_outliers.fraction must be in [0, 1], got "
+                + std::to_string(cfg.injectOutliers.fraction) + ".");
+    }
+
+    // ---- inject_gaps sub-section --------------------------------------------
+    if (j.contains("inject_gaps")) {
+        const auto& ig = j.at("inject_gaps");
+        cfg.injectGaps.enabled   = getOrDefault<bool>(ig, "enabled",    false, false);
+        cfg.injectGaps.nGaps     = getOrDefault<int> (ig, "n_gaps",     5,     false);
+        cfg.injectGaps.maxLength = getOrDefault<int> (ig, "max_length", 10,    false);
+
+        if (cfg.injectGaps.nGaps < 0)
+            throw ConfigException("ConfigLoader: simulate.inject_gaps.n_gaps must be >= 0.");
+        if (cfg.injectGaps.maxLength < 1)
+            throw ConfigException(
+                "ConfigLoader: simulate.inject_gaps.max_length must be >= 1, got "
+                + std::to_string(cfg.injectGaps.maxLength) + ".");
+    }
+
+    // ---- inject_shifts sub-section ------------------------------------------
+    if (j.contains("inject_shifts")) {
+        const auto& is = j.at("inject_shifts");
+        cfg.injectShifts.enabled   = getOrDefault<bool>  (is, "enabled",   false, false);
+        cfg.injectShifts.nShifts   = getOrDefault<int>   (is, "n_shifts",  2,     false);
+        cfg.injectShifts.magnitude = getOrDefault<double>(is, "magnitude", 1.0,   false);
+
+        if (cfg.injectShifts.nShifts < 0)
+            throw ConfigException("ConfigLoader: simulate.inject_shifts.n_shifts must be >= 0.");
     }
 
     return cfg;

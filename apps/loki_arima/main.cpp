@@ -383,10 +383,20 @@ int main(int argc, char* argv[])
             try {
                 // Step 1: Gap filling
                 loki::GapFiller::Config gfCfg;
-                gfCfg.strategy      = loki::GapFiller::Strategy::LINEAR;
-                gfCfg.maxFillLength = arimaCfg.gapFillMaxLength;
+                {
+                    const std::string& s = arimaCfg.gapFillStrategy;
+                    if      (s == "forward_fill") gfCfg.strategy = loki::GapFiller::Strategy::FORWARD_FILL;
+                    else if (s == "mean")         gfCfg.strategy = loki::GapFiller::Strategy::MEAN;
+                    else if (s == "spline")       gfCfg.strategy = loki::GapFiller::Strategy::SPLINE;
+                    else if (s == "none")         gfCfg.strategy = loki::GapFiller::Strategy::NONE;
+                    else                          gfCfg.strategy = loki::GapFiller::Strategy::LINEAR;
+                }
+                gfCfg.maxFillLength = static_cast<std::size_t>(
+                    std::max(0, arimaCfg.gapFillMaxLength));
                 loki::GapFiller gapFiller(gfCfg);
-                const loki::TimeSeries filled = gapFiller.fill(ts);
+                const loki::TimeSeries filled = (gfCfg.strategy == loki::GapFiller::Strategy::NONE)
+                    ? ts
+                    : gapFiller.fill(ts);
 
                 // Step 2: Deseasonalize
                 const loki::Deseasonalizer::Result dsResult =
