@@ -32,6 +32,7 @@ target_sources(loki_core
         src/math/embedMatrix.cpp
         src/math/randomizedSvd.cpp
         src/math/spline.cpp
+        src/math/nelderMead.cpp
 )
 
 target_include_directories(loki_core

@@ -210,7 +210,7 @@ loki_qc               (depends on loki_core + loki_outlier)        <- COMPLETE
 loki_clustering       (depends on loki_core only)                   <- COMPLETE
 
 loki_simulate         (depends on loki_core + loki_arima +
-                        loki_kalman)                                <- PLANNED
+                        loki_kalman)                                <- COMPLETE
 
 loki_evt              (depends on loki_core only)                   <- PLANNED
 
@@ -360,7 +360,7 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ["demo_sampling"]=""        <- no config, runs directly
 ["demo_bootstrap"]=""       <- no config, runs directly
 ["demo_permutation"]=""     <- no config, runs directly
-["simulate"]="loki_simulate_app"    <- PLANNED
+["simulate"]="loki_simulate_app"   
 ["evt"]="loki_evt_app"              <- PLANNED
 ["kriging"]="loki_kriging_app"      <- PLANNED
 ["spline"]="loki_spline_app"        <- PLANNED
@@ -451,6 +451,13 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - Protokol obsahuje: filter params, residual stats, J-B test, Durbin-Watson, ACF lag-1, tuning hints
 - Vzor rovnaky ako `DecompositionAnalyzer` -- `run(ts, datasetName)` pattern
 
+### loki_simulate -- complete
+- `simulationResult.hpp`             -- ParameterCI, SimulationResult structs
+- `arimaSimulator.hpp / .cpp`        -- ARIMA(p,d,q) generation (parametric + fitted mode)
+- `kalmanSimulator.hpp / .cpp`       -- Kalman state-space generation (local_level/trend/velocity)
+- `simulateAnalyzer.hpp / .cpp`      -- orchestrator: runSynthetic() + run() bootstrap pattern
+- `plotSimulate.hpp / .cpp`          -- overlay, envelope, bootstrap_dist, acf_comparison
+
 ---
 
 ## GapFiller::Strategy::SPLINE -- Deployment Status
@@ -471,6 +478,7 @@ konvertuje na enum v kazdom `apps/loki_*/main.cpp` samostatne. Status patchov:
 | `loki_stationarity` | DONE -- `main.cpp` + `StationarityConfig` v `config.hpp` |
 | `loki_qc` | N/A -- GapFiller sa nepouiva priamo |
 | `loki_clustering` | DONE |
+| `loki_simulate` | DONE |
 
 Vzor patchu (rovnaky pre vsetky apps) -- najdi blok kde sa konvertuje `gapFillStrategy`
 string a pridaj vetvu:
@@ -512,131 +520,190 @@ Poziadavky: aspon 3 platne body, inak fallback na LINEAR s LOKI_WARNING.
 
 ## Planned New Applications
 
-### loki_simulate -- PLANNED
+### loki_simulate -- COMPLETE
 
-### loki_simulate -- Implementation Notes
+**Architecture:** SimulateAnalyzer pattern -- `runSynthetic(datasetName)` pre
+synthetic mode (ziadne vstupne data), `run(ts, datasetName)` pre bootstrap mode.
+ 
+**Two modes:**
+- `synthetic`: generuje nSim realizacii z ARIMA/Kalman parametrov bez vstupnych dat
+- `bootstrap`: fit modelu na realnych datach, generuje B replik, bootstrap CI pre
+  mean a sigma2 (blockCI pre autocorrelated, percentileCI/bcaCI volitelne)
+ 
+**Key implementation learnings:**
+- ArimaSimulator(ParametricConfig): AR koeficienty = 0.5/p, MA = 0.3/q -- stabilny
+  genericly proces. Burn-in 200 samplov pred vracanim vysledku.
+- ArimaSimulator(ArimaResult): pouziva fitted arCoeffs/maCoeffs/arLags/maLags/sigma2.
+- KalmanSimulator: priamy forward simulation x[t]=F*x[t-1]+w, y[t]=H*x[t]+v.
+  local_level = 1D, local_trend/constant_velocity = 2D (identicka F/H struktura).
+- Burn-in 50 samplov pre Kalman.
+- generateBatch(): seed + simIndex pre reprodukovatelnost napriec roznym nSim.
+- _injectAnomalies(): outliers (fraction*n nahodnych spikov), gaps (zero-fill),
+  shifts (kumulativny posun od nahodneho indexu do konca). Poradi: outliers->gaps->shifts.
+- _computeEnvelope(): sort stlpca napriec simulaciami, quantile(0.05/0.25/0.50/0.75/0.95).
+- CSV: envelope vzdy; simulation matrix len ak nSim <= 50 (inak prilis velky subor).
+- Bootstrap CI: blockCI pre mean a sigma2 originalu. AR koeficienty -- len point estimate
+  (refit na kazdom bootstrape by bol prilis pomaly, deferred to future).
+- simulateAnalyzer.hpp Doxygen komentar nesmi obsahovat "simMean*" pattern --
+  `*/` v komentari ukoncuje C blokovy komentar a sposobuje parse chybu GCC.
+ 
+**CRITICAL Q/R lesson (bootstrap Kalman):**
+Kalman bootstrap diverguje (lievik envelope) ked Q/R >> 1 -- model sa chova ako
+random walk. Pre senzorove data (napr. rychlost vlaku) je raw signal vysoko
+autokorelovany ale NIE random walk. Diagnostika: ACF comparison plot -- sim ACF
+zostavaju blizko 1 na vsetkych lagoch zatial co original ACF rychlo klesa.
+Riesenie: pouzit model=arima v bootstrap mode (zachyti skutocnu ACF strukturu),
+alebo pre Kalman nastavit Q << variance(signal) (napr. Q=1e-6, R=0.01).
+ 
+**Config additions to config.hpp:**
+SimulateInjectOutliersConfig, SimulateInjectGapsConfig, SimulateInjectShiftsConfig,
+SimulateArimaConfig, SimulateKalmanConfig, SimulateConfig.
+Pridane do AppConfig: `SimulateConfig simulate {}`.
+Plot flags v PlotConfig: simulateOverlay, simulateEnvelope,
+simulateBootstrapDist, simulateAcfComparison.
+ 
+**Files to request at thread start (for loki_simulate maintenance):**
+- `config.hpp`, `configLoader.hpp`, `configLoader.cpp`
+- `timeSeries.hpp`, `bootstrap.hpp`
+- `arimaAnalyzer.hpp`, `arimaResult.hpp`
+- `kalmanModel.hpp`, `kalmanModelBuilder.hpp`
+- `apps/loki_kalman/main.cpp` (pipeline vzor)
+ 
 
-**Architecture decision: Analyzer pattern**
-Rovnaký vzor ako ostatné moduly -- `SimulationAnalyzer` trieda s metódou
-`run(const std::string& datasetName)`. Nie priamo v `main()`.
-Dôvod: konzistencia, testovateľnosť, čistý main().
+### loki_evt -- IN PROGRESS
 
-**Dependencies (files to request at thread start):**
-Pri otvorení nového threadu požiadaj o tieto súbory:
-
-From loki_core:
-- `config.hpp` -- pre pridanie SimulateConfig
-- `configLoader.hpp` + `configLoader.cpp` -- pre parsovanie nového JSON bloku
-- `timeSeries.hpp` -- API pripomienka
-- `gapFiller.hpp` -- ak budeme injektovať gaps
-
-From loki_core/stats:
-- `bootstrap.hpp` -- percentileCI, bcaCI, blockCI (StatFn, BootstrapConfig, BootstrapResult)
-- `sampling.hpp`  -- Sampler trieda (seed, mt19937_64, bootstrap indices)
-
-From loki_arima:
-- `arimaAnalyzer.hpp` -- API pre fit + residuals
-- `arimaForecaster.hpp` -- API pre simuláciu dopredných krokov
-
-From loki_kalman:
-- `kalmanAnalyzer.hpp` -- API
-- `kalmanModel.hpp` + `kalmanModelBuilder.hpp` -- pre state-space simuláciu
-- `kalmanFilter.hpp` -- pre forward simulation
-
-From existing apps (for main() pipeline inspiration):
-- `apps/loki_arima/main.cpp` -- vzor gap fill + deseasonalize + analyze pipeline
-- `apps/loki_kalman/main.cpp` -- vzor fillGaps() + estimateNoise() pattern
-
-**Output files:**
-- `OUTPUT/LOG/` -- logger (automaticky)
-- `OUTPUT/PROTOCOLS/simulate_[dataset]_[param]_protocol.txt` -- pekne formátované výsledky
-- `OUTPUT/IMG/simulate_[dataset]_[param]_[plottype].png` -- grafy
-- `OUTPUT/CSV/simulate_[dataset]_[param]_simulations.csv` -- ak bootstrap/MC
-
-**Plot types (new -- plotSimulation.hpp/cpp):**
-- `simulate_overlay` -- originálna séria + simulované repliky (polopriesvitné)
-- `simulate_envelope` -- percentilový obal simulácií (5/25/50/75/95)
-- `simulate_bootstrap_dist` -- histogramy bootstrap distribúcií odhadov
-- `simulate_acf_comparison` -- ACF originál vs ACF simulovaných radov
-Základné grafy (histogram, ACF, QQ) delegovať na `loki::Plot`.
-
-**SimulateConfig structure (draft):**
+**Purpose:** Extreme Value Theory -- modelovanie extremnych udalosti a odhad
+return levels pre SIL analyzy.
+**Dependencies:** loki_core only
+ 
+**Functionality:**
+- **POT/GPD (primary):** exceedances nad prahovu hodnotu u, fit Generalized Pareto
+  Distribution (shape xi, scale sigma). Vhodne pre oba datove typy.
+- **GEV/Block Maxima (secondary):** rocne maxima -> fit GEV (xi, sigma, mu).
+  Vhodne len pre klimatologicke data (rocne bloky = prirodzeny vyber).
+  Pre vlakove data GEV NEPOUIVAT -- bloky su arbitrarne.
+- **Return level odhady:** RL(T) = u + sigma/xi * ((T*lambda)^xi - 1) pre xi!=0.
+  T konfigurovatelne, time_unit konfigurovatelne (seconds/minutes/hours/days/years).
+- **Threshold selection:** mean excess plot + stability plot (sigma(u), xi(u)).
+  auto=true: elbow detection. auto=false: manualny threshold z value.
+  min_exceedances ochrana (default 30).
+- **CI metoda:** profile likelihood (robustna pre velke T, SIL 4),
+  delta method (rychla, nespolahlivia pre velke T), bootstrap (volitelna).
+  Profile likelihood: numericka optimalizacia -- pre kazdy RL fixuj jednu
+  premennu, optimalizuj zvysok, hladaj kde logLik klesa o chi2(0.95)/2 = 1.92.
+  Rovnaky pattern ako NonlinearRegressor (Nelder-Mead), nie LM.
+- **GoF testy:** Anderson-Darling, Kolmogorov-Smirnov.
+- **GPD fit:** MLE via Nelder-Mead, constraint xi > -0.5. PWM fallback pre n < 50.
+- **GEV fit:** MLE via Nelder-Mead, rovnaka struktura ako GPD. Self-contained,
+  bez zavislosti na loki_regression.
+ 
+**Domain notes:**
+- Klimatologicke data (6h): extrémy troposferického oneskorenia, rocne maxima
+  zmysluplne -> "both" method vhodna.
+- Vlakove data (1s alebo ms): priamo rychlosti v m/s alebo km/h, len maxima
+  relevantne (pomala jazda nevadi). POT/GPD jedina zmysluplna metoda.
+  Pre ms data: n exceedances moze byt velke (stovky tisic) -- bootstrap CI
+  subsampleuje na max_exceedances_bootstrap = 10000.
+- SIL 4: return_periods = [1e8] s time_unit = "hours". Masivna extrapolacia
+  za data -- profile likelihood CI nevyhnutny, delta method nespravny.
+- Exceedance rate lambda: pocet exceedances za time_unit, odhadnuty z dt serie.
+ 
+**Planned files:**
+```
+libs/loki_evt/
+  include/loki/evt/
+    evtResult.hpp              -- GpdFitResult, GevFitResult, ReturnLevel, EvtResult
+    gpd.hpp / .cpp             -- GPD: cdf, quantile, logLik, fit (MLE+PWM fallback)
+    gev.hpp / .cpp             -- GEV: cdf, quantile, logLik, fit (MLE)
+    thresholdSelector.hpp / .cpp  -- mean excess plot, stability plot, elbow detection
+    evtAnalyzer.hpp / .cpp     -- orchestrator: run() pattern
+    plotEvt.hpp / .cpp         -- mean_excess, stability, return_levels, exceedances, gpd_fit
+  src/ ...
+apps/loki_evt/
+  main.cpp
+  CMakeLists.txt
+```
+ 
+**EvtConfig structure:**
 ```cpp
-struct SimulateInjectOutliersConfig {
-    bool   enabled   {false};
-    double fraction  {0.01};
-    double magnitude {5.0};
+struct EvtThresholdConfig {
+    bool        autoSelect     = true;
+    std::string method         = "mean_excess"; // "mean_excess" | "manual"
+    double      value          = 0.0;
+    int         minExceedances = 30;
 };
-
-struct SimulateInjectGapsConfig {
-    bool        enabled   {false};
-    int         nGaps     {5};
-    int         maxLength {10};
+ 
+struct EvtCiConfig {
+    bool        enabled                  = true;
+    std::string method                   = "profile_likelihood";
+    // "profile_likelihood" | "delta" | "bootstrap"
+    int         nBootstrap               = 1000;
+    int         maxExceedancesBootstrap  = 10000;
 };
-
-struct SimulateInjectShiftsConfig {
-    bool   enabled   {false};
-    int    nShifts   {2};
-    double magnitude {1.0};
+ 
+struct EvtBlockMaximaConfig {
+    int blockSize = 1461;   // samples per block (1461 = 1 year at 6h)
 };
-
-struct SimulateArimaConfig {
-    int    p     {1};
-    int    d     {0};
-    int    q     {0};
-    double sigma {1.0};
-};
-
-struct SimulateKalmanConfig {
-    std::string model {"local_level"};
-    double      Q     {0.001};
-    double      R     {0.01};
-};
-
-struct SimulateConfig {
-    std::string                  model           {"arima"};
-    int                          n               {1000};
-    uint64_t                     seed            {42};
-    int                          nSimulations    {100};
-    std::string                  gapFillStrategy {"linear"};
-    int                          gapFillMaxLength{0};
-    SimulateArimaConfig          arima           {};
-    SimulateKalmanConfig         kalman          {};
-    SimulateInjectOutliersConfig injectOutliers  {};
-    SimulateInjectGapsConfig     injectGaps      {};
-    SimulateInjectShiftsConfig   injectShifts    {};
-    double                       confidenceLevel {0.95};
-    double                       significanceLevel{0.05};
+ 
+struct EvtConfig {
+    std::string           method            = "pot";
+    // "pot" | "block_maxima" | "both"
+    std::string           timeUnit          = "hours";
+    // "seconds" | "minutes" | "hours" | "days" | "years"
+    std::vector<double>   returnPeriods     = {10, 100, 1000, 1000000, 100000000};
+    double                confidenceLevel   = 0.95;
+    double                significanceLevel = 0.05;
+    std::string           gapFillStrategy   = "linear";
+    int                   gapFillMaxLength  = 0;
+    EvtThresholdConfig    threshold         {};
+    EvtCiConfig           ci                {};
+    EvtBlockMaximaConfig  blockMaxima       {};
 };
 ```
+ 
+**Key signatures (agreed before implementation):**
+```cpp
+// Gpd -- self-contained, no loki_regression dependency
+class Gpd {
+    static double       cdf(double x, double xi, double sigma);
+    static double       quantile(double p, double xi, double sigma);
+    static double       logLik(const std::vector<double>& exc, double xi, double sigma);
+    static GpdFitResult fit(const std::vector<double>& exc, double sigmaInit = 0.0);
+    static double       returnLevel(double T, double lambda,
+                                    double threshold, double xi, double sigma);
+};
+ 
+// ThresholdSelector
+class ThresholdSelector {
+    struct Result {
+        double              selected;
+        std::vector<double> candidates;
+        std::vector<double> meanExcess;
+        std::vector<double> sigmaStability;
+        std::vector<double> xiStability;
+    };
+    static Result autoSelect(const std::vector<double>& data,
+                             int nCandidates = 50, int minExceedances = 30);
+    static Result manual(const std::vector<double>& data,
+                         double threshold, int minExceedances = 30);
+};
+ 
+// EvtAnalyzer -- run() pattern
+class EvtAnalyzer {
+    explicit EvtAnalyzer(const AppConfig& cfg);
+    void run(const TimeSeries& series, const std::string& datasetName);
+};
+```
+ 
+**Files to request at thread start:**
+- `config.hpp`, `configLoader.hpp`, `configLoader.cpp`
+- `timeSeries.hpp`
+- `apps/loki_kalman/main.cpp` (pipeline vzor)
+- `apps/loki_clustering/main.cpp` (alternativny vzor pre jednoduchy main)
+ 
+**Plot flags to add to PlotConfig:**
+evtMeanExcess, evtStability, evtReturnLevels, evtExceedances, evtGpdFit
 
-**Key implementation notes:**
-- Simulácia ARIMA: generuj white noise epsilon ~ N(0, sigma^2), aplikuj
-  AR a MA polynómy rekurzívne. Pre d>0 kumulatívne sumuj.
-- Simulácia Kalman: x_{t+1} = F*x_t + w_t kde w_t ~ N(0,Q),
-  y_t = H*x_t + v_t kde v_t ~ N(0,R). Použiť KalmanModelBuilder.
-- Random number generation: `std::mt19937_64` so seed z configu.
-  seed=0 znamená náhodný seed (std::random_device).
-- Bootstrap workflow: (1) fit model na vstupných dátach,
-  (2) generuj B simulácií z fitted modelu,
-  (3) pre každú simuláciu refit model,
-  (4) zbieraj distribúcie odhadovaných parametrov.
-- Injektovanie posunov: vyber náhodné indexy, pridaj konštantu
-  od daného indexu do konca segmentu (step change).
-- CSV output: jeden riadok = jedna simulácia, stĺpce = časové kroky.
-  Pre veľké n*B môže byť CSV obrovský -- zvážiť len summary statistiky.
-- Bootstrap CI pre parametre: pre autocorrelované simulované rady pouzi
-  blockCI() s automatickym blockLength (cfg.blockLength=0).
-  Pre iid statistiky (napr. mean syntetickej serie) postaci percentileCI().
-- StatFn vzor pre ARIMA parameter:
-  [&analyzer](const std::vector<double>& v) {
-      return analyzer.analyze(v).arCoeffs[0];
-  }
-- Sampler inicializacia: Sampler sampler(cfg.seed == 0
-      ? std::random_device{}()
-      : cfg.seed);
-
-### loki_evt -- PLANNED
 ### loki_kriging -- PLANNED
 ### loki_spline -- PLANNED
 
@@ -780,6 +847,21 @@ MEDIAN_YEAR rieseny na jednom mieste.
   dat. Pre kratke serie (n<200) = 1 (presna interpolacia).
 - Kriging: variogram fitting is the most sensitive step.
 - NURBS vs B-spline: NURBS allows exact conic sections via rational weights.
+Za posledny bullet (riadok ~782):
+- NURBS vs B-spline: NURBS allows exact conic sections via rational weights.
+Pridaj:
+- loki_simulate: ARIMA bootstrap diverguje ked Q/R>>1 pre Kalman alebo ked model
+  nema spravnu ACF strukturu -- diagnostika cez ACF comparison plot.
+  Kalman bootstrap vhodny len ak Q << variance(signal).
+- loki_simulate: simulateAnalyzer.hpp Doxygen nesmie obsahovat "simMean*" vzor --
+  `*/` v komentari ukoncuje C blokovy komentar, GCC parse chyba.
+- loki_simulate: simulation matrix CSV len pre nSim <= 50; inak len envelope.
+- EVT/SIL 4: GEV/block-maxima nevhodne pre vlakove data -- bloky su arbitrarne.
+  POT/GPD je jedina zmysluplna metoda pre senzorove rady rychlosti.
+- EVT profile likelihood CI: logLik klesa o chi2(0.95)/2 = 1.92 pre 95% CI.
+  Delta method nespolahlivy pre velke T (SIL 4) -- profile likelihood nevyhnutny.
+- EVT exceedance rate lambda: odhadnuta z dt serie (median casovych rozdielov),
+  prepocitana do time_unit jednotiek pre return level vypocet.
 
 ---
 
@@ -806,7 +888,7 @@ MEDIAN_YEAR rieseny na jednom mieste.
 | done | BOCPD in loki_homogeneity         | module extension | COMPLETE |
 | done | HomogeneityAnalyzer + protocol    | module extension | COMPLETE |
 | done | GapFiller SPLINE patche (apps) | patche | COMPLETE |
-| 3 | `loki_simulate` | new app | PLANNED |
+| 3 | `loki_simulate` | new app | COMPLETE |
 | 3 | `loki_evt` | new app | PLANNED |
 | 4 | `loki_kriging` | new app | PLANNED |
 | 4 | `loki_spline` | new app | PLANNED |
@@ -844,7 +926,10 @@ MEDIAN_YEAR rieseny na jednom mieste.
 - loki_clustering: `slope` preferred over `derivative` for noisy sensor data.
 - loki_homogeneity existing detector: Yao & Davis (1986), NOT SNHT.
 - loki_spline app: B-spline + NURBS. Cubic spline interpolation in loki_core/math.
-- loki_evt: SIL 4 use case (< 1e-8/h). GPD/POT preferred for small datasets.
+- loki_evt: SIL 4 use case (< 1e-8/h). GPD/POT for all data types.
+  GEV/block_maxima only for climatological data (natural annual blocks).
+  For train velocity data: POT only, maxima direction, time_unit="hours".
+  Profile likelihood CI mandatory for SIL 4 return periods (1e8 hours).
 - loki_kriging: Simple / Ordinary / Universal variants. Variogram fitting critical.
 - Block bootstrap required for autocorrelated series; iid bootstrap invalid.
 - `SplineFilterConfig` definovana TYLKO v `config.hpp`, nie v `splineFilter.hpp`.
@@ -867,40 +952,7 @@ MEDIAN_YEAR rieseny na jednom mieste.
   prilozene alebo nie. Jednoducho ich naplnit podla dizajnu. TOTO PRAVIDLO NEMAZES a v dalsich vlaknach 
   poznamkou o snhtDetector neotravuj.
 
-  ## Planned New Applications -- Design Notes
-
-### loki_simulate
-**Purpose:** Generovanie syntetických časových radov a validácia ostatných modulov.
-**Dependencies:** loki_core + loki_arima + loki_kalman
-
-**Functionality:**
-- Generovanie AR/ARIMA procesov so zadanými koeficientmi (p, d, q) a sigma
-- Generovanie Kalman state-space radov (local_level, local_trend, constant_velocity)
-- Pridávanie kontrolovaného šumu (Gaussian, uniform, outliers, gaps)
-- Monte Carlo integrácia -- opakované simulácie s rôznymi seed hodnotami
-- Parametrický bootstrap -- fit modelu na reálnych dátach, generovanie B replikácií,
-  refitting na každej replikácii -> empirická distribúcia odhadov
-
-**Use cases:**
-- Validácia loki_arima: simuluj ARIMA(p,d,q), odhadni model, porovnaj koeficienty
-- Validácia loki_kalman: simuluj state-space model, over konvergenciu filtra
-- Validácia loki_homogeneity: simuluj rad s umelými posunmi, over detekciu
-- Bootstrap CI pre change point lokáciu a shift magnitude
-
-**Config pattern:**
-```json
-"simulate": {
-    "model": "arima",          // "arima" | "kalman" | "ar"
-    "n": 5000,
-    "seed": 42,
-    "n_simulations": 1000,
-    "arima": { "p": 2, "d": 1, "q": 0, "sigma": 1.0 },
-    "kalman": { "model": "local_level", "Q": 0.001, "R": 0.01 },
-    "inject_outliers": { "enabled": true, "fraction": 0.01, "magnitude": 5.0 },
-    "inject_gaps": { "enabled": true, "n_gaps": 5, "max_length": 10 },
-    "inject_shifts": { "enabled": true, "n_shifts": 2, "magnitude": 1.0 }
-}
-```
+## Planned New Applications -- Design Notes
 
 ---
 

@@ -94,6 +94,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.qc            = _parseQc           (j.value("qc",           json::object()));
     cfg.clustering    = _parseClustering   (j.value("clustering",   json::object()));
     cfg.simulate      = _parseSimulate     (j.value("simulate",     json::object()));
+    cfg.evt           = _parseEvt          (j.value("evt",          json::object()));
 
     return cfg;
 }
@@ -1668,6 +1669,129 @@ SimulateConfig ConfigLoader::_parseSimulate(const nlohmann::json& j)
 
         if (cfg.injectShifts.nShifts < 0)
             throw ConfigException("ConfigLoader: simulate.inject_shifts.n_shifts must be >= 0.");
+    }
+
+    return cfg;
+}
+
+// -----------------------------------------------------------------------------
+//  Private: _parseEvt
+// -----------------------------------------------------------------------------
+
+EvtConfig ConfigLoader::_parseEvt(const nlohmann::json& j)
+{
+    EvtConfig cfg;
+
+    cfg.method            = getOrDefault<std::string>(j, "method",             "pot",    false);
+    cfg.timeUnit          = getOrDefault<std::string>(j, "time_unit",          "hours",  false);
+    cfg.confidenceLevel   = getOrDefault<double>     (j, "confidence_level",   0.95,     false);
+    cfg.significanceLevel = getOrDefault<double>     (j, "significance_level", 0.05,     false);
+    cfg.gapFillStrategy   = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear", false);
+    cfg.gapFillMaxLength  = getOrDefault<int>        (j, "gap_fill_max_length",0,        false);
+
+    if (j.contains("return_periods"))
+        cfg.returnPeriods = j.at("return_periods").get<std::vector<double>>();
+
+    if (cfg.method != "pot" && cfg.method != "block_maxima" && cfg.method != "both") {
+        throw ConfigException(
+            "ConfigLoader: evt.method '" + cfg.method
+            + "' not recognised. Valid: pot, block_maxima, both.");
+    }
+    if (cfg.timeUnit != "seconds" && cfg.timeUnit != "minutes"
+        && cfg.timeUnit != "hours" && cfg.timeUnit != "days"
+        && cfg.timeUnit != "years")
+    {
+        throw ConfigException(
+            "ConfigLoader: evt.time_unit '" + cfg.timeUnit
+            + "' not recognised. Valid: seconds, minutes, hours, days, years.");
+    }
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: evt.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
+    }
+    if (cfg.returnPeriods.empty()) {
+        throw ConfigException(
+            "ConfigLoader: evt.return_periods must not be empty.");
+    }
+
+    // ---- deseasonalization sub-section --------------------------------------
+    if (j.contains("deseasonalization")) {
+        const auto& ds = j.at("deseasonalization");
+        cfg.deseasonalization.enabled            = getOrDefault<bool>       (ds, "enabled",               false,         false);
+        cfg.deseasonalization.strategy           = getOrDefault<std::string>(ds, "strategy",              "median_year", false);
+        cfg.deseasonalization.maWindowSize       = getOrDefault<int>        (ds, "ma_window_size",        1461,          false);
+        cfg.deseasonalization.medianYearMinYears = getOrDefault<int>        (ds, "median_year_min_years", 5,             false);
+
+        if (cfg.deseasonalization.strategy != "none"
+            && cfg.deseasonalization.strategy != "moving_average"
+            && cfg.deseasonalization.strategy != "median_year")
+        {
+            throw ConfigException(
+                "ConfigLoader: evt.deseasonalization.strategy '"
+                + cfg.deseasonalization.strategy
+                + "' not recognised. Valid: none, moving_average, median_year.");
+        }
+        if (cfg.deseasonalization.maWindowSize < 3) {
+            throw ConfigException(
+                "ConfigLoader: evt.deseasonalization.ma_window_size must be >= 3, got "
+                + std::to_string(cfg.deseasonalization.maWindowSize) + ".");
+        }
+        if (cfg.deseasonalization.medianYearMinYears < 1) {
+            throw ConfigException(
+                "ConfigLoader: evt.deseasonalization.median_year_min_years must be >= 1, got "
+                + std::to_string(cfg.deseasonalization.medianYearMinYears) + ".");
+        }
+    }
+
+    // ---- threshold sub-section ----------------------------------------------
+    if (j.contains("threshold")) {
+        const auto& t = j.at("threshold");
+        cfg.threshold.autoSelect     = getOrDefault<bool>       (t, "auto",            true,          false);
+        cfg.threshold.method         = getOrDefault<std::string>(t, "method",          "mean_excess", false);
+        cfg.threshold.value          = getOrDefault<double>     (t, "value",           0.0,           false);
+        cfg.threshold.minExceedances = getOrDefault<int>        (t, "min_exceedances", 30,            false);
+        cfg.threshold.nCandidates    = getOrDefault<int>        (t, "n_candidates",    50,            false);
+
+        if (cfg.threshold.minExceedances < 5) {
+            throw ConfigException(
+                "ConfigLoader: evt.threshold.min_exceedances must be >= 5, got "
+                + std::to_string(cfg.threshold.minExceedances) + ".");
+        }
+    }
+
+    // ---- ci sub-section -----------------------------------------------------
+    if (j.contains("ci")) {
+        const auto& c = j.at("ci");
+        cfg.ci.enabled                 = getOrDefault<bool>       (c, "enabled",                   true,                 false);
+        cfg.ci.method                  = getOrDefault<std::string>(c, "method",                    "profile_likelihood", false);
+        cfg.ci.nBootstrap              = getOrDefault<int>        (c, "n_bootstrap",               1000,                 false);
+        cfg.ci.maxExceedancesBootstrap = getOrDefault<int>        (c, "max_exceedances_bootstrap", 10000,                false);
+
+        if (cfg.ci.method != "profile_likelihood"
+            && cfg.ci.method != "delta"
+            && cfg.ci.method != "bootstrap")
+        {
+            throw ConfigException(
+                "ConfigLoader: evt.ci.method '" + cfg.ci.method
+                + "' not recognised. Valid: profile_likelihood, delta, bootstrap.");
+        }
+        if (cfg.ci.nBootstrap < 1) {
+            throw ConfigException(
+                "ConfigLoader: evt.ci.n_bootstrap must be >= 1, got "
+                + std::to_string(cfg.ci.nBootstrap) + ".");
+        }
+    }
+
+    // ---- block_maxima sub-section -------------------------------------------
+    if (j.contains("block_maxima")) {
+        const auto& bm = j.at("block_maxima");
+        cfg.blockMaxima.blockSize = getOrDefault<int>(bm, "block_size", 1461, false);
+        if (cfg.blockMaxima.blockSize < 2) {
+            throw ConfigException(
+                "ConfigLoader: evt.block_maxima.block_size must be >= 2, got "
+                + std::to_string(cfg.blockMaxima.blockSize) + ".");
+        }
     }
 
     return cfg;

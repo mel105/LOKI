@@ -25,6 +25,7 @@
 #   qc               apps/loki_qc/loki_qc.exe
 #   clustering       apps/loki_clustering/loki_clustering.exe
 #   simulate         apps/loki_simulate/loki_simulate.exe
+#   evt              apps/loki_evt/loki_evt.exe
 #   demo_sampling    tests/demo/demo_sampling.exe
 #   demo_bootstrap   tests/demo/demo_bootstrap.exe
 #   demo_permutation tests/demo/demo_permutation.exe
@@ -94,9 +95,11 @@ declare -A APP_EXE=(
     [qc]="apps/loki_qc/loki_qc.exe"
     [clustering]="apps/loki_clustering/loki_clustering.exe"
     [simulate]="apps/loki_simulate/loki_simulate.exe"
+    [evt]="apps/loki_evt/loki_evt.exe"
     [demo_sampling]="tests/demo/demo_sampling.exe"
     [demo_bootstrap]="tests/demo/demo_bootstrap.exe"
     [demo_permutation]="tests/demo/demo_permutation.exe"
+    
 )
 declare -A APP_CONFIG=(
     [loki]="config/loki_homogeneity.json"
@@ -113,6 +116,7 @@ declare -A APP_CONFIG=(
     [qc]="config/qc.json"
     [clustering]="config/clustering.json"
     [simulate]="config/simulate.json"
+    [evt]="config/evt.json"
     [demo_sampling]=""
     [demo_bootstrap]=""
     [demo_permutation]=""
@@ -143,7 +147,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|simulate|all|demo_sampling|demo_bootstrap|demo_permutation)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|simulate|evt|all|demo_sampling|demo_bootstrap|demo_permutation)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;

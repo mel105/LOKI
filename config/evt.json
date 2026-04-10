@@ -1,0 +1,63 @@
+{
+    "workspace": "C:/Users/eliasmichal/Dokumenty/Osobne",
+
+    "input": {
+        "mode": "single_file",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_second",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2],
+        "merge_strategy": "separate"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "evt": {
+        "method": "pot",
+        "time_unit": "hours",
+        "return_periods": [1000, 10000, 100000],
+        "confidence_level": 0.95,
+        "significance_level": 0.05,
+        "gap_fill_strategy": "linear",
+        "gap_fill_max_length": 0,
+
+        "deseasonalization": {
+            "enabled": true,
+            "strategy": "moving_average",
+            "ma_window_size": 10,
+            "median_year_min_years": 5
+        },
+
+        "threshold": {
+            "auto": true,
+            "method": "mean_excess",
+            "value": 180.0,
+            "min_exceedances": 30,
+            "n_candidates": 50
+        },
+
+        "ci": {
+            "enabled": true,
+            "method": "profile_likelihood",
+            "n_bootstrap": 1000,
+            "max_exceedances_bootstrap": 10000
+        },
+
+        "block_maxima": {
+            "block_size": 1461
+        }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "evt_mean_excess": true,
+        "evt_stability": true,
+        "evt_return_levels": true,
+        "evt_exceedances": true,
+        "evt_gpd_fit": true
+    }
+}

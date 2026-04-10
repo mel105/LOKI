@@ -28,6 +28,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 15. [loki_qc](#15-loki_qc)
 16. [loki_clustering](#16-loki_clustering)
 17. [loki_simulate](#17-loki_simulate)
+18. [loki_evt](#18-loki_evt)
 
 ---
 
@@ -4544,4 +4545,479 @@ Understand how much a Kalman model varies across realizations?
     "simulate_bootstrap_dist": true,
     "simulate_acf_comparison": true
 }
+```
+
+## 18. loki_evt
+
+**Program:** `loki_evt.exe`
+**Default config:** `config/evt.json`
+
+Performs Extreme Value Theory (EVT) analysis on a time series to estimate
+return levels and exceedance probabilities for rare events. Two methods are
+available: Peaks-Over-Threshold / GPD (primary) and Block Maxima / GEV
+(secondary). Designed for SIL safety analysis, climatological extremes,
+and sensor anomaly characterisation.
+
+The pipeline runs the following steps in order:
+
+```
+1. GapFiller                  -- fill NaN / missing values
+2. Deseasonalizer             -- subtract seasonal component (optional)
+3. ThresholdSelector          -- auto or manual threshold selection (POT only)
+4. Gpd::fit / Gev::fit        -- MLE via Nelder-Mead (PWM fallback for n < 50)
+5. Return level computation   -- point estimates with CI (profile likelihood /
+                                 bootstrap / delta method)
+6. Goodness-of-fit tests      -- Anderson-Darling, Kolmogorov-Smirnov
+7. CSV export                 -- return_period ; estimate ; lower_ci ; upper_ci
+8. Protocol                   -- OUTPUT/PROTOCOLS/evt_[dataset]_[component]_protocol.txt
+9. Plots                      -- mean excess, stability, return levels, exceedances, GPD Q-Q
+```
+
+The section key in the JSON file is `"evt"`.
+
+---
+
+### 18.1 evt.method / time_unit / return_periods
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | string | `pot` | Analysis method. `"pot"`, `"block_maxima"`, or `"both"`. |
+| `time_unit` | string | `hours` | Time unit for lambda (exceedance rate) and return periods. See options below. |
+| `return_periods` | float[] | `[10, 100, 1000, 1e6, 1e8]` | Return periods to estimate, expressed in `time_unit` units. Must be non-empty. |
+| `confidence_level` | float | `0.95` | Confidence level for CI on return levels. Must be in (0, 1). |
+| `significance_level` | float | `0.05` | Alpha for GoF test rejection decisions. |
+| `gap_fill_strategy` | string | `linear` | Gap fill strategy before analysis. `"linear"`, `"median_year"`, `"spline"`, `"none"`. |
+| `gap_fill_max_length` | int | `0` | Maximum consecutive gap samples to fill. `0` = no limit. |
+
+### method options
+
+| Value | Description | When to use |
+|---|---|---|
+| `pot` | Peaks-Over-Threshold: fit GPD to exceedances above a threshold. Uses all exceedances -- more data-efficient than block maxima. | **Recommended for all data types.** Especially for sensor data where annual blocks are physically meaningless. |
+| `block_maxima` | Block Maxima: divide series into blocks, extract per-block maxima, fit GEV. | Climatological data only, where annual blocks (e.g. 1461 samples at 6h) correspond to natural extreme periods. |
+| `both` | Run both methods. Produces two independent result sets and two protocol entries. | Comparing methods on climatological data. |
+
+> **Method selection guidance**:
+> - For **train/vehicle sensor data**: always use `"pot"`. Block maxima waste
+>   data (only one maximum per block) and blocks have no physical meaning for
+>   short measurement campaigns.
+> - For **climatological IWV / troposfera**: `"pot"` is preferred. `"block_maxima"`
+>   may also be used for annual extreme analysis when the series spans at least
+>   5-10 years (at least 5 annual maxima are needed for reliable GEV fitting).
+> - For **GNSS coordinates**: use `"pot"` on residuals after deseasonalization
+>   and detrending.
+
+### time_unit options
+
+| Value | Description |
+|---|---|
+| `seconds` | Exceedance rate and return periods in seconds. |
+| `minutes` | Exceedance rate and return periods in minutes. |
+| `hours` | Exceedance rate and return periods in hours. **Recommended for SIL 4.** |
+| `days` | Exceedance rate and return periods in days. |
+| `years` | Exceedance rate and return periods in years. Convenient for climatological return levels. |
+
+> **`time_unit` and input sampling rate**: the input series can be at any
+> sampling rate regardless of `time_unit`. The median time step `dt` is
+> estimated automatically from the series in hours, then converted to the
+> configured `time_unit`. Lambda (exceedances per time_unit) is then computed
+> as `n_exceedances / (n_obs * dt_in_time_unit)`.
+>
+> For **SIL 4** applications: use `time_unit = "hours"` with
+> `return_periods = [1e8]`. A return period of 1e8 hours corresponds to a
+> failure probability of 1e-8 per hour, the SIL 4 threshold.
+> Input data at 1 Hz (dt = 1/3600 h) is handled correctly.
+
+> **Return period vs exceedance probability**: T years (or T hours etc.) return
+> period corresponds to an annual (or hourly) exceedance probability of 1/T.
+> The return level z_T satisfies P(X > z_T) = 1/T per time_unit.
+
+---
+
+### 18.2 evt.deseasonalization
+
+Subtracts a seasonal component before EVT analysis. When enabled, the return
+levels are expressed in units of **residuals** (deviations from the seasonal
+mean), not in original series units. This is noted explicitly in the protocol.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable deseasonalization before EVT. |
+| `strategy` | string | `median_year` | Deseasonalization method. `"none"`, `"moving_average"`, `"median_year"`. |
+| `ma_window_size` | int | `1461` | MA window in samples for `moving_average`. For 6-hourly data: 1461 = 1 year. |
+| `median_year_min_years` | int | `5` | Minimum years per slot for `median_year`. Slots with fewer years return NaN. |
+
+### strategy options
+
+| Value | Best for |
+|---|---|
+| `median_year` | Climatological and GNSS data with a clear annual cycle. Requires >= 5 years and step >= 1 hour. |
+| `moving_average` | Sensor or signal data without a strict annual period. No minimum span required. |
+| `none` | Pre-computed residuals, or series without a periodic component. |
+
+> **When to enable deseasonalization**:
+> - **Climatological IWV**: enable with `median_year`. Without it, exceedances
+>   include seasonally elevated values (summer IWV peaks) which are not true
+>   extreme events -- just the seasonal maximum.
+> - **Train velocity**: consider `moving_average` if a systematic speed profile
+>   (acceleration / cruising / deceleration) is present. However, if the goal
+>   is to characterise absolute velocity extremes, leave disabled.
+> - **Already-detrended residuals**: set `strategy: "none"` or `enabled: false`.
+
+> **Return level interpretation with deseasonalization enabled**:
+> A return level of 0.5 m in the IWV residuals means an anomaly 0.5 m
+> above the seasonal median occurs once per T time_units. To obtain the
+> absolute IWV level, add the seasonal median for the relevant time of year.
+> The protocol contains a note reminding the user of this interpretation.
+
+---
+
+### 18.3 evt.threshold
+
+Controls threshold selection for the POT method. Ignored when `method = "block_maxima"`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `auto` | bool | `true` | If `true`, use mean excess elbow detection to select the threshold automatically. |
+| `method` | string | `mean_excess` | Auto-selection method. Only `"mean_excess"` is currently implemented. |
+| `value` | float | `0.0` | Manual threshold value. Used only when `auto = false`. |
+| `min_exceedances` | int | `30` | Minimum required exceedances above the threshold. Must be >= 5. Enforced in both auto and manual modes. |
+| `n_candidates` | int | `50` | Number of candidate thresholds evaluated in auto mode. Range spans from the median to the quantile leaving `min_exceedances` above it. |
+
+> **Threshold selection guidance**: the threshold u should be chosen in the
+> region where the GPD approximation is valid -- above u, the conditional
+> distribution of excesses should be approximately GPD. The diagnostics are:
+>
+> - **Mean excess plot**: E[X - u | X > u] should be approximately linear
+>   above the chosen threshold (linear mean excess = GPD with constant xi).
+>   The auto elbow detector finds the start of the linear region.
+> - **Stability plot**: xi and sigma should be approximately constant
+>   (stable) above the chosen threshold.
+>
+> **Common mistake**: choosing a threshold that is too high, leaving fewer
+> than 30 exceedances. With n < 50, the implementation falls back from MLE
+> to Probability-Weighted Moments (PWM), which is less accurate. This is
+> reported in the protocol as `Converged: no (PWM fallback)`.
+
+> **Manual threshold workflow**: run once with `auto = true` to generate
+> the mean excess and stability plots. Visually identify the region where
+> the mean excess plot is linear and the stability plot is flat. Set
+> `auto = false` and `value` to a threshold in that region, then re-run.
+
+> **Auto threshold limitation**: the elbow detector uses the maximum second
+> difference of the mean excess curve. For short series (n < 500) or
+> series with irregular structure, the auto-selected threshold may not be
+> physically optimal. Always visually inspect the mean excess plot.
+
+---
+
+### 18.4 evt.ci
+
+Controls confidence interval computation for return level estimates.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Compute confidence intervals for return levels. |
+| `method` | string | `profile_likelihood` | CI method. See options below. |
+| `n_bootstrap` | int | `1000` | Number of bootstrap replicas. Used only when `method = "bootstrap"`. |
+| `max_exceedances_bootstrap` | int | `10000` | Maximum exceedances used in bootstrap resampling. For large n, a random subsample of this size is drawn before resampling. |
+
+### CI method options
+
+| Value | Description | When to use |
+|---|---|---|
+| `profile_likelihood` | Profile log-likelihood CI. For each return level, the profile logLik is maximised numerically. CI bounds found via Brent root finding where logLik drops by chi2(0.95)/2 = 1.92. | **Mandatory for large T (SIL 4).** Asymmetric, correct for heavy tails. |
+| `bootstrap` | Parametric bootstrap: resample exceedances, refit GPD, percentile CI. Subsampled to `max_exceedances_bootstrap` if n is large. | Large n with fast computation required, or moderate T (< 1e6). |
+| `delta` | Delta method: linearisation via numerical gradient. Symmetric CI. | Quick exploration only. Unreliable for T > 1e4 and xi != 0. Do not use for SIL 4. |
+
+> **Why `profile_likelihood` is required for SIL 4**: the delta method
+> assumes a symmetric, approximately normal distribution of the return level
+> estimator. For T = 1e8 and xi > 0 (heavy-tailed distribution), the
+> estimator is highly skewed -- the upper CI bound can be orders of magnitude
+> larger than the lower bound. Profile likelihood correctly captures this
+> asymmetry. The delta method may underestimate the upper bound by 10x or more
+> for SIL 4 return periods.
+
+> **Bootstrap CI with large n**: for series with tens of thousands of
+> exceedances (e.g. low threshold on long climatological data), the bootstrap
+> resamples from a random subsample of `max_exceedances_bootstrap` observations.
+> This preserves CI quality while keeping computation time bounded. The
+> subsampling is logged at INFO level.
+
+> **Profile likelihood convergence**: for each return period T, the profile
+> CI requires a 1D optimisation plus Brent root finding. If the search
+> interval is too narrow (return level far from the point estimate), the CI
+> bounds may fall back to the point estimate with a LOKI_WARNING. In this
+> case, the CI bounds in the protocol will equal the estimate. This is most
+> likely for extreme T values (1e8) with xi near 0 (exponential tail) where
+> the curve is very flat.
+
+---
+
+### 18.5 evt.block_maxima
+
+Controls block extraction for the Block Maxima / GEV method.
+Ignored when `method = "pot"`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `block_size` | int | `1461` | Number of samples per block. Must be >= 2. |
+
+> **Block size selection**: the block should correspond to a natural extreme
+> period. For 6-hourly climatological data: `block_size = 1461` (1 year =
+> 4 * 365.25 samples). For daily data: `block_size = 365`. For monthly data:
+> `block_size = 12`.
+>
+> A minimum of 3 blocks is required (DataException if fewer). For reliable
+> GEV fitting, at least 10-20 annual maxima (10-20 years of data) are
+> recommended.
+
+> **GEV fit fallback**: unlike GPD (which has a PWM fallback for n < 50),
+> GEV always uses MLE via Nelder-Mead. If fewer than 3 block maxima are
+> available, a DataException is thrown. With 3-10 maxima the fit may be
+> unreliable -- check the GoF p-values.
+
+> **Block size and `time_unit`**: for block maxima, the return period T is
+> expressed in blocks of length `block_size`. If `time_unit = "years"` and
+> `block_size = 1461` (6h data), then T = 100 means 100 blocks = 100 annual
+> maxima = 100 years. Ensure `time_unit` and `block_size` are consistent.
+
+---
+
+### 18.6 Goodness of fit
+
+Two GoF tests are run automatically for every fit. Results are reported in
+the protocol.
+
+| Test | Statistic | H0 | Interpretation |
+|---|---|---|---|
+| Anderson-Darling | A^2 | Data follows fitted GPD/GEV | A^2 large / p < alpha: fit rejected |
+| Kolmogorov-Smirnov | D | Data follows fitted GPD/GEV | D large / p < alpha: fit rejected |
+
+> **Expected behaviour**: for GPD with xi near 0 and n >= 100, AD p > 0.05
+> indicates an acceptable fit. For heavy-tailed fits (xi > 0.5) or very
+> small n (< 50, PWM path), GoF p-values are often low even for correctly
+> generated data -- do not interpret this as evidence of a bad model.
+
+> **GoF with deseasonalized residuals**: after subtraction of the median-year
+> profile, residuals have approximately zero mean. The GPD is fit to
+> exceedances above the threshold -- positive residuals exceeding u. If the
+> deseasonalized residuals have a nearly symmetric distribution, approximately
+> half the data contributes to exceedances and the fit is well-conditioned.
+
+---
+
+### 18.7 GPD shape parameter interpretation
+
+| xi value | Distribution family | Physical interpretation |
+|---|---|---|
+| xi > 0 | Frechet (heavy tail) | Unbounded exceedances; return levels grow as T^xi. Typical for atmospheric extremes. |
+| xi = 0 | Gumbel limit (exponential tail) | Exceedances decay exponentially. Typical for deseasonalized residuals near zero. |
+| xi < 0 | Weibull (bounded upper tail) | Physical maximum exists: max value = threshold + sigma / (-xi). Typical for velocities with a hard upper bound. |
+| xi < -0.5 | Outside MLE constraint | Not physically meaningful for GPD. The constraint xi > -0.5 is enforced during fitting (barrier penalty). |
+
+> **xi > 0.5 warning**: large positive xi produces very heavy tails and
+> extremely wide CI for large T. This is often a symptom of a threshold that
+> is too high (too few exceedances, PWM fallback) or a genuinely heavy-tailed
+> process. Check the stability plot -- xi should be stable across a range of
+> thresholds if the GPD approximation is valid.
+
+---
+
+### 18.8 Plots (EVT pipeline)
+
+EVT plot flags are set directly under `"plots"` (same convention as kalman,
+spectral, and clustering modules).
+
+| Flag | Default | Description |
+|---|---|---|
+| `evt_mean_excess` | `true` | Mean excess E[X-u \| X>u] vs threshold u. Red dashed line = selected threshold. Linear region indicates valid GPD approximation. POT only. |
+| `evt_stability` | `true` | Two-panel plot: xi (shape) and sigma (scale) stability vs threshold u. Parameters should be approximately constant in the valid GPD region. POT only. |
+| `evt_return_levels` | `true` | Return level estimate (solid blue) + CI bounds (dashed) on log T axis. CI bounds reflect the chosen CI method. |
+| `evt_exceedances` | `true` | Empirical CDF of exceedances (blue dots) vs fitted GPD CDF (red curve). Good fit = dots close to curve. POT only. |
+| `evt_gpd_fit` | `true` | GPD Q-Q plot: theoretical GPD quantiles vs empirical quantiles. Points on the dashed reference line indicate a good fit. POT only. |
+
+> **Reading the mean excess plot**: the x-axis is the threshold u; the y-axis
+> is the mean excess (average of values above u, minus u). If the GPD
+> approximation is valid, the mean excess should be linear in u above the
+> true threshold. The selected threshold (red dashed line) should be near the
+> start of the linear region, not in the noisy far-right tail.
+
+> **Reading the stability plot**: above the valid threshold, xi should be
+> approximately constant (flat) as u increases. A jump in xi (as observed
+> when too few points remain above u) indicates that the auto threshold was
+> placed too high. A continuously changing xi indicates the GPD approximation
+> may not hold -- consider a higher threshold or a different model.
+
+> **Reading the return level plot**: for xi > 0, the curve grows as a power
+> law T^xi; for xi = 0, logarithmically; for xi < 0, it approaches a
+> finite asymptote. The CI width grows with T -- for SIL 4 (T = 1e8) the
+> CI may span several orders of magnitude, which is correct and reflects the
+> uncertainty inherent in extreme extrapolation.
+
+> **Reading the GPD Q-Q plot**: the x-axis is the theoretical quantile
+> from the fitted GPD; the y-axis is the empirical quantile (sorted
+> exceedances). Points close to the dashed y=x line indicate a good fit.
+> Systematic curvature above the line indicates the empirical tail is heavier
+> than GPD (xi may be underestimated). Points clustering near (0,0) indicate
+> many small exceedances -- the threshold may be too low.
+
+---
+
+### 18.9 CSV output
+
+Written to `<workspace>/OUTPUT/CSV/`.
+Filename: `evt_[dataset]_[component]_return_levels.csv`
+
+```
+return_period ; estimate ; lower_ci ; upper_ci
+```
+
+| Column | Description |
+|---|---|
+| `return_period` | Return period in `time_unit` units |
+| `estimate` | Point estimate of the return level |
+| `lower_ci` | Lower CI bound at `confidence_level` |
+| `upper_ci` | Upper CI bound at `confidence_level` |
+
+> When `ci.enabled = false`, `lower_ci` and `upper_ci` equal `estimate`.
+
+---
+
+### 18.10 Protocol output
+
+Written to `<workspace>/OUTPUT/PROTOCOLS/`.
+Filename: `evt_[dataset]_[component]_protocol.txt`
+
+Sections:
+- **Header**: dataset, component, method.
+- **Deseasonalization note** (if enabled): strategy and reminder that return
+  levels are in residual units.
+- **GPD Fit** (POT) or **GEV Fit** (block maxima): threshold, n exceedances
+  or n blocks, lambda, xi, sigma (+ mu for GEV), log-likelihood, convergence.
+- **Goodness of Fit**: AD and KS statistics and p-values.
+- **Return Levels**: table of return period, estimate, lower CI, upper CI.
+
+---
+
+### 18.11 Recommended configurations
+
+**Climatological IWV -- standard analysis (6h data, median-year deseasonalization):**
+```json
+"evt": {
+    "method": "pot",
+    "time_unit": "hours",
+    "return_periods": [10, 100, 1000, 10000, 100000],
+    "gap_fill_strategy": "linear",
+    "deseasonalization": {
+        "enabled": true,
+        "strategy": "median_year",
+        "ma_window_size": 1461,
+        "median_year_min_years": 5
+    },
+    "threshold": { "auto": true, "min_exceedances": 50, "n_candidates": 60 },
+    "ci": { "enabled": true, "method": "profile_likelihood" }
+}
+```
+
+**Train velocity -- SIL 4 analysis (1 Hz, absolute values, POT):**
+```json
+"evt": {
+    "method": "pot",
+    "time_unit": "hours",
+    "return_periods": [1000, 1000000, 100000000],
+    "gap_fill_strategy": "linear",
+    "deseasonalization": { "enabled": false },
+    "threshold": {
+        "auto": false,
+        "value": 25.0,
+        "min_exceedances": 30
+    },
+    "ci": {
+        "enabled": true,
+        "method": "profile_likelihood"
+    }
+}
+```
+
+**Climatological -- POT vs Block Maxima comparison:**
+```json
+"evt": {
+    "method": "both",
+    "time_unit": "years",
+    "return_periods": [10, 100, 1000],
+    "deseasonalization": {
+        "enabled": true,
+        "strategy": "median_year",
+        "ma_window_size": 1461
+    },
+    "threshold": { "auto": true, "min_exceedances": 40 },
+    "ci": { "method": "bootstrap", "n_bootstrap": 500 },
+    "block_maxima": { "block_size": 1461 }
+}
+```
+
+**Exploratory -- fast bootstrap CI:**
+```json
+"evt": {
+    "method": "pot",
+    "time_unit": "hours",
+    "return_periods": [100, 1000, 10000],
+    "threshold": { "auto": true, "min_exceedances": 30 },
+    "ci": {
+        "method": "bootstrap",
+        "n_bootstrap": 200,
+        "max_exceedances_bootstrap": 5000
+    }
+}
+```
+
+---
+
+### 18.12 Common issues and remedies
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Converged: no (PWM fallback)` | Fewer than 50 exceedances above threshold | Lower threshold or reduce `min_exceedances` |
+| xi > 2, return levels astronomically large | Threshold too high, too few exceedances, unstable MLE | Lower threshold; inspect stability plot |
+| AD p = 0 (GoF failure) | GPD fit poor; threshold in unstable region | Move threshold to flatter region of stability plot |
+| Profile likelihood CI equals estimate | Brent search failed; logLik curve too flat | Expected for xi near 0 and large T; use bootstrap CI instead |
+| `all analysis methods failed` | DataException from ThresholdSelector | Set threshold manually or increase series length |
+| Return level plot upper CI diverges | xi > 0, large T extrapolation | Correct behaviour; reduce return periods or use bootstrap CI |
+| Stability plot: xi jumps above u = X | Too few exceedances at high thresholds | Normal; ignore the unstable region above the elbow |
+| CLIM data: exceedances are seasonal peaks | Deseasonalization not enabled | Enable `deseasonalization` with `strategy: median_year` |
+
+---
+
+### 18.13 Method selection guide
+
+```
+Data type?
+  Climatological (IWV, temperature, pressure) -- long series (>= 5 years, 6h):
+    --> method: pot, time_unit: hours or years
+    --> deseasonalization: enabled, strategy: median_year
+    --> return_periods: physical extremes (years to centuries)
+    --> ci: profile_likelihood
+
+  Train / vehicle sensor (velocity, acceleration) -- short campaign (minutes to hours):
+    --> method: pot, time_unit: hours
+    --> deseasonalization: disabled (or moving_average if systematic profile present)
+    --> return_periods: SIL-relevant (1e6 to 1e8 hours)
+    --> ci: profile_likelihood (required for SIL 4)
+    --> NOTE: n_obs typically too small for reliable SIL 4 extrapolation;
+        interpret CI bounds as very conservative
+
+  GNSS coordinates / velocities -- medium series (1-5 years):
+    --> method: pot, time_unit: hours or days
+    --> deseasonalization: enabled if annual signal present
+    --> return_periods: mission-relevant extremes
+
+Do I know a good threshold?
+  YES --> threshold: { "auto": false, "value": X }
+  NO  --> threshold: { "auto": true }  (then inspect mean excess plot)
+
+Which CI method?
+  SIL 4 (T >= 1e8) or xi != 0  --> profile_likelihood (mandatory)
+  Fast exploration               --> bootstrap with n_bootstrap = 200
+  Quick symmetric estimate       --> delta (unreliable for T > 1e4)
 ```

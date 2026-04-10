@@ -453,6 +453,13 @@ struct PlotConfig {
     bool simulateEnvelope      {true};
     bool simulateBootstrapDist {true};
     bool simulateAcfComparison {true};
+
+    // -- EVT pipeline plots ---------------------------------------------------
+    bool evtMeanExcess   {true};   ///< Mean excess plot with selected threshold.
+    bool evtStability    {true};   ///< xi and sigma stability vs threshold.
+    bool evtReturnLevels {true};   ///< Return level plot with CI band.
+    bool evtExceedances  {true};   ///< Empirical CDF of exceedances vs GPD fit.
+    bool evtGpdFit       {true};   ///< GPD Q-Q plot.
 };
 
 // -----------------------------------------------------------------------------
@@ -937,6 +944,74 @@ struct SimulateConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  EvtConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Deseasonalization settings for the EVT pipeline.
+ *
+ * When enabled, the seasonal component is subtracted before EVT analysis.
+ * Return levels are then in units of residuals (deviations from seasonal mean).
+ * strategy: "none" | "moving_average" | "median_year"
+ */
+struct EvtDeseasonalizationConfig {
+    bool        enabled            = false;
+    std::string strategy           = "median_year"; ///< "none" | "moving_average" | "median_year"
+    int         maWindowSize       = 1461;          ///< MA window in samples (moving_average only).
+    int         medianYearMinYears = 5;             ///< Min years for MedianYearSeries slot.
+};
+
+/**
+ * @brief Threshold selection settings for the EVT pipeline.
+ */
+struct EvtThresholdConfig {
+    bool        autoSelect     = true;
+    std::string method         = "mean_excess"; ///< "mean_excess" | "manual"
+    double      value          = 0.0;           ///< Manual threshold value.
+    int         minExceedances = 30;            ///< Min exceedances per candidate.
+    int         nCandidates    = 50;            ///< Grid size for auto selection.
+};
+ 
+/**
+ * @brief Confidence interval settings for the EVT pipeline.
+ */
+struct EvtCiConfig {
+    bool        enabled                 = true;
+    std::string method                  = "profile_likelihood";
+    ///< "profile_likelihood" | "delta" | "bootstrap"
+    int         nBootstrap              = 1000;
+    int         maxExceedancesBootstrap = 10000; ///< Subsample limit for bootstrap CI.
+};
+ 
+/**
+ * @brief Block maxima settings for the EVT pipeline.
+ */
+struct EvtBlockMaximaConfig {
+    int blockSize = 1461; ///< Samples per block (1461 = 1 year at 6-hour resolution).
+};
+ 
+// EvtThresholdConfig, EvtCiConfig, EvtBlockMaximaConfig defined above (GCC 13 pattern).
+ 
+/**
+ * @brief Top-level configuration for the loki_evt pipeline.
+ */
+struct EvtConfig {
+    std::string          method            = "pot";
+    ///< "pot" | "block_maxima" | "both"
+    std::string          timeUnit          = "hours";
+    ///< "seconds" | "minutes" | "hours" | "days" | "years"
+    std::vector<double>  returnPeriods     = {10.0, 100.0, 1000.0, 1.0e6, 1.0e8};
+    double               confidenceLevel   = 0.95;
+    double               significanceLevel = 0.05;
+    std::string          gapFillStrategy   = "linear";
+    int                  gapFillMaxLength  = 0;
+    EvtThresholdConfig   threshold         {};
+    EvtCiConfig          ci                {};
+    EvtBlockMaximaConfig blockMaxima       {};
+    EvtDeseasonalizationConfig deseasonalization {};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -960,6 +1035,7 @@ struct AppConfig {
     QcConfig            qc;
     ClusteringConfig    clustering;
     SimulateConfig      simulate;
+    EvtConfig           evt;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
