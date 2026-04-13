@@ -25,7 +25,7 @@
 
     "kriging": {
         "mode": "temporal",
-        "method": "ordinary",
+        "method": "universal",
         "gap_fill_strategy": "linear",
         "gap_fill_max_length": 0,
         "known_mean": 0.0,
@@ -35,7 +35,7 @@
         "significance_level": 0.05,
 
         "variogram": {
-            "model": "spherical",
+            "model": "gaussian",
             "n_lag_bins": 20,
             "max_lag": 0.0,
             "nugget": 0.0,
@@ -44,9 +44,9 @@
         },
 
         "prediction": {
-            "enabled": false,
-            "horizon_days": 0.0,
-            "n_steps": 10,
+            "enabled": true,
+            "horizon_days": 0.00116,
+            "n_steps": 100,
             "target_mjd": []
         }
     }

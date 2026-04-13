@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
 add_library(loki_kriging STATIC
-    src/variogram.cpp
-    src/kriging.cpp
     src/krigingAnalyzer.cpp
     src/plotKriging.cpp
 )

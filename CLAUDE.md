@@ -174,6 +174,15 @@ All plot output files follow this naming convention:
 - **gnuplot `-persist` flag is REMOVED** from `gnuplot.cpp`. The constructor now calls
   `gnuplot` without `-persist`. This eliminates zombie gnuplot processes on Windows that
   cause race conditions with tmp files in subsequent runs.
+- **CRITICAL -- multiplot and inline data**: `plot '-'` inside `set multiplot` is NOT
+  supported by gnuplot and generates warnings. Always use datablocks (`$name << EOD`)
+  defined BEFORE the `set multiplot` command. Pattern:
+  ```
+  gp("$data << EOD");
+  gp(dataString + "EOD");
+  gp("set multiplot ...");
+  gp("plot $data using 1:2 ...");
+  ```
 
 ---
 
@@ -214,10 +223,17 @@ loki_simulate         (depends on loki_core + loki_arima +
 
 loki_evt              (depends on loki_core only)                   <- COMPLETE
 
-loki_kriging          (depends on loki_core only)                   <- PLANNED
+loki_kriging          (depends on loki_core only)                   <- COMPLETE
 
-loki_spline           (depends on loki_core only)                   <- PLANNED
+loki_spline           (depends on loki_core only)                   <- NEXT
 ```
+
+### Architecture principle -- math primitives in loki_core
+Starting from loki_kriging, all reusable math primitives go into
+`loki_core/math/` (flat, no sub-directories). Module libraries (loki_kriging,
+loki_spline, etc.) are thin orchestrators: pipeline, protocol, CSV, plots.
+This enables future spatial/space-time extensions to reuse the same math
+without cross-module dependencies.
 
 ### Rules
 - Every module is a separate CMake library with its own `include/` and `src/` tree.
@@ -251,8 +267,8 @@ loki/
 |   +-- loki_clustering/
 |   +-- loki_simulate/
 |   +-- loki_evt/                    <- COMPLETE
-|   +-- loki_kriging/                <- PLANNED
-|   +-- loki_spline/                 <- PLANNED
+|   +-- loki_kriging/                <- COMPLETE
+|   +-- loki_spline/                 <- NEXT
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
@@ -263,7 +279,10 @@ loki/
 |   |       |                  wCorrelation, sampling, bootstrap, permutation)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
-|   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead)
+|   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead,
+|   |                          krigingTypes, krigingVariogram, krigingBase,
+|   |                          simpleKriging, ordinaryKriging, universalKriging,
+|   |                          krigingFactory)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -278,8 +297,8 @@ loki/
 |   +-- loki_clustering/
 |   +-- loki_simulate/
 |   +-- loki_evt/                    <- COMPLETE
-|   +-- loki_kriging/                <- PLANNED
-|   +-- loki_spline/                 <- PLANNED
+|   +-- loki_kriging/                <- COMPLETE
+|   +-- loki_spline/                 <- NEXT
 +-- tests/
 |   +-- CMakeLists.txt
 |   +-- demo/
@@ -314,13 +333,13 @@ loki/
 ### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
 
 ```bash
-./scripts/loki.sh build evt --copy-dlls
-./scripts/loki.sh run evt
+./scripts/loki.sh build kriging --copy-dlls
+./scripts/loki.sh run kriging
 ./scripts/loki.sh test --rebuild
 ```
 
 ### CMake target name collision
-Executable: `loki_evt_app` with `OUTPUT_NAME "loki_evt"`.
+Executable: `loki_kriging_app` with `OUTPUT_NAME "loki_kriging"`.
 Same pattern for all apps: library target != executable target name.
 
 ### Runtime DLLs (Windows)
@@ -349,8 +368,8 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ["clustering"]="loki_clustering_app"
 ["simulate"]="loki_simulate_app"
 ["evt"]="loki_evt_app"              <- COMPLETE
-["kriging"]="loki_kriging_app"      <- PLANNED
-["spline"]="loki_spline_app"        <- PLANNED
+["kriging"]="loki_kriging_app"      <- COMPLETE
+["spline"]="loki_spline_app"        <- NEXT
 ```
 
 ---
@@ -380,11 +399,13 @@ target_include_directories(loki_core SYSTEM PUBLIC
                   `ClusteringOutlierConfig`,
                   `SplineFilterConfig`,
                   `EvtConfig` with `EvtThresholdConfig`, `EvtCiConfig`,
-                  `EvtBlockMaximaConfig`, `EvtDeseasonalizationConfig`
-- `configLoader.hpp / .cpp` -- vsetky parse metody vratane `_parseEvt`
+                  `EvtBlockMaximaConfig`, `EvtDeseasonalizationConfig`,
+                  `KrigingConfig` with `KrigingVariogramConfig`,
+                  `KrigingPredictionConfig`, `KrigingSpatialStation`
+- `configLoader.hpp / .cpp` -- all parse methods including `_parseKriging`
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
-- `gapFiller.hpp / .cpp` -- Strategy::SPLINE pridana
+- `gapFiller.hpp / .cpp` -- Strategy::SPLINE added
 - `deseasonalizer.hpp / .cpp`
 - `medianYearSeries.hpp / .cpp`
 - `descriptive.hpp / .cpp`
@@ -410,8 +431,16 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `lagMatrix.hpp / .cpp`
 - `embedMatrix.hpp / .cpp`
 - `randomizedSvd.hpp / .cpp`
-- `spline.hpp / .cpp`
-- `nelderMead.hpp / .cpp`         <- added for loki_evt (Nelder-Mead minimiser)
+- `spline.hpp / .cpp`              -- CubicSpline (natural/not-a-knot/clamped)
+- `nelderMead.hpp / .cpp`
+- `krigingTypes.hpp`               -- VariogramPoint, VariogramFitResult,
+                                      KrigingPrediction, CrossValidationResult
+- `krigingVariogram.hpp / .cpp`    -- empirical variogram + theoretical models + WLS fit
+- `krigingBase.hpp / .cpp`         -- KrigingBase + predictGrid + O(n^2) LOO crossValidate
+- `simpleKriging.hpp / .cpp`       -- SimpleKriging
+- `ordinaryKriging.hpp / .cpp`     -- OrdinaryKriging
+- `universalKriging.hpp / .cpp`    -- UniversalKriging
+- `krigingFactory.hpp`             -- createKriging() header-only factory
 
 ### loki_outlier -- complete (O1-O4)
 ### loki_homogeneity -- complete
@@ -426,30 +455,52 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ### loki_qc -- complete
 ### loki_clustering -- complete
 ### loki_simulate -- complete
-
 ### loki_evt -- complete
-- `evtResult.hpp`               -- GpdFitResult, GevFitResult, ReturnLevelCI, GoFResult, EvtResult
-- `gpd.hpp / .cpp`              -- GPD: cdf, quantile, logLik, fit (MLE+PWM fallback n<50)
-- `gev.hpp / .cpp`              -- GEV: cdf, quantile, logLik, fit (MLE)
-- `thresholdSelector.hpp / .cpp` -- mean excess elbow detection, manual threshold
-- `evtAnalyzer.hpp / .cpp`      -- orchestrator: run() pattern, gap fill, deseasonalization,
-                                    POT/block maxima dispatch, profile likelihood / bootstrap /
-                                    delta CI, AD+KS GoF, protocol, CSV
-- `plotEvt.hpp / .cpp`          -- mean_excess, stability, return_levels, exceedances, gpd_qq
+
+### loki_kriging -- COMPLETE
+**Architecture:** Math primitives in `loki_core/math/` (see above).
+`loki_kriging` is a thin orchestrator wrapping core math.
+
+**Files in `loki_kriging`:**
+- `krigingResult.hpp`       -- KrigingResult (top-level pipeline struct) +
+                               `using` aliases for loki::math types
+- `krigingAnalyzer.hpp/.cpp` -- orchestrator: gap fill, variogram, fit, predict,
+                                 LOO CV, protocol, CSV
+- `plotKriging.hpp/.cpp`    -- variogram, predictions+CI, crossval plots
 
 **Key implementation notes:**
-- Nelder-Mead (loki_core/math/nelderMead.hpp) used for GPD MLE and GEV MLE.
-  Do NOT use self-contained NM -- always use loki::math::nelderMead.
-- GPD MLE uses log-transform for sigma (sigma = exp(p[0])) and barrier penalty
-  for xi <= -0.5 constraint.
-- PWM fallback triggered when n_exceedances < 50. GpdFitResult::converged = false.
-- Profile likelihood CI: chi2(1, level)/2 drop threshold, Brent root finding.
-  If Brent search fails (flat logLik), CI bounds fall back to estimate with LOKI_WARNING.
-- Deseasonalization: uses loki::Deseasonalizer + loki::MedianYearSeries (same API
-  as loki_homogeneity). MedianYearSeries constructor: `MedianYearSeries(series, cfg)`
-  where cfg.minYears (NOT minYearsPerSlot). No separate build() call.
-- Return levels in residual units when deseasonalization enabled -- noted in protocol.
-- evtAnalyzer.hpp requires `<functional>` and `<loki/math/nelderMead.hpp>` includes.
+- Math namespace: `loki::math` (krigingVariogram, krigingBase etc.)
+- Kriging types namespace: `loki::math` (VariogramPoint, KrigingPrediction etc.)
+- `krigingResult.hpp` re-exports types via `using loki::math::XxxType`
+- Variance floor = nugget (not 0) -- measurement noise always present at obs points
+- LOO shortcut: O(n^2), uses cached K^{-1}; e_i = alpha_i / K^{-1}_{ii}
+- Predictions plot x-axis = sample index (not MJD) to avoid gnuplot float precision issues
+- Crossval top panel x-axis = sample index for the same reason
+- CI band: `filledcurves using 1:2:3` (index, ci_lower, ci_upper), pink `#ffb3c1`
+- Spatial/space-time mode: PLACEHOLDER, throws AlgorithmException if requested
+- Forecast beyond variogram range converges to mean -- physically correct, visually
+  surprising. Config docs note this explicitly.
+
+**KrigingConfig in config.hpp:**
+```cpp
+struct KrigingSpatialStation { std::string file; double x; double y; };
+struct KrigingVariogramConfig { model, nLagBins, maxLag, nugget, sill, range };
+struct KrigingPredictionConfig { enabled, targetMjd, horizonDays, nSteps };
+struct KrigingConfig {
+    mode, method, gapFillStrategy, gapFillMaxLength, knownMean, trendDegree,
+    crossValidate, confidenceLevel, significanceLevel,
+    KrigingVariogramConfig variogram,
+    KrigingPredictionConfig prediction,
+    vector<KrigingSpatialStation> stations  // spatial placeholder
+};
+```
+
+**PlotConfig flags added:**
+```cpp
+bool krigingVariogram   {true};
+bool krigingPredictions {true};
+bool krigingCrossval    {true};
+```
 
 ---
 
@@ -470,93 +521,125 @@ target_include_directories(loki_core SYSTEM PUBLIC
 | `loki_clustering` | DONE |
 | `loki_simulate` | DONE |
 | `loki_evt` | DONE |
+| `loki_kriging` | DONE |
 
 ---
 
 ## Planned New Applications
 
-### loki_kriging -- NEXT
+### loki_spline -- NEXT
 
-**Purpose:** Spatial/temporal interpolation using Kriging methods.
-**Dependencies:** loki_core only
+**Purpose:** B-spline fitting and approximation for time series data.
+**Dependencies:** loki_core only.
+
+**Architecture:** same pattern as loki_kriging.
+- Math primitives go into `loki_core/math/` (flat).
+- `loki_spline` is a thin orchestrator (analyzer + plots).
+
+**Existing base:** `loki_core/math/spline.hpp/.cpp` -- CubicSpline (natural /
+not-a-knot / clamped boundary conditions). This stays unchanged and is used
+by GapFiller and SplineFilter. `loki_spline` builds ON TOP of it with
+B-spline approximation.
 
 **Functionality:**
-- **Simple Kriging (SK):** known mean mu. Suitable when stationarity is guaranteed.
-- **Ordinary Kriging (OK):** unknown local mean -- most commonly used.
-  Constraint: sum of weights = 1.
-- **Universal Kriging (UK):** mean is a polynomial trend. Suitable when a
-  deterministic trend is present (e.g. altitude dependence of temperature).
-- **Variogram modelling:**
-  - Empirical variogram: gamma(h) = 0.5 * mean[(Z(x+h) - Z(x))^2]
-  - Theoretical models: spherical, exponential, Gaussian, nugget, power
-  - Fitting: WLS (weighted least squares) on empirical variogram
-  - Nugget effect: discontinuity at h=0 (measurement noise + micro-variability)
-- **Cross-validation:** leave-one-out -- estimate each point from its neighbours,
-  compare to observed value. RMSE and standardized residuals as diagnostics.
-- **Kriging variance:** automatic output -- uncertainty estimate at each point.
+- **B-spline approximation** (`fitMode = "approximation"`): LSQ fit with
+  p control points < n data points. The primary use case -- smoothing with
+  physical interpretation. Number of control points controls smoothing level.
+- **Exact interpolation** (`fitMode = "exact_interpolation"`): p = n,
+  passes exactly through all data points. Kept for completeness but not
+  the primary use case (CubicSpline already covers this).
+- **Degree:** configurable 1-5, default 3 (cubic).
+- **Knot placement:** `"uniform"` or `"chord_length"`. Chord-length places
+  knots denser where the signal changes rapidly.
+- **Automatic control point selection:** k-fold cross-validation over a
+  range [nControlMin, nControlMax]. Finds optimal smoothing level.
+- **Manual control point selection:** explicit `nControlPoints` value.
+- **NURBS:** PLACEHOLDER. Structure prepared, not implemented. Rational
+  weights have limited utility for 1D scalar time series; NURBS is reserved
+  for future 2D/3D spatial use cases (trajectory fitting, surface fitting).
 
-**Domain notes:**
-- For GNSS networks: spatial interpolation of tropospheric delay between stations.
-- For climatological data: spatial interpolation between measurement sites.
-- Isotropy assumed in basic implementation (no directional anisotropy).
-- Variogram fitting is the most sensitive step -- bad variogram = bad predictions.
-
-**Planned files:**
+**New math primitives in loki_core/math/ (to be added):**
 ```
-libs/loki_kriging/
-  include/loki/kriging/
-    krigingResult.hpp          -- VariogramModel, VariogramFitResult, KrigingResult
-    variogram.hpp / .cpp       -- empirical variogram + theoretical models + WLS fit
-    kriging.hpp / .cpp         -- SK / OK / UK solver (Kriging system via Eigen)
-    krigingAnalyzer.hpp / .cpp -- orchestrator: run() pattern
-    plotKriging.hpp / .cpp     -- variogram plot, kriging map, cross-validation plot
-  src/ ...
-apps/loki_kriging/
+bspline.hpp/.cpp       -- B-spline basis functions (de Boor algorithm),
+                          knot vector construction, basis evaluation,
+                          derivative evaluation. namespace loki::math.
+bsplineFit.hpp/.cpp    -- LSQ B-spline approximation, chord-length knot
+                          placement, k-fold CV for automatic knot selection.
+                          namespace loki::math.
+```
+
+**Files in loki_spline:**
+```
+libs/loki_spline/
+  include/loki/spline/
+    splineResult.hpp        -- BSplineFitResult, SplineResult
+    splineAnalyzer.hpp/.cpp -- orchestrator: run() pattern
+    plotSpline.hpp/.cpp     -- overlay, residuals, basis, knots, CV curve
+
+apps/loki_spline/
   main.cpp
   CMakeLists.txt
-libs/loki_kriging/CMakeLists.txt
+libs/loki_spline/CMakeLists.txt
 ```
 
-**KrigingConfig structure (planned):**
+**SplineConfig structure (to be added to config.hpp):**
 ```cpp
-struct KrigingVariogramConfig {
-    std::string model    = "spherical"; // "spherical"|"exponential"|"gaussian"|"power"
-    double      nugget   = 0.0;         // 0 = fit automatically
-    double      sill     = 0.0;         // 0 = fit automatically
-    double      range    = 0.0;         // 0 = fit automatically
-    int         nLagBins = 20;          // number of lag bins for empirical variogram
-    double      maxLag   = 0.0;         // 0 = auto: half max pairwise distance
+// NURBS placeholder -- not yet implemented
+struct NurbsConfig {
+    int degree = 3;
+    // weights, rational basis -- FUTURE (spatial use cases)
 };
 
-struct KrigingConfig {
-    std::string            method            = "ordinary";
-    // "simple" | "ordinary" | "universal"
-    std::string            gapFillStrategy   = "linear";
-    int                    gapFillMaxLength  = 0;
-    double                 knownMean         = 0.0;   // simple kriging only
-    int                    trendDegree       = 1;     // universal kriging
-    bool                   crossValidate     = true;
-    double                 significanceLevel = 0.05;
-    KrigingVariogramConfig variogram         {};
+struct BSplineConfig {
+    int         degree         = 3;               // 1-5, default cubic
+    std::string fitMode        = "approximation"; // "approximation"|"exact_interpolation"
+    int         nControlPoints = 0;               // 0 = auto via CV
+    int         nControlMin    = 5;               // CV search lower bound
+    int         nControlMax    = 0;               // 0 = auto: n/5
+    std::string knotPlacement  = "uniform";       // "uniform"|"chord_length"
+    int         cvFolds        = 5;               // k-fold CV folds
+};
+
+struct SplineConfig {
+    std::string   method            = "bspline";  // "bspline"|"nurbs" (placeholder)
+    std::string   gapFillStrategy   = "linear";
+    int           gapFillMaxLength  = 0;
+    double        confidenceLevel   = 0.95;
+    double        significanceLevel = 0.05;
+    BSplineConfig bspline           {};
+    NurbsConfig   nurbs             {};           // placeholder, not yet implemented
 };
 ```
+
+**PlotConfig flags to be added:**
+```cpp
+bool splineOverlay     {true};   // Original + B-spline fit + CI band.
+bool splineResiduals   {true};   // Residuals vs sample index + RMSE lines.
+bool splineBasis       {false};  // B-spline basis functions N_{i,p}(t).
+bool splineKnots       {true};   // Knot positions overlaid on original series.
+bool splineCv          {true};   // CV curve: RMSE vs n_control_points.
+bool splineDiagnostics {false};  // 4-panel residual diagnostics via Plot::residualDiagnostics().
+```
+
+**Design decisions (agreed):**
+- No standalone `interpolation` mode -- B-spline interpolation is just
+  approximation with p = n (exact_interpolation covers this edge case).
+- NURBS not implemented for 1D time series -- rational weights have no
+  physical motivation for scalar signals. Reserved for spatial use.
+- `splineDiagnostics` delegates to `Plot::residualDiagnostics()` from core
+  (ACF, histogram, QQ, fitted vs residuals). Do NOT reimplement.
+- `spline_basis` plot: default false -- visually cluttered for large n.
+- B-spline de Boor algorithm preferred over explicit basis matrix for
+  numerical stability.
 
 **Files to request at thread start:**
-- `config.hpp`, `configLoader.hpp`, `configLoader.cpp`
-- `timeSeries.hpp`
-- `apps/loki_evt/main.cpp` (pipeline pattern -- simplest standalone app)
-- `apps/loki_clustering/main.cpp` (alternative pattern)
-
-**Note on input data format for kriging:**
-Kriging requires spatial coordinates (x, y) + observed values z for each
-station/point. The standard LOKI TimeSeries has no spatial coordinate field.
-Two options to resolve:
-1. Load multiple series (one per station) and use station metadata for coordinates.
-2. Add an optional spatial coordinate field to `SeriesMetadata` (preferred long-term).
-This design question must be resolved at thread start before any code is written.
-
-### loki_spline -- PLANNED
-(design unchanged from previous CLAUDE.md)
+- `libs/loki_core/include/loki/core/config.hpp`
+- `libs/loki_core/include/loki/core/configLoader.hpp`
+- `libs/loki_core/src/core/configLoader.cpp` (last 200 lines -- _parseKriging as pattern)
+- `libs/loki_core/include/loki/math/spline.hpp` (existing CubicSpline API)
+- `libs/loki_core/include/loki/math/krigingBase.hpp` (pattern for math primitive)
+- `apps/loki_kriging/main.cpp` (pipeline pattern)
+- `libs/loki_kriging/src/krigingAnalyzer.cpp` (orchestrator pattern)
 
 ---
 
@@ -580,6 +663,7 @@ Do NOT use `BDCSVD` in any `.cpp` compiled into a static library.
 `using namespace loki::stats` v `.cpp` NESTACI pre definicie volnych funkcii.
 Funkcie su potom v globalnom namespace a linker ich nenajde.
 Riesenie: obalit vsetky definicie do explicitneho `namespace loki::stats { }` bloku.
+Rovnaky princip plati pre `namespace loki::math { }` (krigingVariogram.cpp atd.).
 
 ### MedianYearSeries API (critical -- caused build error in loki_evt)
 Constructor: `MedianYearSeries(const TimeSeries& series, Config cfg = Config{})`
@@ -588,15 +672,12 @@ The series is passed directly to the constructor -- no two-step construction.
 
 ### nelderMead -- must be in loki_core CMakeLists
 `nelderMead.cpp` must be listed in `add_library(loki_core STATIC ...)`.
-Forgetting this causes `undefined reference` at link time for loki_evt and
-any future module that uses `loki::math::nelderMead`.
+Forgetting this causes `undefined reference` at link time.
+Same applies to all new kriging .cpp files added to loki_core/math/.
 
 ### evtAnalyzer.hpp -- required includes
 Must include `<functional>` (for `std::function`) and
 `<loki/math/nelderMead.hpp>` (for `_brentRoot` and profile likelihood).
-Missing these caused build errors:
-- `std::function has not been declared`
-- `loki::math has not been declared`
 
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
@@ -623,20 +704,34 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - For tmp files (spectrogram matrix format): call `ofs.flush(); ofs.close()`
   explicitly before constructing the `Gnuplot` object
 - `Plot::residualDiagnostics()` is non-static -- instantiate `Plot corePlot(cfg)`
+- `plot '-'` inside `set multiplot` NOT supported -- use datablocks (`$name << EOD`)
+  defined before `set multiplot`. This was the root cause of crossval plot warnings
+  in loki_kriging.
+
+### loki_kriging -- gnuplot precision issue with short time series
+MJD values for short series (< 1 day) have insufficient float precision for
+gnuplot x-axis display. Solution: use sequential sample index (0..n-1) as
+x-axis in predictions and crossval plots. MJD preserved in CSV output.
 
 ### loki_evt -- domain notes
 - POT/GPD preferred over GEV/block_maxima for sensor data (train velocity etc.)
-  Blocks are physically arbitrary for short measurement campaigns.
-- SIL 4: return_periods = [1e8] with time_unit = "hours". Profile likelihood CI
-  is mandatory -- delta method severely underestimates upper CI for large T.
-- xi > 0.5 with small n: often a sign of PWM fallback or too-high threshold.
-  Inspect stability plot before interpreting return levels.
+- SIL 4: return_periods = [1e8] with time_unit = "hours". Profile likelihood CI mandatory.
+- xi > 0.5 with small n: often PWM fallback or too-high threshold.
 - Auto threshold (elbow on mean excess): may be suboptimal for short series (n < 500).
-  Always visually inspect mean_excess and stability plots.
 - Profile likelihood Brent search: falls back to point estimate with LOKI_WARNING
-  if the logLik curve is too flat (common for xi near 0, large T).
-- Deseasonalization with median_year: return levels are in residual units --
-  explicitly noted in protocol.
+  if logLik curve is too flat.
+- Deseasonalization with median_year: return levels are in residual units.
+
+### loki_kriging -- domain notes
+- Temporal Kriging range = maximum useful forecast horizon. Beyond range,
+  prediction converges to mean (OK) or drift (UK). Physically correct but
+  visually surprising -- documented in CONFIG_REFERENCE.md ch.19.
+- For sensor data at 1 Hz: use Gaussian variogram model (smooth signal).
+- For GNSS IWV/topo delay: use Exponential model (rapid correlation decay).
+- For GNSS coordinates with velocity: use Universal Kriging, trend_degree=1.
+- Nugget = measurement noise floor. High nugget-to-sill ratio (> 0.5) means
+  mostly unstructured noise; Kriging still optimal but heavily smoothed.
+- CV meanSSE ideal = 1. > 1 = variance underestimated; < 1 = overestimated.
 
 ---
 
@@ -662,8 +757,15 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
   Block bootstrap required. Block length >= effective decorrelation length.
 - loki_simulate: ARIMA bootstrap diverges when Q/R>>1 for Kalman or when model
   does not have correct ACF structure. Diagnose via ACF comparison plot.
-- Kriging: variogram fitting is the most sensitive step.
+- Kriging: variogram fitting is the most sensitive step. Bad variogram = bad CI.
+- Kriging LOO O(n^2) shortcut: e_i = alpha_i / K^{-1}_{ii}, alpha = K^{-1}*z.
+  Full inverse cached in fit() -- avoids n re-factorisations.
 - NURBS vs B-spline: NURBS allows exact conic sections via rational weights.
+  For 1D scalar time series, rational weights have no physical motivation.
+  B-spline approximation is sufficient and simpler.
+- B-spline approximation: number of control points controls smoothing.
+  Too few = underfitting (systematic residual patterns). Too many = overfitting.
+  CV selects optimal number automatically.
 
 ---
 
@@ -692,8 +794,9 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 | done | HomogeneityAnalyzer + protocol | module extension | COMPLETE |
 | done | `loki_simulate` | new app | COMPLETE |
 | done | `loki_evt` | new app | COMPLETE |
-| next | `loki_kriging` | new app | PLANNED |
-| 4 | `loki_spline` | new app | PLANNED |
+| done | `loki_kriging` | new app | COMPLETE |
+| done | Kriging math to loki_core/math/ | refactoring | COMPLETE |
+| next | `loki_spline` | new app | NEXT |
 
 ---
 
@@ -714,9 +817,13 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp`, `embedMatrix.hpp`,
   `randomizedSvd.hpp`, `spline.hpp`, `nelderMead.hpp` are in `loki_core/math/`.
+- Kriging math files also in `loki_core/math/`: `krigingTypes.hpp`,
+  `krigingVariogram.hpp/.cpp`, `krigingBase.hpp/.cpp`, `simpleKriging.hpp/.cpp`,
+  `ordinaryKriging.hpp/.cpp`, `universalKriging.hpp/.cpp`, `krigingFactory.hpp`.
 - `wCorrelation.hpp`, `sampling.hpp`, `bootstrap.hpp`, `permutation.hpp`
   are in `loki_core/stats/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
+- `krigingFactory.hpp` is header-only (inline factory function).
 - `HatMatrixDetector` does NOT inherit from `OutlierDetector`.
 - `NonlinearRegressor` does NOT inherit from `Regressor`.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
@@ -728,12 +835,14 @@ Use `std::numbers::pi` (C++20 `<numbers>`).
 - loki_evt: SIL 4 use case (< 1e-8/h). GPD/POT for all data types.
   GEV/block_maxima only for climatological data (natural annual blocks).
   Profile likelihood CI mandatory for SIL 4 return periods (1e8 hours).
-- loki_kriging: spatial coordinates needed -- design question to resolve at
-  thread start (SeriesMetadata extension vs multi-series loading pattern).
+- loki_kriging: temporal mode only in v1. Spatial/space-time = placeholder.
+  Forecast beyond variogram range converges to series mean (correct behaviour).
+  Sample index on x-axis in plots (not MJD) for short series precision.
 - Block bootstrap required for autocorrelated series; iid bootstrap invalid.
 - `SplineFilterConfig` definovana TYLKO v `config.hpp`, nie v `splineFilter.hpp`.
 - `bootstrap.cpp`, `permutation.cpp`: funkcie musia byt v `namespace loki::stats { }`
   bloku, nie len cez `using namespace`.
+- Kriging math `.cpp` files: funkcie musia byt v `namespace loki::math { }` bloku.
 - SNHT v rekurzivnom mode: min_segment_points >= 3-4 roky (4383-5844 pri 6h).
 - PELT mbic je najkonzervativnejsi penalty typ -- odporucany default pre klimaticke data.
 - BOCPD vyzaduje kalibраciu prior_beta blizko skutocnemu sigma^2 serie.

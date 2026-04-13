@@ -29,6 +29,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 16. [loki_clustering](#16-loki_clustering)
 17. [loki_simulate](#17-loki_simulate)
 18. [loki_evt](#18-loki_evt)
+19. [loki_kriging](#19-loki_kriging)
 
 ---
 
@@ -5021,3 +5022,456 @@ Which CI method?
   Fast exploration               --> bootstrap with n_bootstrap = 200
   Quick symmetric estimate       --> delta (unreliable for T > 1e4)
 ```
+
+# 19. loki_kriging
+
+Kriging is a geostatistical interpolation and prediction method that provides
+optimal linear unbiased estimates together with a quantified uncertainty
+(Kriging variance). In LOKI, Kriging operates in temporal mode: observations
+are a single time series and the lag is the absolute time difference between
+two observations in MJD days.
+
+Spatial and space-time modes are reserved for future releases (the configuration
+keys are parsed and stored, but any attempt to use them raises an exception).
+
+---
+
+## 19.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "input": {
+        "mode": "single_file",
+        "file": "GNSS_IWV.txt",
+        "time_format": "mjd",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [1]
+    },
+
+    "kriging": {
+        "mode": "temporal",
+        "method": "ordinary",
+        "variogram": { "model": "spherical" }
+    },
+
+    "plots": {
+        "output_format": "png"
+    }
+}
+```
+
+All unspecified keys fall back to documented defaults.
+
+---
+
+## 19.2 Top-level kriging keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `mode` | string | `"temporal"` | Kriging mode. Only `"temporal"` is implemented. `"spatial"` and `"space_time"` are placeholders. |
+| `method` | string | `"ordinary"` | Kriging estimator. `"simple"`, `"ordinary"`, `"universal"`. |
+| `gap_fill_strategy` | string | `"linear"` | Pre-processing gap fill before variogram fitting. `"linear"`, `"spline"`, `"none"`. |
+| `gap_fill_max_length` | int | `0` | Maximum gap length to fill in samples. `0` = unlimited. |
+| `known_mean` | double | `0.0` | Known global mean mu. Used only when `method = "simple"`. |
+| `trend_degree` | int | `1` | Polynomial degree of the drift function. Used only when `method = "universal"`. Valid range: 1–5. |
+| `cross_validate` | bool | `true` | Run leave-one-out cross-validation after fitting. |
+| `confidence_level` | double | `0.95` | Confidence level for prediction intervals. Must be in (0, 1). |
+| `significance_level` | double | `0.05` | Significance level for diagnostics. |
+
+---
+
+## 19.3 Kriging methods
+
+### simple
+Known constant mean. The estimator is:
+
+    Z*(t) = mu + lambda^T * (z - mu)
+
+where lambda solves K * lambda = k(t).
+
+Use when the global mean is reliably known — for example, deseasonalized
+residuals centred at zero. Numerically most stable.
+
+```json
+"method": "simple",
+"known_mean": 0.0
+```
+
+### ordinary (default)
+Unknown local mean with the constraint that weights sum to one. The extended
+system adds a Lagrange multiplier row and column. No assumption about the mean
+is required. This is the standard default for most applications.
+
+```json
+"method": "ordinary"
+```
+
+### universal
+Mean is modelled as a polynomial in time:
+
+    mu(t) = beta_0 + beta_1 * t + ... + beta_p * t^p
+
+where t = MJD - t_ref for numerical stability. Appropriate when a deterministic
+trend is present — for example, a linear velocity trend in GNSS coordinates or
+a systematic drift in a sensor calibration.
+
+```json
+"method": "universal",
+"trend_degree": 1
+```
+
+Use `trend_degree = 1` for linear trend, `2` for quadratic. Values above 2 are
+rarely justified and increase the risk of overfitting.
+
+---
+
+## 19.4 variogram sub-section
+
+The variogram describes how spatial (temporal) correlation decays with lag.
+It is the most sensitive step in the Kriging pipeline — a poorly fitted
+variogram leads to unreliable predictions and misleading CI bands.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `model` | string | `"spherical"` | Theoretical model. See Section 19.4.1. |
+| `n_lag_bins` | int | `20` | Number of equal-width lag bins for the empirical variogram. |
+| `max_lag` | double | `0.0` | Maximum lag in MJD days. `0` = auto (half the total time span). |
+| `nugget` | double | `0.0` | Initial nugget for WLS fitting. `0` = estimate from data. |
+| `sill` | double | `0.0` | Initial sill for WLS fitting. `0` = estimate from data. |
+| `range` | double | `0.0` | Initial range for WLS fitting. `0` = estimate from data. |
+
+### 19.4.1 Variogram models
+
+**spherical**
+
+    gamma(h) = nugget + (sill - nugget) * [1.5*(h/range) - 0.5*(h/range)^3]  for h <= range
+             = nugget + (sill - nugget)                                         for h >  range
+
+Reaches the sill exactly at h = range. Most commonly used in practice.
+Recommended default for GNSS and climatological data.
+
+**exponential**
+
+    gamma(h) = nugget + (sill - nugget) * [1 - exp(-h / range)]
+
+Approaches the sill asymptotically. Practical range is approximately 3 * range
+parameter. Appropriate when correlation decays smoothly without a hard cutoff.
+Recommended for IWV and tropospheric delay residuals.
+
+**gaussian**
+
+    gamma(h) = nugget + (sill - nugget) * [1 - exp(-(h/range)^2)]
+
+Very smooth near the origin — models processes with continuous derivatives.
+Practical range is approximately sqrt(3) * range parameter. Recommended for
+smooth sensor data such as vehicle velocity. Can cause numerical instability
+for large datasets (n > 500) with closely spaced observations.
+
+**power**
+
+    gamma(h) = nugget + sill * h^range
+
+Unbounded — no finite sill. Models intrinsic processes (fractal-like behaviour).
+The `sill` parameter stores the scaling coefficient and `range` stores the power
+exponent (0, 2). Rarely needed in practice.
+
+**nugget**
+
+    gamma(h) = nugget  for h > 0
+
+Pure nugget — no temporal correlation. Represents white noise. The fitted
+variogram will pass through a single parameter (the nugget). Useful as a
+diagnostic: if the best fit is a pure nugget model, the data has no detectable
+temporal structure at the sampled resolution.
+
+### 19.4.2 Nugget interpretation
+
+The nugget represents two combined effects:
+- **Measurement noise:** random error in the sensor or instrument.
+- **Micro-variability:** real physical variation at lags smaller than the
+  sampling interval.
+
+A nugget-to-sill ratio above 0.5 means that more than half of the total variance
+is unstructured noise. In this case, Kriging still provides the optimal linear
+estimator, but predictions will be significantly smoothed relative to the data.
+
+### 19.4.3 Choosing n_lag_bins and max_lag
+
+- `n_lag_bins`: 15–30 is typical. Too few bins lose detail; too many produce
+  noisy empirical variogram bins with few pairs.
+- `max_lag`: set to approximately half the total time span, or to the distance
+  beyond which you expect no correlation. For sensor data at 1 Hz spanning
+  21 minutes, the default auto value (~0.007 days) is appropriate.
+- Rule of thumb: each bin should contain at least 30 pairs. Check the protocol
+  output for bin counts.
+
+---
+
+## 19.5 prediction sub-section
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable prediction beyond the observation grid. |
+| `horizon_days` | double | `0.0` | Forecast horizon in MJD days beyond the last observation. |
+| `n_steps` | int | `10` | Number of uniformly spaced steps within the horizon. |
+| `target_mjd` | array of double | `[]` | Explicit MJD values at which to predict (optional). |
+
+When `enabled = false`, Kriging predicts only at the observation times (useful
+as a gap-filling alternative without forecast).
+
+**Time unit conversion for sensor data:**
+
+| Duration | horizon_days |
+|----------|-------------|
+| 10 seconds | 0.0001157 |
+| 30 seconds | 0.000347 |
+| 1 minute | 0.000694 |
+| 5 minutes | 0.003472 |
+| 1 hour | 0.041667 |
+
+**Critical rule:** the forecast horizon should not exceed the variogram range.
+Beyond the range, covariances between the forecast point and all observations
+approach zero, and the prediction converges to the global mean (Ordinary
+Kriging) or to the drift value (Universal Kriging). This is statistically
+correct but physically uninformative. The CI band will widen rapidly.
+
+---
+
+## 19.6 stations sub-section (spatial placeholder)
+
+Used only when `mode = "spatial"`. Not yet implemented — parsed and stored but
+ignored. Included here for forward compatibility.
+
+```json
+"stations": [
+    { "file": "STA001.txt", "x": 17.1074, "y": 48.1486 },
+    { "file": "STA002.txt", "x": 17.2201, "y": 48.2103 }
+]
+```
+
+`x` and `y` are spatial coordinates (e.g. longitude and latitude in decimal
+degrees, or easting and northing in metres).
+
+---
+
+## 19.7 Plot flags
+
+Add these keys directly inside the top-level `"plots"` object.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `kriging_variogram` | bool | `true` | Empirical variogram bins and fitted theoretical curve with nugget/sill/range annotations. |
+| `kriging_predictions` | bool | `true` | Original series (red circles), Kriging estimate (blue line), and 95% CI band (pink fill). |
+| `kriging_crossval` | bool | `true` | Two-panel LOO cross-validation: errors vs sample index (top) and standardised error histogram vs N(0,1) (bottom). |
+
+```json
+"plots": {
+    "output_format": "png",
+    "kriging_variogram":    true,
+    "kriging_predictions":  true,
+    "kriging_crossval":     true
+}
+```
+
+---
+
+## 19.8 Output files
+
+All output files are written to `OUTPUT/` sub-directories of the workspace.
+
+| File | Location | Description |
+|------|----------|-------------|
+| `kriging_[dataset]_[component]_variogram.png` | `IMG/` | Variogram plot. |
+| `kriging_[dataset]_[component]_predictions.png` | `IMG/` | Predictions plot with CI band. |
+| `kriging_[dataset]_[component]_crossval.png` | `IMG/` | LOO cross-validation diagnostics. |
+| `[dataset]_[component]_kriging_protocol.txt` | `PROTOCOLS/` | Plain-text protocol with variogram parameters and CV statistics. |
+| `[dataset]_[component]_kriging_predictions.csv` | `CSV/` | Prediction grid: MJD, UTC, value, variance, ci_lower, ci_upper, is_observed. CSV delimiter is semicolon. |
+
+---
+
+## 19.9 Cross-validation diagnostics
+
+The LOO shortcut identity (Dubrule 1983) is used:
+
+    e_i = alpha_i / [K^{-1}]_{ii}
+
+where alpha = K^{-1} * z. This avoids re-solving the system for each left-out
+point, reducing complexity from O(n^4) to O(n^2).
+
+| Metric | Ideal value | Interpretation |
+|--------|-------------|----------------|
+| RMSE | — | Root mean squared LOO error. Compare to sample StdDev. |
+| MAE | — | Mean absolute LOO error. More robust than RMSE to outliers. |
+| meanSE | 0 | Mean standardised error. Non-zero indicates systematic bias. |
+| meanSSE | 1 | Mean squared standardised error. > 1 means variance is underestimated; < 1 means overestimated. |
+
+A good variogram fit produces meanSSE close to 1. Values above 2 or below 0.5
+indicate that the theoretical model does not describe the data well.
+
+---
+
+## 19.10 Best practices by data type
+
+### Climatological data (6h resolution, ~25 years, MJD timestamps)
+
+For 30 000+ observations the global Kriging system is infeasible (n x n matrix
+inversion). Recommended workflow:
+
+1. Deseasonalize first using `loki_decomposition` or `loki_homogeneity`.
+2. Apply Kriging to residuals only — these are shorter in effective correlation
+   length, reducing the required max_lag.
+3. Use `method = "simple"` with `known_mean = 0.0` on deseasonalized residuals.
+4. If the residual series is still long, work on yearly or seasonal segments.
+
+```json
+"kriging": {
+    "mode": "temporal",
+    "method": "simple",
+    "known_mean": 0.0,
+    "variogram": {
+        "model": "exponential",
+        "n_lag_bins": 20,
+        "max_lag": 10.0
+    },
+    "prediction": { "enabled": false },
+    "cross_validate": true
+}
+```
+
+### GNSS station coordinates and velocities (~1000–5000 observations)
+
+Linear velocity trend is present — use Universal Kriging with `trend_degree = 1`.
+The Kriging residuals represent non-linear transient deformations (earthquakes,
+seasonal loading). Spherical model is appropriate for the residuals.
+
+```json
+"kriging": {
+    "mode": "temporal",
+    "method": "universal",
+    "trend_degree": 1,
+    "variogram": {
+        "model": "spherical",
+        "n_lag_bins": 20,
+        "max_lag": 0.0
+    },
+    "prediction": {
+        "enabled": true,
+        "horizon_days": 30.0,
+        "n_steps": 30
+    },
+    "cross_validate": true
+}
+```
+
+### GNSS IWV and tropospheric delay (~1000–5000 observations)
+
+No significant long-term trend. Exponential model captures the rapid decay of
+atmospheric correlation. The nugget is typically moderate (10–30% of sill).
+
+```json
+"kriging": {
+    "mode": "temporal",
+    "method": "ordinary",
+    "variogram": {
+        "model": "exponential",
+        "n_lag_bins": 20,
+        "max_lag": 0.0
+    },
+    "prediction": {
+        "enabled": true,
+        "horizon_days": 1.0,
+        "n_steps": 24
+    },
+    "cross_validate": true
+}
+```
+
+### Vehicle or train sensor data (~1000–1500 observations, 1 Hz or ms resolution)
+
+Smooth signal with high nugget (sensor noise). Gaussian model is most
+appropriate. The variogram range is typically short (seconds to minutes).
+Forecast horizon must not exceed the range — beyond that, the prediction
+converges to the series mean.
+
+**Variogram model selection:**
+- Gaussian: recommended for smooth physical signals (velocity, acceleration).
+- Exponential: if the empirical variogram rises steeply near h = 0.
+- Check the variogram plot: the fitted curve should pass through the centre
+  of the empirical bins, not just the first few.
+
+```json
+"kriging": {
+    "mode": "temporal",
+    "method": "ordinary",
+    "variogram": {
+        "model": "gaussian",
+        "n_lag_bins": 20,
+        "max_lag": 0.0
+    },
+    "prediction": {
+        "enabled": true,
+        "horizon_days": 0.000347,
+        "n_steps": 30
+    },
+    "cross_validate": true,
+    "confidence_level": 0.95
+}
+```
+
+**Horizon guidance for 1 Hz data:**
+Read the `Range` value from the protocol output. Set `horizon_days` to at most
+half the range. For example, if `Range = 0.00253 days` (~218 seconds), a
+reasonable horizon is `0.00116 days` (~100 seconds). Beyond the range the
+prediction is uninformative.
+
+---
+
+## 19.11 Anomaly detection via cross-validation
+
+The LOO standardised errors stored in the CSV output can be used as an
+anomaly score. A point with |standardised error| > 3 is a candidate outlier
+in the geostatistical sense — its value is inconsistent with the temporal
+neighbourhood defined by the variogram.
+
+This is complementary to the IQR/MAD detectors in `loki_outlier`: Kriging
+anomalies have temporal context (they depend on the local correlation
+structure), while distributional detectors are global.
+
+Workflow:
+1. Run `loki_kriging` with `cross_validate = true`.
+2. Open `OUTPUT/CSV/[dataset]_[component]_kriging_predictions.csv`.
+3. Rows where `is_observed = 1` have a corresponding LOO error recorded in
+   the protocol. Compare `value` against the Kriging estimate from LOO.
+4. Points with |e_i / sigma_i| > 3 are flagged.
+
+---
+
+## 19.12 Known limitations
+
+- **Scalability:** Global Kriging inverts an n x n matrix. For n > 3000 the
+  matrix inversion is slow and memory intensive (~72 MB for n = 3000 in
+  double precision). Future releases will add a moving-window neighbourhood
+  option (`max_neighbours` parameter) to handle large series.
+
+- **Stationarity assumption:** The theoretical variogram assumes second-order
+  stationarity (constant mean and variance). For non-stationary data (e.g.
+  series with trends or changing variance), use Universal Kriging or
+  deseasonalize first.
+
+- **Forecast divergence:** Beyond the variogram range, Ordinary Kriging
+  predictions converge to the local mean and the CI widens rapidly. This is
+  correct behaviour, not a bug. Universal Kriging will instead follow the
+  fitted polynomial drift.
+
+- **Gaussian variogram instability:** For closely spaced observations and
+  large n, the Gaussian covariance matrix can become poorly conditioned.
+  A small jitter (1e-10) is added to the diagonal, but if instability
+  persists, switch to exponential or spherical.
+
+- **Spatial and space-time modes:** Not yet implemented. These modes will
+  require a multi-series input format and spatial coordinates. Design is
+  documented in CLAUDE.md.

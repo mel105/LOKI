@@ -33,6 +33,11 @@ target_sources(loki_core
         src/math/randomizedSvd.cpp
         src/math/spline.cpp
         src/math/nelderMead.cpp
+        src/math/krigingVariogram.cpp
+        src/math/krigingBase.cpp
+        src/math/simpleKriging.cpp
+        src/math/ordinaryKriging.cpp
+        src/math/universalKriging.cpp
 )
 
 target_include_directories(loki_core
