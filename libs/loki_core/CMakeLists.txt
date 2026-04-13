@@ -38,6 +38,8 @@ target_sources(loki_core
         src/math/simpleKriging.cpp
         src/math/ordinaryKriging.cpp
         src/math/universalKriging.cpp
+        src/math/bspline.cpp
+        src/math/bsplineFit.cpp
 )
 
 target_include_directories(loki_core

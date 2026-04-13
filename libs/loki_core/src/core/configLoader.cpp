@@ -96,6 +96,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.simulate      = _parseSimulate     (j.value("simulate",     json::object()));
     cfg.evt           = _parseEvt          (j.value("evt",          json::object()));
     cfg.kriging       = _parseKriging      (j.value("kriging",      json::object()));
+    cfg.spline        = _parseSpline       (j.value("spline",       json::object()));
 
     return cfg;
 }
@@ -611,6 +612,14 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("kriging_variogram"))   cfg.krigingVariogram   = j["kriging_variogram"].get<bool>();
     if (j.contains("kriging_predictions")) cfg.krigingPredictions = j["kriging_predictions"].get<bool>();
     if (j.contains("kriging_crossval"))    cfg.krigingCrossval    = j["kriging_crossval"].get<bool>();
+
+    // Spline flags at top level of "plots" block 
+    if (j.contains("spline_overlay"))     cfg.splineOverlay     = j["spline_overlay"].get<bool>();
+    if (j.contains("spline_residuals"))   cfg.splineResiduals   = j["spline_residuals"].get<bool>();
+    if (j.contains("spline_basis"))       cfg.splineBasis       = j["spline_basis"].get<bool>();
+    if (j.contains("spline_knots"))       cfg.splineKnots       = j["spline_knots"].get<bool>();
+    if (j.contains("spline_cv"))          cfg.splineCv          = j["spline_cv"].get<bool>();
+    if (j.contains("spline_diagnostics")) cfg.splineDiagnostics = j["spline_diagnostics"].get<bool>();
 
     return cfg;
 }
@@ -1920,6 +1929,84 @@ KrigingConfig ConfigLoader::_parseKriging(const nlohmann::json& j)
         }
     }
  
+    return cfg;
+}
+
+SplineConfig ConfigLoader::_parseSpline(const nlohmann::json& j)
+{
+    SplineConfig cfg;
+
+    cfg.method            = getOrDefault<std::string>(j, "method",             "bspline", false);
+    cfg.gapFillStrategy   = getOrDefault<std::string>(j, "gap_fill_strategy",  "linear",  false);
+    cfg.gapFillMaxLength  = getOrDefault<int>        (j, "gap_fill_max_length", 0,         false);
+    cfg.confidenceLevel   = getOrDefault<double>     (j, "confidence_level",   0.95,       false);
+    cfg.significanceLevel = getOrDefault<double>     (j, "significance_level", 0.05,       false);
+
+    if (cfg.method != "bspline" && cfg.method != "nurbs") {
+        throw ConfigException(
+            "ConfigLoader: spline.method '" + cfg.method
+            + "' not recognised. Valid: bspline, nurbs (placeholder).");
+    }
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: spline.confidence_level must be in (0, 1), got "
+            + std::to_string(cfg.confidenceLevel) + ".");
+    }
+
+    // ---- bspline sub-section ------------------------------------------------
+    if (j.contains("bspline")) {
+        const auto& b = j.at("bspline");
+
+        cfg.bspline.degree         = getOrDefault<int>        (b, "degree",          3,              false);
+        cfg.bspline.fitMode        = getOrDefault<std::string>(b, "fit_mode",         "approximation",false);
+        cfg.bspline.nControlPoints = getOrDefault<int>        (b, "n_control_points", 0,              false);
+        cfg.bspline.nControlMin    = getOrDefault<int>        (b, "n_control_min",    5,              false);
+        cfg.bspline.nControlMax    = getOrDefault<int>        (b, "n_control_max",    0,              false);
+        cfg.bspline.knotPlacement  = getOrDefault<std::string>(b, "knot_placement",  "uniform",       false);
+        cfg.bspline.cvFolds        = getOrDefault<int>        (b, "cv_folds",         5,              false);
+        cfg.bspline.exactInterpolationMaxN =
+            getOrDefault<int>(b, "exact_interpolation_max_n", 2000, false);
+
+        if (cfg.bspline.degree < 1 || cfg.bspline.degree > 5) {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.degree must be in [1, 5], got "
+                + std::to_string(cfg.bspline.degree) + ".");
+        }
+        if (cfg.bspline.fitMode != "approximation" &&
+            cfg.bspline.fitMode != "exact_interpolation") {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.fit_mode '" + cfg.bspline.fitMode
+                + "' not recognised. Valid: approximation, exact_interpolation.");
+        }
+        if (cfg.bspline.knotPlacement != "uniform" &&
+            cfg.bspline.knotPlacement != "chord_length") {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.knot_placement '" + cfg.bspline.knotPlacement
+                + "' not recognised. Valid: uniform, chord_length.");
+        }
+        if (cfg.bspline.nControlPoints < 0) {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.n_control_points must be >= 0 "
+                "(0 = auto), got " + std::to_string(cfg.bspline.nControlPoints) + ".");
+        }
+        if (cfg.bspline.cvFolds < 2) {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.cv_folds must be >= 2, got "
+                + std::to_string(cfg.bspline.cvFolds) + ".");
+        }
+        if (cfg.bspline.exactInterpolationMaxN < 2) {
+            throw ConfigException(
+                "ConfigLoader: spline.bspline.exact_interpolation_max_n must be >= 2, got "
+                + std::to_string(cfg.bspline.exactInterpolationMaxN) + ".");
+        }
+    }
+
+    // ---- nurbs sub-section (placeholder) ------------------------------------
+    if (j.contains("nurbs")) {
+        const auto& n = j.at("nurbs");
+        cfg.nurbs.degree = getOrDefault<int>(n, "degree", 3, false);
+    }
+
     return cfg;
 }
 

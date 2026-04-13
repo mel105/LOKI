@@ -465,6 +465,14 @@ struct PlotConfig {
     bool krigingVariogram   {true};   ///< Empirical variogram bins + fitted model curve.
     bool krigingPredictions {true};   ///< Original series + Kriging estimates + CI band.
     bool krigingCrossval    {true};   ///< LOO cross-validation errors + std error histogram.
+
+    // -- Spline pipeline plots ------------------------------------------------
+    bool splineOverlay     {true};   ///< Original series + B-spline fit + CI band.
+    bool splineResiduals   {true};   ///< Residuals vs sample index + RMSE lines.
+    bool splineBasis       {false};  ///< B-spline basis functions N_{i,p}(t). Cluttered for large n.
+    bool splineKnots       {true};   ///< Knot positions overlaid on original series.
+    bool splineCv          {true};   ///< CV curve: RMSE vs nCtrl with optimum marked.
+    bool splineDiagnostics {false};  ///< 4-panel residual diagnostics via Plot::residualDiagnostics().
 };
 
 // -----------------------------------------------------------------------------
@@ -1119,6 +1127,75 @@ struct KrigingConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  SplineConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief NURBS placeholder configuration.
+ *
+ * NURBS (Non-Uniform Rational B-Splines) are reserved for future 2D/3D
+ * spatial use cases (trajectory fitting, surface fitting). For 1D scalar
+ * time series, rational weights have no physical motivation, so NURBS is
+ * not implemented. The struct is present to allow JSON parsing without errors.
+ */
+struct NurbsConfig {
+    int degree = 3;  ///< Degree placeholder (not used in v1).
+};
+
+/**
+ * @brief Configuration for B-spline approximation.
+ *
+ * Controls the LSQ B-spline fitting and cross-validation behaviour.
+ *
+ * Fit modes:
+ *   "approximation"       -- LSQ fit with nCtrl < nObs. The primary use case.
+ *                            nCtrl controls smoothing: fewer = smoother.
+ *   "exact_interpolation" -- nCtrl == nObs; passes through all data points.
+ *                            Note: ill-conditioned for large nObs (> exactInterpolationMaxN).
+ *                            Use only for small series where interpolation is the goal.
+ *
+ * Knot placement:
+ *   "uniform"      -- interior knots equally spaced in [0,1]. Default for
+ *                     uniformly-sampled sensor data.
+ *   "chord_length" -- Hartley-Judd averaging; denser knots in regions with
+ *                     rapid signal change. Automatically activated when the
+ *                     pipeline detects non-uniform sampling (coefficient of
+ *                     variation of timestep > 0.1).
+ *
+ * Control point selection:
+ *   nControlPoints = 0  -- automatic via k-fold cross-validation over
+ *                          [nControlMin, nControlMax].
+ *   nControlPoints > 0  -- manual override; CV is skipped.
+ */
+struct BSplineConfig {
+    int         degree                = 3;               ///< Polynomial degree (1-5). Default cubic.
+    std::string fitMode               = "approximation"; ///< "approximation" | "exact_interpolation"
+    int         nControlPoints        = 0;               ///< 0 = auto via CV. Manual > 0 skips CV.
+    int         nControlMin           = 5;               ///< CV search lower bound.
+    int         nControlMax           = 0;               ///< 0 = auto: min(n/5, 200).
+    std::string knotPlacement         = "uniform";       ///< "uniform" | "chord_length"
+    int         cvFolds               = 5;               ///< k-fold CV folds (2-20).
+    int         exactInterpolationMaxN = 2000;           ///< Max nObs allowed in exact_interpolation mode.
+};
+
+/**
+ * @brief Top-level configuration for the loki_spline pipeline.
+ *
+ * method:
+ *   "bspline" -- B-spline LSQ approximation (implemented).
+ *   "nurbs"   -- PLACEHOLDER; throws AlgorithmException if requested.
+ */
+struct SplineConfig {
+    std::string   method            = "bspline";  ///< "bspline" | "nurbs" (placeholder)
+    std::string   gapFillStrategy   = "linear";   ///< Pre-processing gap fill: "linear" | "spline" | "none"
+    int           gapFillMaxLength  = 0;          ///< Max gap fill length in samples (0 = unlimited).
+    double        confidenceLevel   = 0.95;       ///< CI level for the overlay plot.
+    double        significanceLevel = 0.05;       ///< Significance level for residual diagnostics.
+    BSplineConfig bspline           {};
+    NurbsConfig   nurbs             {};           ///< Placeholder, not yet implemented.
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -1144,6 +1221,7 @@ struct AppConfig {
     SimulateConfig      simulate;
     EvtConfig           evt;
     KrigingConfig       kriging;
+    SplineConfig        spline;
 
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

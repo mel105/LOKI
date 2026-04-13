@@ -27,6 +27,8 @@
 #   simulate         apps/loki_simulate/loki_simulate.exe
 #   evt              apps/loki_evt/loki_evt.exe
 #   kriging          apps/loki_kriging/loki_kriging.exe
+#   spline           apps/loki_spline/loki_spline.exe
+#
 #   demo_sampling    tests/demo/demo_sampling.exe
 #   demo_bootstrap   tests/demo/demo_bootstrap.exe
 #   demo_permutation tests/demo/demo_permutation.exe
@@ -98,6 +100,7 @@ declare -A APP_EXE=(
     [simulate]="apps/loki_simulate/loki_simulate.exe"
     [evt]="apps/loki_evt/loki_evt.exe"
     [kriging]="apps/loki_kriging/loki_kriging.exe"
+    [spline]="apps/loki_spline/loki_spline.exe"
     [demo_sampling]="tests/demo/demo_sampling.exe"
     [demo_bootstrap]="tests/demo/demo_bootstrap.exe"
     [demo_permutation]="tests/demo/demo_permutation.exe"
@@ -120,6 +123,7 @@ declare -A APP_CONFIG=(
     [simulate]="config/simulate.json"
     [evt]="config/evt.json"
     [kriging]="config/kriging.json"
+    [spline]="config/spline.json"
     [demo_sampling]=""
     [demo_bootstrap]=""
     [demo_permutation]=""
@@ -150,7 +154,7 @@ shift
 
 for arg in "$@"; do
     case "${arg}" in
-        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|simulate|evt|kriging|all|demo_sampling|demo_bootstrap|demo_permutation)
+        loki|homogenization|outlier|filter|regression|stationarity|arima|ssa|decomposition|spectral|kalman|qc|clustering|simulate|evt|kriging|spline|all|demo_sampling|demo_bootstrap|demo_permutation)
             APP="${arg}" ;;
         debug|release)
             PRESET="${arg}" ;;

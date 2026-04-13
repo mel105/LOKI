@@ -67,7 +67,7 @@ private:
     static SimulateConfig        _parseSimulate         (const nlohmann::json& j);
     static EvtConfig             _parseEvt              (const nlohmann::json& j);
     static KrigingConfig         _parseKriging          (const nlohmann::json& j);
-
+    static SplineConfig          _parseSpline           (const nlohmann::json& j);
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
     static OutlierFilterConfig _parseOutlierFilter(const nlohmann::json& j,
