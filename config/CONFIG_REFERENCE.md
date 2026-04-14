@@ -30,6 +30,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 17. [loki_simulate](#17-loki_simulate)
 18. [loki_evt](#18-loki_evt)
 19. [loki_kriging](#19-loki_kriging)
+20. [loki_spline](#20-loki_spline)
 
 ---
 
@@ -5475,3 +5476,367 @@ Workflow:
 - **Spatial and space-time modes:** Not yet implemented. These modes will
   require a multi-series input format and spatial coordinates. Design is
   documented in CLAUDE.md.
+
+# 20. loki_spline
+
+B-spline approximation fits a smooth piecewise polynomial curve through a
+time series using least squares. Unlike interpolating splines (which pass
+exactly through every data point), the B-spline approximation controls the
+number of control points independently of the number of observations. Fewer
+control points produce a smoother result; more control points track the data
+more closely. The number of control points is the primary smoothing parameter.
+
+LOKI implements clamped B-splines of configurable degree using the
+Cox-de Boor basis recursion. The LSQ system is solved via
+`ColPivHouseholderQR`. When `n_control_points = 0` (default), the optimal
+number of control points is selected automatically by k-fold
+cross-validation with the one-standard-error elbow rule.
+
+---
+
+## 20.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "input": {
+        "mode": "single_file",
+        "file": "SENSOR_DATA.txt",
+        "time_format": "gpst_seconds",
+        "time_columns": [0],
+        "delimiter": ";",
+        "comment_char": "%",
+        "columns": [2]
+    },
+
+    "spline": {
+        "method": "bspline",
+        "bspline": {
+            "degree": 3,
+            "fit_mode": "approximation",
+            "n_control_points": 0
+        }
+    },
+
+    "plots": {
+        "output_format": "png"
+    }
+}
+```
+
+All unspecified keys fall back to documented defaults. The pipeline will
+auto-detect non-uniform sampling, run 5-fold CV to select `nCtrl`, fit the
+B-spline, compute a residual-based CI band, and write plots and CSV output.
+
+---
+
+## 20.2 Top-level spline keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `method` | string | `"bspline"` | Fitting method. Only `"bspline"` is implemented. `"nurbs"` is a placeholder that raises an exception if requested. |
+| `gap_fill_strategy` | string | `"linear"` | Pre-processing gap fill applied before fitting. `"linear"`, `"spline"`, `"none"`. |
+| `gap_fill_max_length` | int | `0` | Maximum gap length to fill in samples. `0` = unlimited. |
+| `confidence_level` | double | `0.95` | Confidence level for the CI band in the overlay plot. Must be in (0, 1). |
+| `significance_level` | double | `0.05` | Significance level for residual diagnostics. |
+
+---
+
+## 20.3 bspline sub-section
+
+### 20.3.1 All keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `degree` | int | `3` | Polynomial degree of each spline piece. Valid range: 1–5. |
+| `fit_mode` | string | `"approximation"` | Fitting mode. See Section 20.3.2. |
+| `n_control_points` | int | `0` | Number of control points. `0` = automatic via CV. |
+| `n_control_min` | int | `5` | Lower bound for the CV search range. |
+| `n_control_max` | int | `0` | Upper bound for the CV search range. `0` = auto: `min(n/5, 200)`. |
+| `knot_placement` | string | `"uniform"` | Knot placement method. See Section 20.3.3. |
+| `cv_folds` | int | `5` | Number of folds for k-fold cross-validation. Valid range: 2–20. |
+| `exact_interpolation_max_n` | int | `2000` | Maximum number of observations allowed in `exact_interpolation` mode. |
+
+### 20.3.2 Fit modes
+
+**`approximation`** (default)
+
+Solves the overdetermined LSQ system `N * c = z` where `N` is the
+`nObs x nCtrl` basis matrix and `nCtrl < nObs`. This is the primary use
+case. The number of control points directly controls the smoothing level:
+
+- Too few control points: underfitting — the curve misses systematic
+  variation and residuals show clear patterns.
+- Too many control points: overfitting — the curve tracks noise and
+  CV RMSE increases.
+- Optimal: selected automatically by cross-validation (see Section 20.4).
+
+**`exact_interpolation`**
+
+Sets `nCtrl = nObs`. The fitted curve passes exactly through every
+observation. This is equivalent to a classical spline interpolation.
+
+Restrictions:
+- Only useful for small, clean series (no noise amplification concern).
+- Raises `ConfigException` when `nObs > exact_interpolation_max_n` (default
+  2000). The LSQ system is square but poorly conditioned for large n.
+- CV is skipped in this mode.
+- For gap filling on large series, use `loki_filter` SplineFilter instead.
+
+### 20.3.3 Knot placement
+
+Knot placement determines where the interior knot breakpoints are located
+along the normalised parameter axis [0, 1].
+
+**`uniform`**
+
+Interior knots are equally spaced between 0 and 1 regardless of where
+the data points are. This is appropriate for uniformly sampled data
+(constant timestep). Default for most sensor data.
+
+**`chord_length`**
+
+Uses the Hartley-Judd averaging method to place knots denser in regions
+where the data changes rapidly. Each interior knot is the mean of `p`
+consecutive Greville abscissae derived from the parameter vector.
+
+Recommended when:
+- The series has irregular gaps (variable sample rate).
+- The signal has abrupt transitions in some intervals and slow change in
+  others (e.g. train acceleration events mixed with constant-velocity phases).
+
+**Auto-detection of non-uniform sampling:**
+
+If `knot_placement = "uniform"` is configured but the pipeline detects
+non-uniform sampling (coefficient of variation of timestep differences > 0.1),
+it automatically switches to `"chord_length"` and logs a warning. The
+`autoKnot = true` flag is recorded in the result and shown in the protocol.
+
+### 20.3.4 Degree selection
+
+| Degree | Name | Continuity | Recommended for |
+|--------|------|------------|-----------------|
+| 1 | Linear | C^0 | Piecewise linear trend; rarely used for smooth data. |
+| 2 | Quadratic | C^1 | Smooth but may show kinks at knots. |
+| 3 | Cubic | C^2 | Default. Best balance of smoothness and flexibility. |
+| 4 | Quartic | C^3 | Slightly smoother than cubic; rarely needed. |
+| 5 | Quintic | C^4 | Very smooth; risk of Runge-like oscillations for large nCtrl. |
+
+Use `degree = 3` (cubic) for nearly all time series applications. Higher
+degrees increase the condition number of the basis matrix.
+
+---
+
+## 20.4 Cross-validation and automatic nCtrl selection
+
+When `n_control_points = 0`, the pipeline sweeps `nCtrl` from `n_control_min`
+to `n_control_max` and computes k-fold CV RMSE for each candidate.
+
+**Search range:**
+
+- `n_control_min`: lower bound. Must be `>= degree + 1`. Values below 5
+  rarely make physical sense. Default: 5.
+- `n_control_max`: upper bound. Default `0` = auto: `min(nObs / 5, 200)`.
+  The cap of 200 keeps CV tractable for large series (n ~ 36 000). For
+  sensor data with n ~ 1500, the auto cap is 200 (well above any practical
+  optimum). Increase manually if the CV curve has not yet levelled off at
+  the right boundary.
+
+**Selection rule — one-standard-error elbow:**
+
+1. Find the minimum CV RMSE across all candidates (best fit).
+2. Compute the standard deviation of all CV RMSE values on the curve.
+3. Select the *smallest* `nCtrl` whose CV RMSE does not exceed
+   `minRmse + stdRmse`.
+
+This rule prefers a simpler (more parsimonious) model when the improvement
+from adding more control points falls within the noise of the CV estimate.
+It is a conservative rule: the selected `nCtrl` is typically somewhat smaller
+than the pure minimum-RMSE optimum.
+
+**When to use manual nCtrl:**
+
+- You have domain knowledge about the expected number of degrees of freedom.
+- CV is slow due to a very large series (increase `n_control_max` cap or
+  set `n_control_points` directly).
+- You want reproducible results without CV variance.
+
+---
+
+## 20.5 Confidence interval
+
+The CI band is residual-based:
+
+    lower(t) = fitted(t) - z * residualStd
+    upper(t) = fitted(t) + z * residualStd
+
+where `z` is the standard normal quantile for `confidence_level` and
+`residualStd` is the standard deviation of the training residuals.
+
+This is a homoscedastic (constant-width) CI. It correctly represents
+the average noise level but does not widen in regions where the model
+has fewer nearby knots. For heteroscedastic noise (variance changes over
+time), increase `n_control_points` to allow the spline to adapt locally,
+or pre-process with a variance-stabilising transform.
+
+---
+
+## 20.6 Plot flags
+
+Add these keys directly inside the top-level `"plots"` object.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `spline_overlay` | bool | `true` | Original series + fitted B-spline + CI band. |
+| `spline_residuals` | bool | `true` | Residuals vs sample index with reference lines at 0, ±RMSE, ±2·RMSE. |
+| `spline_basis` | bool | `false` | All basis functions N_{i,p}(t) plotted over [0, 1] with knot positions. Disabled by default — cluttered for nCtrl > 20. |
+| `spline_knots` | bool | `true` | Original series with vertical dashed lines at interior knot positions. |
+| `spline_cv` | bool | `true` | CV RMSE vs nCtrl curve with optimal nCtrl marked. Only generated when CV was run (auto mode). |
+| `spline_diagnostics` | bool | `false` | 4-panel residual diagnostics: ACF, histogram, QQ plot, fitted vs residuals. Delegates to `Plot::residualDiagnostics()`. |
+
+```json
+"plots": {
+    "output_format": "png",
+    "spline_overlay":     true,
+    "spline_residuals":   true,
+    "spline_basis":       false,
+    "spline_knots":       true,
+    "spline_cv":          true,
+    "spline_diagnostics": false
+}
+```
+
+---
+
+## 20.7 Output files
+
+| File | Location | Description |
+|------|----------|-------------|
+| `spline_[dataset]_[component]_overlay.png` | `IMG/` | Fit overlay with CI band. |
+| `spline_[dataset]_[component]_residuals.png` | `IMG/` | Residuals with reference lines. |
+| `spline_[dataset]_[component]_basis.png` | `IMG/` | Basis functions (if enabled). |
+| `spline_[dataset]_[component]_knots.png` | `IMG/` | Knot positions overlaid on series. |
+| `spline_[dataset]_[component]_cv.png` | `IMG/` | CV curve (auto mode only). |
+| `[dataset]_[component]_spline_protocol.txt` | `PROTOCOLS/` | Plain-text protocol: degree, nCtrl, knot placement, RMSE, R², CV summary. |
+| `[dataset]_[component]_spline_fit.csv` | `CSV/` | Per-observation output: index, MJD, UTC, observed, fitted, residual, ci_lower, ci_upper. Delimiter: semicolon. |
+
+---
+
+## 20.8 Best practices by data type
+
+### Vehicle or train sensor data (~1000–1500 observations, 1 Hz)
+
+Smooth physical signal (velocity, acceleration) with moderate sensor noise.
+The B-spline approximation serves as a noise filter and feature extractor.
+Let CV select the optimal nCtrl automatically.
+
+```json
+"spline": {
+    "method": "bspline",
+    "gap_fill_strategy": "linear",
+    "confidence_level": 0.95,
+    "bspline": {
+        "degree": 3,
+        "fit_mode": "approximation",
+        "n_control_points": 0,
+        "n_control_min": 5,
+        "n_control_max": 0,
+        "knot_placement": "uniform",
+        "cv_folds": 5
+    }
+}
+```
+
+After fitting, inspect the `spline_cv` plot. The CV curve should show a clear
+elbow. If the curve is still decreasing at the right edge, increase
+`n_control_max` or set `n_control_points` manually.
+
+For phase segmentation tasks (cruising vs acceleration), compare the B-spline
+fit with `loki_clustering`. The residuals from the B-spline can serve as a
+de-trended feature for clustering.
+
+### Climatological data (6-hour resolution, 25+ years, MJD timestamps)
+
+Direct B-spline fit on a 36 000-point series is expensive for CV. Use one of
+the following strategies:
+
+**Strategy A — Seasonal trend extraction:**
+Set a moderate fixed nCtrl (e.g. 100–300) to capture the long-term trend
+only. Skip CV.
+
+```json
+"bspline": {
+    "degree": 3,
+    "fit_mode": "approximation",
+    "n_control_points": 150,
+    "knot_placement": "uniform"
+}
+```
+
+**Strategy B — Residual smoothing after decomposition:**
+Run `loki_decomposition` first. Apply `loki_spline` to the trend component
+or to residuals (much shorter effective correlation length, CV is fast).
+
+**`n_control_max` guidance for large series:**
+The auto cap is `min(n/5, 200)`. For n = 36 524 this gives 200 — appropriate
+for capturing inter-annual and decadal variability. Do not increase beyond
+500 without checking the condition number of the basis matrix.
+
+### GNSS station coordinates and velocities
+
+Linear velocity trend superimposed on noise. For trend extraction,
+`degree = 3` with a small nCtrl (5–20) is sufficient. For residual analysis
+after trend removal, use a larger nCtrl or switch to `loki_kriging` which
+provides a principled uncertainty model.
+
+```json
+"bspline": {
+    "degree": 3,
+    "fit_mode": "approximation",
+    "n_control_points": 10,
+    "knot_placement": "uniform"
+}
+```
+
+### Small clean series (< 100 points), exact interpolation
+
+Use when the goal is smooth interpolation between known points — for example,
+a reference calibration curve or a manually digitised profile.
+
+```json
+"bspline": {
+    "degree": 3,
+    "fit_mode": "exact_interpolation",
+    "exact_interpolation_max_n": 200
+}
+```
+
+Note: `exact_interpolation` is ill-suited for noisy data — it amplifies noise
+at the control points. For noisy data always use `approximation`.
+
+---
+
+## 20.9 Diagnosing a poor fit
+
+| Symptom | Likely cause | Remedy |
+|---------|-------------|--------|
+| CV curve still decreasing at right boundary | `n_control_max` too small | Increase `n_control_max` or set `n_control_points` manually |
+| Residuals show systematic wave pattern | nCtrl too small (underfitting) | Increase `n_control_min` or use a larger manual `n_control_points` |
+| Residuals oscillate rapidly | nCtrl too large (overfitting) | Decrease `n_control_points` or tighten `n_control_max` |
+| Fit poorly tracks dense regions, overshoots sparse ones | Uniform knots on non-uniform data | Set `knot_placement = "chord_length"` explicitly |
+| AlgorithmException: rank-deficient basis matrix | nCtrl too close to nObs, or degenerate knot vector | Reduce nCtrl; try `"uniform"` knots if using `"chord_length"` |
+| Large CI band width | High residual noise | Expected for noisy data; consider increasing `n_control_points` to reduce RMSE, or pre-filter |
+| Protocol shows `autoKnot = true` (unexpected) | Timestep CV > 0.1 in gap-filled series | Verify gap-filling result; set `knot_placement = "chord_length"` explicitly to suppress the warning |
+
+---
+
+## 20.10 Relationship to other LOKI modules
+
+| Module | Relationship |
+|--------|-------------|
+| `loki_filter` SplineFilter | Uses `CubicSpline` from `loki_core/math/spline.hpp` for gap filling and smoothing. Fixed subsample knots; not LSQ. `loki_spline` is a superset with CV and diagnostics. |
+| `loki_decomposition` | STL uses LOESS for trend/seasonal. `loki_spline` can be applied to the extracted trend component for a parametric description. |
+| `loki_kriging` | Both smooth time series. Kriging provides a probabilistic model with a physically interpretable variogram; B-spline provides a deterministic curve with CV-selected smoothness. For forecasting beyond the data, use Kriging. For smooth interpolation and trend description, use B-spline. |
+| `loki_regression` PolynomialRegressor | Polynomial regression is a degenerate B-spline with one segment. Use `loki_spline` when the signal is too complex for a global polynomial. |
+| `loki_clustering` | B-spline residuals and fitted values can be used as features for clustering (e.g. slope of fit within a window). |
