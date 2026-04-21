@@ -23,6 +23,164 @@ to a structured output directory.
 
 ---
 
+## Getting Started
+
+### Prerequisites
+
+#### Windows (MSYS2 UCRT64) -- tested and supported
+
+1. Install [MSYS2](https://www.msys2.org/). During setup, choose the **UCRT64** environment.
+
+2. Open the **UCRT64** shell and install the required toolchain:
+
+```bash
+pacman -S --needed \
+    mingw-w64-ucrt-x86_64-gcc \
+    mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-gnuplot \
+    git
+```
+
+3. Verify the installation:
+
+```bash
+gcc --version      # expect 13.x or newer
+cmake --version    # expect 3.25 or newer
+gnuplot --version  # expect 5.x or newer
+```
+
+> **Note:** Use the UCRT64 shell for all build and run commands.
+> The MINGW64 shell also works but UCRT64 is the recommended environment.
+
+#### Linux -- build support planned, not yet tested
+
+LOKI is developed on Windows/MSYS2. Linux support is planned and the codebase uses
+standard C++20 with no platform-specific APIs, so a GCC 13+ toolchain with CMake 3.25+
+and gnuplot should work. Verified Linux instructions will be added once testing is complete.
+
+---
+
+### Clone
+
+```bash
+git clone https://github.com/mel105/LOKI.git
+cd LOKI
+```
+
+---
+
+### Build
+
+All dependencies (Eigen3, nlohmann_json, Catch2) are fetched automatically via CMake
+`FetchContent` on first configure -- no manual installation needed. An internet connection
+is required for the first build.
+
+```bash
+# Debug build (with tests and sanitizers)
+cmake --preset debug
+cmake --build --preset debug
+
+# Release build (optimized, no tests)
+cmake --preset release
+cmake --build --preset release
+```
+
+Build output lands in `build/debug/` or `build/release/`.
+
+On Windows, copy the required UCRT64 runtime DLLs alongside the executables if running
+them outside the MSYS2 shell:
+
+```
+libgcc_s_seh-1.dll
+libstdc++-6.dll
+libwinpthread-1.dll
+```
+
+These are found in `C:/msys64/ucrt64/bin/`.
+
+---
+
+### Run tests
+
+```bash
+ctest --preset debug
+```
+
+Or run individual test executables directly from `build/debug/tests/`.
+
+---
+
+### First run
+
+Each module reads a JSON configuration file that controls input data, analysis parameters,
+and output. A minimal example for `loki_outlier`:
+
+1. Create a workspace directory with your input file:
+
+```
+my_workspace/
+  INPUT/
+    my_data.txt
+  config.json
+```
+
+2. Write/use a minimal `config.json`:
+
+```json
+{
+    "input": {
+        "file": "my_data.txt",
+        "time_format": "mjd",
+        "time_columns": [0],
+        "delimiter": ";",
+        "columns": [1]
+    },
+    "output": {
+        "log_level": "info"
+    },
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "time_series": true,
+            "original_series": true,
+            "adjusted_series": true
+        }
+    },
+    "outlier": {
+        "deseasonalization": {
+            "method": "none"
+        },
+        "detection": {
+            "method": "iqr",
+            "iqr_multiplier": 1.5
+        },
+        "replacement_strategy": "linear"
+    }
+}
+```
+
+3. Run from the workspace directory:
+
+```bash
+loki_outlier.exe config.json (config contains the appropriate json file.) 
+```
+
+4. Results appear in:
+
+```
+my_workspace/
+  OUTPUT/
+    IMG/        # plots
+    CSV/        # numerical results
+    PROTOCOLS/  # plain-text analysis report
+    LOG/        # execution log
+```
+
+For a full description of all configuration options, see [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md).
+
+---
+
 ## Modules
 
 | Module | Description |
@@ -50,59 +208,6 @@ math, B-spline basis), and statistical utilities.
 
 ---
 
-## Build
-
-**Requirements:** GCC 13+, CMake 3.25+, MSYS2 UCRT64 (Windows) or standard GCC toolchain (Linux)
-
-All dependencies are fetched automatically via CMake `FetchContent` — no manual installation needed.
-
-```bash
-# Clone
-git clone https://github.com/mel105/LOKI.git
-cd LOKI
-
-# Configure and build (debug)
-cmake --preset debug
-cmake --build --preset debug
-
-# Run tests
-ctest --preset debug
-```
-
-**Dependencies fetched automatically:**
-
-| Library | Version | Purpose |
-|---------|---------|---------|
-| Eigen3 | 3.4.0 | Linear algebra, LSQ, SVD |
-| nlohmann_json | 3.11.3 | Configuration files |
-| Catch2 | 3.5.2 | Unit and integration tests |
-
----
-
-## Usage
-
-Each module is a standalone executable that reads a JSON configuration file:
-
-```bash
-loki_homogeneity.exe config/homogeneity.json
-loki_outlier.exe     config/outlier.json
-loki_spectral.exe    config/spectral.json
-```
-
-Output is written to a structured workspace:
-
-```
-OUTPUT/
-  IMG/        # plots (PNG, EPS, SVG)
-  CSV/        # numerical results
-  PROTOCOLS/  # plain-text analysis reports
-  LOG/        # execution logs
-```
-
-Configuration reference: [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md)
-
----
-
 ## Examples
 
 *Screenshots and worked examples coming soon.*
@@ -114,17 +219,19 @@ Configuration reference: [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md)
 API reference (Doxygen): run `doxygen Doxyfile` in the repository root.
 Output: `docs/doxygen/html/index.html`
 
+Configuration reference: [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md)
+
 ---
 
 ## Roadmap
 
-- `loki_spatial` — 2D spatial Kriging and interpolation *(in development)*
-- `loki_multivariate` — multivariate time series analysis *(planned)*
-- `loki_wavelet` — discrete and continuous wavelet transform *(planned)*
-- `loki_geodesy` — geodetic computations *(planned)*
+- `loki_spatial` -- 2D spatial Kriging and interpolation *(in development)*
+- `loki_multivariate` -- multivariate time series analysis *(planned)*
+- `loki_wavelet` -- discrete and continuous wavelet transform *(planned)*
+- `loki_geodesy` -- geodetic computations *(planned)*
 
 ---
 
 ## Author
 
-Michal — [github.com/mel105](https://github.com/mel105)
+Michal -- [github.com/mel105](https://github.com/mel105)
