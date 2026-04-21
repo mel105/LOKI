@@ -177,7 +177,7 @@ my_workspace/
     LOG/        # execution log
 ```
 
-For a full description of all configuration options, see [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md).
+For a full description of all configuration options, see [`CONFIG_REFERENCE.md`](config/CONFIG_REFERENCE.md).
 
 ---
 
@@ -219,7 +219,7 @@ math, B-spline basis), and statistical utilities.
 API reference (Doxygen): run `doxygen Doxyfile` in the repository root.
 Output: `docs/doxygen/html/index.html`
 
-Configuration reference: [`CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md)
+Configuration reference: [`CONFIG_REFERENCE.md`](config/CONFIG_REFERENCE.md)
 
 ---
 
