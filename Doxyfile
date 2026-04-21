@@ -1,0 +1,203 @@
+# Doxyfile -- Doxygen configuration for the LOKI project
+# Place this file in the repository root and run: doxygen Doxyfile
+
+#---------------------------------------------------------------------------
+# Project identity
+#---------------------------------------------------------------------------
+
+PROJECT_NAME           = "LOKI"
+PROJECT_BRIEF          = "Modular C++20 framework for statistical analysis of scientific time series"
+PROJECT_NUMBER         = ""
+PROJECT_LOGO           =
+
+#---------------------------------------------------------------------------
+# Output
+#---------------------------------------------------------------------------
+
+OUTPUT_DIRECTORY       = docs/doxygen
+OUTPUT_LANGUAGE        = English
+CREATE_SUBDIRS         = NO
+
+# Generate HTML (primary output)
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+HTML_COLORSTYLE        = LIGHT
+
+# Disable LaTeX by default (enable manually if PDF export is needed)
+GENERATE_LATEX         = NO
+
+# Disable other formats
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_DOCBOOK       = NO
+
+#---------------------------------------------------------------------------
+# Input -- all module headers
+#---------------------------------------------------------------------------
+
+INPUT                  = libs/loki_core/include       \
+                         libs/loki_homogeneity/include \
+                         libs/loki_outlier/include     \
+                         libs/loki_filter/include      \
+                         libs/loki_regression/include  \
+                         libs/loki_stationarity/include\
+                         libs/loki_arima/include       \
+                         libs/loki_ssa/include         \
+                         libs/loki_decomposition/include\
+                         libs/loki_spectral/include    \
+                         libs/loki_kalman/include      \
+                         libs/loki_qc/include          \
+                         libs/loki_clustering/include  \
+                         libs/loki_simulate/include    \
+                         libs/loki_evt/include         \
+                         libs/loki_kriging/include     \
+                         libs/loki_spline/include      \
+                         docs/pages
+
+# Recurse into subdirectories
+RECURSIVE              = YES
+
+# Only parse header files (public API)
+FILE_PATTERNS          = *.hpp
+
+# Exclude generated or third-party files (none currently, but defensive)
+EXCLUDE                =
+EXCLUDE_PATTERNS       = */build/* */tests/*
+EXCLUDE_SYMLINKS       = NO
+
+#---------------------------------------------------------------------------
+# Source browsing
+#---------------------------------------------------------------------------
+
+# Include source files for cross-reference (set YES if you want source listing)
+SOURCE_BROWSER         = NO
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = YES
+
+#---------------------------------------------------------------------------
+# Extraction settings
+#---------------------------------------------------------------------------
+
+# Extract everything -- including undocumented members
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_ANON_NSPACES   = NO
+
+# Warn about undocumented public members (encourages complete Doxygen coverage)
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARNINGS               = YES
+
+#---------------------------------------------------------------------------
+# Preprocessing
+#---------------------------------------------------------------------------
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+EXPAND_ONLY_PREDEF     = NO
+SEARCH_INCLUDES        = YES
+
+# Add include paths so Doxygen resolves cross-module includes correctly
+INCLUDE_PATH           = libs/loki_core/include       \
+                         libs/loki_homogeneity/include \
+                         libs/loki_outlier/include     \
+                         libs/loki_filter/include      \
+                         libs/loki_regression/include  \
+                         libs/loki_stationarity/include\
+                         libs/loki_arima/include       \
+                         libs/loki_ssa/include         \
+                         libs/loki_decomposition/include\
+                         libs/loki_spectral/include    \
+                         libs/loki_kalman/include      \
+                         libs/loki_qc/include          \
+                         libs/loki_clustering/include  \
+                         libs/loki_simulate/include    \
+                         libs/loki_evt/include         \
+                         libs/loki_kriging/include     \
+                         libs/loki_spline/include
+
+#---------------------------------------------------------------------------
+# Diagrams
+#---------------------------------------------------------------------------
+
+# Class hierarchy and collaboration diagrams require Graphviz (dot).
+# Install Graphviz and set HAVE_DOT = YES to enable.
+HAVE_DOT               = NO
+DOT_NUM_THREADS        = 0
+CLASS_DIAGRAMS         = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = NO
+
+#---------------------------------------------------------------------------
+# HTML appearance
+#---------------------------------------------------------------------------
+
+# Use the built-in tree-view navigation
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 280
+
+# Search functionality (JavaScript-based, no external server needed)
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+
+# Doxygen Awesome theme improves the default HTML appearance significantly.
+# To enable:
+#   1. Clone: git clone https://github.com/jothepro/doxygen-awesome-css docs/doxygen-awesome
+#   2. Uncomment the lines below.
+#
+# HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome/doxygen-awesome.css
+# HTML_HEADER            =
+# HTML_FOOTER            =
+
+#---------------------------------------------------------------------------
+# Main page and extra documentation pages
+#---------------------------------------------------------------------------
+
+# docs/pages/ contains hand-written .md pages that appear in the Doxygen output.
+# The file docs/pages/mainpage.md should contain @mainpage to define the front page.
+USE_MDFILE_AS_MAINPAGE = docs/pages/mainpage.md
+
+#---------------------------------------------------------------------------
+# Namespace and class organisation
+#---------------------------------------------------------------------------
+
+# Show full namespace qualification in member lists
+INLINE_INHERITED_MEMB  = NO
+FULL_PATH_NAMES        = NO
+SHORT_NAMES            = NO
+
+# Sort alphabetically within each section
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
+SORT_GROUP_DOCS        = YES
+
+#---------------------------------------------------------------------------
+# Miscellaneous
+#---------------------------------------------------------------------------
+
+# Allow Markdown formatting inside Doxygen comments
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+
+# Show grouped modules in the module index
+SHOW_GROUPED_MEMB_INC  = YES
+
+# Tab size matching project style
+TAB_SIZE               = 4
+
+# Do not show the "Generated by Doxygen" timestamp (cleaner for version control)
+HTML_TIMESTAMP         = NO
+
+QUIET                  = NO
+WARNINGS               = YES
