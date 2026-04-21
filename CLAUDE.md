@@ -34,6 +34,42 @@ Current domains:
 
 ---
 
+## Publication Workflow
+
+### Two-document structure
+LOKI documentation is published as two separate PDF documents written in LaTeX:
+- **Part A (Theory)** -- Slovak. Mathematical foundations and algorithmic description
+  of all modules. Target audience: researchers and developers.
+- **Part B (Manual)** -- English. User guide, configuration reference, worked examples.
+  Target audience: users of LOKI applications.
+
+### LaTeX conventions
+- One chapter per `.tex` file. Main document uses `\include{kapitola}`.
+- Chapter structure starts at `\chapter{}` level.
+- Equations numbered per chapter: `(3.1)`, `(3.2)`, ...
+- Mathematical level: university technical textbook (definitions yes,
+  formal proofs no). Rigorous but readable.
+- Examples in Part A only where strictly necessary. Part B carries
+  all practical examples.
+- Bibliography: BibTeX, style to be confirmed per template.
+
+### Part A -- chapter scope (Part I: Time Series)
+Each chapter covers one module or one coherent group of methods.
+Target length: ~10 pages per chapter. Not a hard limit -- let content
+dictate length naturally.
+
+### Thread startup for publication work
+Start thread with: "Working on LOKI -- publikacia, see CLAUDE.md"
+Attach: CLAUDE.md + LaTeX template + chapter(s) to write.
+Claude reads the template first, confirms it is suitable, then begins writing.
+
+### Key references (Part I, Chapter 3 -- Homogeneity)
+- Csörgő, M. & Horváth, L. -- theoretical foundation (book)
+- Jarušková, D. (1996) -- methodological framework
+- Elias, M. & Jarušková, D. -- application/extension (joint paper)
+Full BibTeX entries to be supplied at thread start.
+
+
 ## Workflow Rules
 
 ### One task per conversation thread
@@ -818,6 +854,8 @@ and future spatial math files.
 | future | `loki_realtime` | new app | FUTURE |
 | future | `loki_ml` | new app | FUTURE |
 | separate | `GeoKit` | separate project | PLANNED |
+| in progress | Publication Part A (Theory, SK) | docs | IN PROGRESS |
+| in progress | Publication Part B (Manual, EN) | docs | IN PROGRESS |
 
 ---
 
@@ -854,3 +892,8 @@ and future spatial math files.
 - CRITICAL: snhtDetector.hpp a snhtDetector.cpp existuju v repozitari ako PRAZDNE
   subory -- ide o systemovu vec. NIKDY sa nepytaj ci su prilozene alebo nie.
   Jednoducho ich naplnit podla dizajnu. TOTO PRAVIDLO NEMAZES.
+- Publikacia Part A: slovensky, LaTeX, teoria, ~10 stran/kapitola.
+- Publikacia Part B: anglicky, LaTeX, manual a prakticke priklady.
+- Obsah Part I (Time Series): kapitoly 1-18 podla hrubej osnovy v docs/.
+- Kapitola 3 obsahuje: nas algoritmus (t-statistika, Csorgo-Horvath,
+  Jaruskova 1996, Elias-Jaruskova), SNHT, PELT, BOCPD.
