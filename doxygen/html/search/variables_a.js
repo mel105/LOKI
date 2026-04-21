@@ -1,0 +1,24 @@
+var searchData=
+[
+  ['k_0',['K',['../structloki_1_1ssa_1_1_ssa_result.html#aad1b4420e7dbad509a8c5e5a050d827a',1,'loki::ssa::SsaResult']]],
+  ['k_1',['k',['../structloki_1_1_k_means_clustering_config.html#a48b99e7beef8571e0387b6c53c95bc57',1,'loki::KMeansClusteringConfig']]],
+  ['kalmandiagnostics_2',['kalmanDiagnostics',['../structloki_1_1_plot_config.html#ab12ba97d2bf0078ba719f74296c96f3a',1,'loki::PlotConfig']]],
+  ['kalmanforecast_3',['kalmanForecast',['../structloki_1_1_plot_config.html#a63e86c54dea07d1f3493d9aaa7737363',1,'loki::PlotConfig']]],
+  ['kalmangain_4',['kalmanGain',['../structloki_1_1_plot_config.html#a64f14dd2680aaa0adba2886f2cabe6f0',1,'loki::PlotConfig']]],
+  ['kalmangain0_5',['kalmanGain0',['../structloki_1_1kalman_1_1_filter_step.html#a5d1794538f282f86fa83b6a72d352728',1,'loki::kalman::FilterStep']]],
+  ['kalmaninnovations_6',['kalmanInnovations',['../structloki_1_1_plot_config.html#a6eb56c8a1c93e2f919ef4a981a007906',1,'loki::PlotConfig']]],
+  ['kalmanoverlay_7',['kalmanOverlay',['../structloki_1_1_plot_config.html#abc0bdb0339bf30a9b68bc88a5434edc8',1,'loki::PlotConfig']]],
+  ['kalmanuncertainty_8',['kalmanUncertainty',['../structloki_1_1_plot_config.html#a694da3ddde91f875ea3d136ffc4e98bb',1,'loki::PlotConfig']]],
+  ['kernel_9',['kernel',['../structloki_1_1_kernel_smoother_1_1_config.html#acf9311a4d358bfe4f75ee180537d9e9d',1,'loki::KernelSmoother::Config::kernel'],['../structloki_1_1_loess_filter_1_1_config.html#a898fb28b35c48a48903ba154277a865b',1,'loki::LoessFilter::Config::kernel']]],
+  ['kmax_10',['kMax',['../structloki_1_1_k_means_clustering_config.html#a9091666c08983e1622bbe36ffaa03a98',1,'loki::KMeansClusteringConfig']]],
+  ['kmeansk_11',['kmeansK',['../structloki_1_1_ssa_grouping_config.html#ade95c8c599df85aa33259d2b1cea2c44',1,'loki::SsaGroupingConfig']]],
+  ['kmin_12',['kMin',['../structloki_1_1_k_means_clustering_config.html#ad3e09c0b09fdaa14ce123552d9968e20',1,'loki::KMeansClusteringConfig']]],
+  ['knotplacement_13',['knotPlacement',['../structloki_1_1_b_spline_config.html#ad1d63593e929dfe3de757cb02a399b74',1,'loki::BSplineConfig::knotPlacement'],['../structloki_1_1math_1_1_b_spline_fit_result.html#a00ccb9258299d0efe543c808e745b5ca',1,'loki::math::BSplineFitResult::knotPlacement'],['../structloki_1_1spline_1_1_spline_result.html#a3aa2f2529b98b7aaf29dca44b92054a0',1,'loki::spline::SplineResult::knotPlacement']]],
+  ['knots_14',['knots',['../structloki_1_1math_1_1_b_spline_fit_result.html#a0954f08e4b11bfc3d42c6555f0f28c09',1,'loki::math::BSplineFitResult']]],
+  ['knownmean_15',['knownMean',['../structloki_1_1_kriging_config.html#ab9bf048df73d858b0f4a8e7842b69043',1,'loki::KrigingConfig']]],
+  ['krigingcrossval_16',['krigingCrossval',['../structloki_1_1_plot_config.html#a77172115fda57c57e996deb24deeeb57',1,'loki::PlotConfig']]],
+  ['krigingpredictions_17',['krigingPredictions',['../structloki_1_1_plot_config.html#ab2a60061b1167c3b001c6e9524fe02eb',1,'loki::PlotConfig']]],
+  ['krigingvariogram_18',['krigingVariogram',['../structloki_1_1_plot_config.html#ac04bcf46c7a173407ec9c9b357295b4d',1,'loki::PlotConfig']]],
+  ['kselected_19',['kSelected',['../structloki_1_1clustering_1_1_clustering_result.html#ad6acc1711f10fdab70d6dcc84d11e1bc',1,'loki::clustering::ClusteringResult']]],
+  ['kurtosis_20',['kurtosis',['../structloki_1_1stats_1_1_summary_stats.html#a81561911db4c9d220f41e7f62fcae323',1,'loki::stats::SummaryStats']]]
+];

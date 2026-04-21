@@ -1,0 +1,20 @@
+var searchData=
+[
+  ['absderivative_0',['absDerivative',['../structloki_1_1_clustering_feature_config.html#a19054ef47ca8a30a5c7238179f04cd81',1,'loki::ClusteringFeatureConfig']]],
+  ['acfdependencelimit_1',['acfDependenceLimit',['../structloki_1_1homogeneity_1_1_change_point_detector_config.html#a8305144d4c2de6a97d9ec73988a55bb0',1,'loki::homogeneity::ChangePointDetectorConfig']]],
+  ['acflag1_2',['acfLag1',['../structloki_1_1homogeneity_1_1_change_point_result.html#a169a64754ecb3d0ed488670adece58e4',1,'loki::homogeneity::ChangePointResult']]],
+  ['acfmaxlag_3',['acfMaxLag',['../structloki_1_1_filter_window_advisor_config.html#a33e8cdc23109b4f0f3a3e1a5108cb387',1,'loki::FilterWindowAdvisorConfig']]],
+  ['adjustedseries_4',['adjustedSeries',['../structloki_1_1homogeneity_1_1_homogenizer_result.html#a079daaa9cc3da33d5f32a0c04bb2f804',1,'loki::homogeneity::HomogenizerResult']]],
+  ['aic_5',['aic',['../structloki_1_1regression_1_1_regression_result.html#aa65394623bee7ad95d7cc772d9766bcb',1,'loki::regression::RegressionResult']]],
+  ['alpha_6',['alpha',['../structloki_1_1stats_1_1_bootstrap_config.html#a75d4be5f636c73fdb951ca1a5f0f55a1',1,'loki::stats::BootstrapConfig::alpha'],['../structloki_1_1stats_1_1_permutation_config.html#a455fd501fa70eedc11c32b4c29e8f941',1,'loki::stats::PermutationConfig::alpha'],['../structloki_1_1_ema_filter_1_1_config.html#a0f0114a9f1971fecafe633b3e8a673cd',1,'loki::EmaFilter::Config::alpha']]],
+  ['alternative_7',['alternative',['../structloki_1_1stats_1_1_permutation_config.html#ae2dff5168fffc75f2d20640e1b52c458',1,'loki::stats::PermutationConfig']]],
+  ['amplitudes_8',['amplitudes',['../structloki_1_1spectral_1_1_fft_frame.html#a7cd39f34a106b5b8c1242cfd30d143f0',1,'loki::spectral::FftFrame::amplitudes'],['../structloki_1_1spectral_1_1_spectral_result.html#afbea34922566ba630baa7192fb84e6ef',1,'loki::spectral::SpectralResult::amplitudes']]],
+  ['arcoeffs_9',['arCoeffs',['../structloki_1_1arima_1_1_arima_result.html#af68e29afabcaf4e7f4ce2b57cbf0bb25',1,'loki::arima::ArimaResult']]],
+  ['arimadiagnostics_10',['arimaDiagnostics',['../structloki_1_1_plot_config.html#a4572c01c73b6123267b91fccc5c3eb41',1,'loki::PlotConfig']]],
+  ['arimaforecast_11',['arimaForecast',['../structloki_1_1_plot_config.html#a8715186468ab42b638858e889eeb55f1',1,'loki::PlotConfig']]],
+  ['arimaoverlay_12',['arimaOverlay',['../structloki_1_1_plot_config.html#a6ed519d7d5c40a034141c76ead8600fd',1,'loki::PlotConfig']]],
+  ['arlags_13',['arLags',['../structloki_1_1arima_1_1_arima_result.html#a697a481c5afb28b8592841de98c8d504',1,'loki::arima::ArimaResult']]],
+  ['arorder_14',['arOrder',['../structloki_1_1outlier_1_1_hat_matrix_result.html#aaa26eb970d96432bbf181391368fc945',1,'loki::outlier::HatMatrixResult::arOrder'],['../structloki_1_1outlier_1_1_hat_matrix_detector_config.html#ad3891adc2f364ff083b998d7fdf80ef6',1,'loki::outlier::HatMatrixDetectorConfig::arOrder']]],
+  ['autoknot_15',['autoKnot',['../structloki_1_1spline_1_1_spline_result.html#ae82e5cd703255fef6efd0d3e7e771db5',1,'loki::spline::SplineResult']]],
+  ['autoorder_16',['autoOrder',['../structloki_1_1_arima_config.html#a80629d19dabdf312270925a8a8b8b7c0',1,'loki::ArimaConfig']]]
+];

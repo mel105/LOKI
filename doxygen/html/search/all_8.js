@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['h_0',['H',['../structloki_1_1kalman_1_1_kalman_model.html#a9bba4c0e1cc5aeb4c2b61d7dd6a27461',1,'loki::kalman::KalmanModel']]],
+  ['handling_1',['handling',['../classloki_1_1_data_manager.html#autotoc_md8',1,'Error handling'],['../classloki_1_1_loader.html#autotoc_md12',1,'Error handling']]],
+  ['harmonic_2',['harmonic',['../classloki_1_1_design_matrix.html#af4e6f892a83ea7d56b9d8bb11f9da61a',1,'loki::DesignMatrix']]],
+  ['harmonicregressor_3',['HarmonicRegressor',['../classloki_1_1regression_1_1_harmonic_regressor.html',1,'loki::regression::HarmonicRegressor'],['../classloki_1_1regression_1_1_harmonic_regressor.html#adb399abff35757f0cda0dfd4d1fc57c9',1,'loki::regression::HarmonicRegressor::HarmonicRegressor()']]],
+  ['hasobservation_4',['hasObservation',['../structloki_1_1kalman_1_1_filter_step.html#ab8587e78620d67a2a1e3da2886a241b7',1,'loki::kalman::FilterStep']]],
+  ['hatmatrix_5',['HatMatrix',['../classloki_1_1_hat_matrix.html',1,'loki::HatMatrix'],['../classloki_1_1_hat_matrix.html#ae3dd592e0c7dfa57be6577637cb104a1',1,'loki::HatMatrix::HatMatrix()']]],
+  ['hatmatrixdetector_6',['HatMatrixDetector',['../classloki_1_1outlier_1_1_hat_matrix_detector.html',1,'loki::outlier::HatMatrixDetector'],['../classloki_1_1outlier_1_1_hat_matrix_detector.html#a07a9aa167792ceafd9cb04409ea201c8',1,'loki::outlier::HatMatrixDetector::HatMatrixDetector()']]],
+  ['hatmatrixdetectorconfig_7',['HatMatrixDetectorConfig',['../structloki_1_1outlier_1_1_hat_matrix_detector_config.html',1,'loki::outlier']]],
+  ['hatmatrixresult_8',['HatMatrixResult',['../structloki_1_1outlier_1_1_hat_matrix_result.html',1,'loki::outlier']]],
+  ['hatmatrixsection_9',['HatMatrixSection',['../structloki_1_1_outlier_config_1_1_hat_matrix_section.html',1,'loki::OutlierConfig']]],
+  ['hazardlambda_10',['hazardLambda',['../structloki_1_1homogeneity_1_1_bocpd_detector_config.html#ab99a172709b4615cc5ad2b657618222f',1,'loki::homogeneity::BocpdDetectorConfig']]],
+  ['header_20detection_11',['Column header detection',['../classloki_1_1_loader.html#autotoc_md11',1,'']]],
+  ['histogram_12',['histogram',['../classloki_1_1_plot.html#a422ced1e72d2bb250375804c9e561df5',1,'loki::Plot::histogram(const TimeSeries &amp;ts, int bins=30)'],['../classloki_1_1_plot.html#af758ea328d168fe4dd4301d02447d7f1',1,'loki::Plot::histogram(const std::vector&lt; double &gt; &amp;values, int bins=30, const std::string &amp;title=&quot;histogram&quot;)']]],
+  ['homogeneityanalyzer_13',['HomogeneityAnalyzer',['../classloki_1_1homogeneity_1_1_homogeneity_analyzer.html',1,'loki::homogeneity::HomogeneityAnalyzer'],['../classloki_1_1homogeneity_1_1_homogeneity_analyzer.html#a404dcc85b772934c6f2d49e9e859f72c',1,'loki::homogeneity::HomogeneityAnalyzer::HomogeneityAnalyzer()']]],
+  ['homogeneityconfig_14',['HomogeneityConfig',['../structloki_1_1_homogeneity_config.html',1,'loki']]],
+  ['homogenizer_15',['Homogenizer',['../classloki_1_1homogeneity_1_1_homogenizer.html',1,'loki::homogeneity']]],
+  ['homogenizerconfig_16',['HomogenizerConfig',['../structloki_1_1homogeneity_1_1_homogenizer_config.html',1,'loki::homogeneity']]],
+  ['homogenizerresult_17',['HomogenizerResult',['../structloki_1_1homogeneity_1_1_homogenizer_result.html',1,'loki::homogeneity']]],
+  ['horizondays_18',['horizonDays',['../structloki_1_1_kriging_prediction_config.html#a63198d0064586e1bb827ad0a9d3e9193',1,'loki::KrigingPredictionConfig']]],
+  ['hour_19',['hour',['../class_time_stamp.html#ae79bb91236d064a6b436ca61acfcdbae',1,'TimeStamp']]],
+  ['hurstenabled_20',['hurstEnabled',['../structloki_1_1_qc_config.html#a56dc1cf17144ebd2d4664e6c5cc4d00b',1,'loki::QcConfig']]],
+  ['hurstexp_21',['hurstExp',['../structloki_1_1stats_1_1_summary_stats.html#ab68fb6b6d2ad1504f55ce5a8f3de6e9b',1,'loki::stats::SummaryStats::hurstExp'],['../structloki_1_1qc_1_1_qc_result.html#af9755b991555f4f78e0e6a025d807db2',1,'loki::qc::QcResult::hurstExp']]],
+  ['hypothesisresult_22',['HypothesisResult',['../structloki_1_1stats_1_1_hypothesis_result.html',1,'loki::stats']]]
+];

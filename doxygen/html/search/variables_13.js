@@ -1,0 +1,27 @@
+var searchData=
+[
+  ['t_0',['t',['../structloki_1_1regression_1_1_robust_regressor_1_1_weighted_observation.html#aac65038a1f1633e1fb75347aede96bc1',1,'loki::regression::RobustRegressor::WeightedObservation']]],
+  ['targetmjd_1',['targetMjd',['../structloki_1_1_kriging_prediction_config.html#a981794107c4db9ba949e55b3cf487c36',1,'loki::KrigingPredictionConfig']]],
+  ['tbandwidth_2',['tBandwidth',['../structloki_1_1_stl_decomposition_config.html#aba0fc6807a1bfa27a66c1ec020c79594',1,'loki::StlDecompositionConfig']]],
+  ['tdegree_3',['tDegree',['../structloki_1_1_stl_decomposition_config.html#a7c10503f895693b6ef0e6d746982d00c',1,'loki::StlDecompositionConfig']]],
+  ['temporalenabled_4',['temporalEnabled',['../structloki_1_1_qc_config.html#afdc5e12942dcbec2bccc0faf8d3f462f',1,'loki::QcConfig']]],
+  ['testname_5',['testName',['../structloki_1_1stats_1_1_hypothesis_result.html#afdffb711c589551fc6b7666714936a6a',1,'loki::stats::HypothesisResult::testName'],['../structloki_1_1stats_1_1_permutation_result.html#ae2a935bc6fc7536ab37db60f95418a68',1,'loki::stats::PermutationResult::testName']]],
+  ['teststatistic_6',['testStatistic',['../structloki_1_1regression_1_1_breusch_pagan_result.html#a6ddbfdac17ec67b1bea609f99cf2ebaf',1,'loki::regression::BreuschPaganResult']]],
+  ['threshold_7',['threshold',['../structloki_1_1homogeneity_1_1_bocpd_detector_config.html#a9ca570ab565199eb3cd9605f85471032',1,'loki::homogeneity::BocpdDetectorConfig::threshold'],['../structloki_1_1outlier_1_1_hat_matrix_result.html#aa335c7188d9fa3f7b1343e4be989e61f',1,'loki::outlier::HatMatrixResult::threshold'],['../structloki_1_1outlier_1_1_outlier_point.html#ae6fcefe94113700cb50a520b8fc5b147',1,'loki::outlier::OutlierPoint::threshold'],['../structloki_1_1regression_1_1_vif_result.html#a729385bfd13dda5da9e0f590b2e0888d',1,'loki::regression::VifResult::threshold'],['../structloki_1_1evt_1_1_gpd_fit_result.html#ac8889ba377215859bd4863d4371fc185',1,'loki::evt::GpdFitResult::threshold']]],
+  ['thresholdcandidates_8',['thresholdCandidates',['../structloki_1_1evt_1_1_evt_result.html#a48ac5adc12d9f939bb5f69215b46245f',1,'loki::evt::EvtResult']]],
+  ['times_9',['times',['../structloki_1_1spectral_1_1_spectrogram_result.html#a29351b4aa13860424f149f32387bdadd',1,'loki::spectral::SpectrogramResult::times'],['../structloki_1_1kalman_1_1_kalman_result.html#ad1ba78045d08c8ca637bd31ce9b86ec6',1,'loki::kalman::KalmanResult::times']]],
+  ['timeunit_10',['timeUnit',['../structloki_1_1_evt_config.html#a0afa91c3ccdd3d74dfbb326d6fa0ec9e',1,'loki::EvtConfig']]],
+  ['tmax_11',['tMax',['../structloki_1_1math_1_1_b_spline_fit_result.html#a42a053b2381237312dbb9a0cce3dc089',1,'loki::math::BSplineFitResult']]],
+  ['tmin_12',['tMin',['../structloki_1_1math_1_1_b_spline_fit_result.html#a525f95cb252b887b5c21425950aed16e',1,'loki::math::BSplineFitResult']]],
+  ['tnorm_13',['tNorm',['../structloki_1_1math_1_1_b_spline_fit_result.html#a7eadbb6b49a4c1a7a10f17fa8a24a6e7',1,'loki::math::BSplineFitResult']]],
+  ['tobs_14',['tObs',['../structloki_1_1spline_1_1_spline_result.html#ad088ed65824c6deaa7d87c802b78c7fd',1,'loki::spline::SplineResult']]],
+  ['tol_15',['tol',['../structloki_1_1_arima_fitter_config.html#a10707ba8e6628b7f70e25fe341d3ed0f',1,'loki::ArimaFitterConfig::tol'],['../structloki_1_1_k_means_clustering_config.html#a6de085c40d175b755e81c68300b0be00',1,'loki::KMeansClusteringConfig::tol'],['../structloki_1_1arima_1_1_arima_fitter_config.html#aac7f9a991a5514406f2413a4a902c595',1,'loki::arima::ArimaFitterConfig::tol']]],
+  ['topn_16',['topN',['../structloki_1_1_spectral_peak_config.html#acf51ab253144783d0ed3d1fbbc7872a9',1,'loki::SpectralPeakConfig::topN'],['../structloki_1_1spectral_1_1_peak_detector_params.html#a3a12dbbccb26a45133764803d857973b',1,'loki::spectral::PeakDetectorParams::topN']]],
+  ['tref_17',['tRef',['../structloki_1_1regression_1_1_regression_result.html#affb9d6388014ea904a78e399d588db6e',1,'loki::regression::RegressionResult']]],
+  ['trend_18',['trend',['../structloki_1_1regression_1_1_trend_estimator_1_1_decomposition_result.html#a1aa542ad792ec76f21f8b1f559dbd990',1,'loki::regression::TrendEstimator::DecompositionResult::trend'],['../structloki_1_1ssa_1_1_ssa_result.html#a358ccc8216257e336ba419e108cc1c52',1,'loki::ssa::SsaResult::trend'],['../structloki_1_1_decomposition_result.html#a9666606519f337961ddf39a61e409e29',1,'loki::DecompositionResult::trend']]],
+  ['trenddegree_19',['trendDegree',['../structloki_1_1_kriging_config.html#ac0cc26d188e0b0d14bbd2a216747433d',1,'loki::KrigingConfig']]],
+  ['trendfilter_20',['trendFilter',['../structloki_1_1_classical_decomposition_config.html#af5abcc73302ca1fe16430163cf997968',1,'loki::ClassicalDecompositionConfig']]],
+  ['trendintercept_21',['trendIntercept',['../structloki_1_1regression_1_1_trend_estimator_1_1_decomposition_result.html#adf2bd1fa854866a6fd0bfd9d0fe6d25b',1,'loki::regression::TrendEstimator::DecompositionResult']]],
+  ['trendslope_22',['trendSlope',['../structloki_1_1regression_1_1_trend_estimator_1_1_decomposition_result.html#aa70e111f6d4591575691a9912f09b8ca',1,'loki::regression::TrendEstimator::DecompositionResult']]],
+  ['trendtype_23',['trendType',['../structloki_1_1stationarity_1_1_test_result.html#a1ce39e762adeb58516d372f249cf9cc1',1,'loki::stationarity::TestResult']]]
+];

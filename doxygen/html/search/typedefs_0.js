@@ -1,0 +1,4 @@
+var searchData=
+[
+  ['config_0',['Config',['../classloki_1_1homogeneity_1_1_bocpd_detector.html#ad6a99aca5399e8967f7b5ee4c470742d',1,'loki::homogeneity::BocpdDetector::Config'],['../classloki_1_1homogeneity_1_1_change_point_detector.html#ab7cce0415c606935bbf3f7b882c32632',1,'loki::homogeneity::ChangePointDetector::Config'],['../classloki_1_1homogeneity_1_1_multi_change_point_detector.html#a12695d33da322c8d044a94bb38ee3aca',1,'loki::homogeneity::MultiChangePointDetector::Config'],['../classloki_1_1homogeneity_1_1_pelt_detector.html#a0ec04bb10a1612b4cea7819869a6ccaf',1,'loki::homogeneity::PeltDetector::Config'],['../classloki_1_1homogeneity_1_1_snht_detector.html#a274aec6f61f01c6848f74f042f6e2508',1,'loki::homogeneity::SnhtDetector::Config'],['../classloki_1_1outlier_1_1_hat_matrix_detector.html#ac9fcdfff526e516c2c688fb175a4fe91',1,'loki::outlier::HatMatrixDetector::Config']]]
+];

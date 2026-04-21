@@ -1,0 +1,22 @@
+var searchData=
+[
+  ['d_0',['D',['../structloki_1_1_arima_sarima_config.html#ae40abd55805a5dd5ca340e4a94b559e9',1,'loki::ArimaSarimaConfig::D'],['../structloki_1_1arima_1_1_sarima_order.html#a54fce1cc173f2f3acc4cd2551aa9417a',1,'loki::arima::SarimaOrder::D']]],
+  ['d_1',['d',['../structloki_1_1_arima_config.html#abbb2602e99ecb9f691e62e621ce10f4b',1,'loki::ArimaConfig::d'],['../structloki_1_1_simulate_arima_config.html#a3c775e42c68525cb865c5a4251d5686e',1,'loki::SimulateArimaConfig::d'],['../structloki_1_1arima_1_1_arima_order.html#a53c3c61256f7a3972b62a2e0f44b67e0',1,'loki::arima::ArimaOrder::d'],['../structloki_1_1simulate_1_1_arima_simulator_1_1_parametric_config.html#acb9cc2f40e7a7f4caae9d6bb143a3e23',1,'loki::simulate::ArimaSimulator::ParametricConfig::d']]],
+  ['datasetname_2',['datasetName',['../structloki_1_1qc_1_1_qc_result.html#ac08aab2c22cada57034a1ca5ac1f85f1',1,'loki::qc::QcResult::datasetName'],['../structloki_1_1simulate_1_1_simulation_result.html#a09dac8233e8073717fba0ccbbc42ba2c',1,'loki::simulate::SimulationResult::datasetName']]],
+  ['decompdiagnostics_3',['decompDiagnostics',['../structloki_1_1_plot_config.html#a2c7843b15f1a8a2c9395a7d80a445ab5',1,'loki::PlotConfig']]],
+  ['decompoverlay_4',['decompOverlay',['../structloki_1_1_plot_config.html#adb197e5f3419868aa74bbb6737ec6b80',1,'loki::PlotConfig']]],
+  ['decomppanels_5',['decompPanels',['../structloki_1_1_plot_config.html#a58091f65c767e04a3f1eac5b7b763962',1,'loki::PlotConfig']]],
+  ['degree_6',['degree',['../structloki_1_1_nurbs_config.html#a02039557ea03bdad8bf429e7f118e388',1,'loki::NurbsConfig::degree'],['../structloki_1_1_b_spline_config.html#a18001a6070387fe9e0d76922ab514a23',1,'loki::BSplineConfig::degree'],['../structloki_1_1math_1_1_b_spline_fit_result.html#afec749eea8065720da65b1c31cfc0f99',1,'loki::math::BSplineFitResult::degree'],['../structloki_1_1_loess_filter_1_1_config.html#a928bfba704498f5ad8a00ec9c8e520df',1,'loki::LoessFilter::Config::degree'],['../structloki_1_1_savitzky_golay_filter_1_1_config.html#a7c8a41af528e26fb89cb65f2c9d3a01f',1,'loki::SavitzkyGolayFilter::Config::degree'],['../structloki_1_1spline_1_1_spline_result.html#a07b745d989c22d3990bfde185605f6d5',1,'loki::spline::SplineResult::degree']]],
+  ['derivative_7',['derivative',['../structloki_1_1_clustering_feature_config.html#ae14f216354d9bcd514e3791a482a4b07',1,'loki::ClusteringFeatureConfig']]],
+  ['description_8',['description',['../structloki_1_1_series_metadata.html#a517f54c01c050525ea8b4e52108f23e0',1,'loki::SeriesMetadata']]],
+  ['deseasonalization_9',['deseasonalization',['../structloki_1_1_ssa_config.html#a9b29fb466cf2d842d5e93eaf634facf6',1,'loki::SsaConfig']]],
+  ['deseasonalizedvalues_10',['deseasonalizedValues',['../structloki_1_1homogeneity_1_1_homogenizer_result.html#ad38499d0070c33c1be23c4e399d069c8',1,'loki::homogeneity::HomogenizerResult']]],
+  ['designmatrix_11',['designMatrix',['../structloki_1_1regression_1_1_regression_result.html#a7cf2617710baf3463396238f4346e143',1,'loki::regression::RegressionResult']]],
+  ['detected_12',['detected',['../structloki_1_1homogeneity_1_1_change_point_result.html#ac80f1a240764081f088cf6b54362cab6',1,'loki::homogeneity::ChangePointResult']]],
+  ['detection_13',['detection',['../structloki_1_1outlier_1_1_outlier_cleaner_1_1_clean_result.html#acf4f8f38dd1f62ed1f0f3bb6b3e25833',1,'loki::outlier::OutlierCleaner::CleanResult']]],
+  ['dferror_14',['dfError',['../structloki_1_1regression_1_1_anova_table.html#add8e2d222badae7badae10919ca93a9f',1,'loki::regression::AnovaTable']]],
+  ['dfregression_15',['dfRegression',['../structloki_1_1regression_1_1_anova_table.html#a9d804e85bd4531046f0f1ec1bf6e40eb',1,'loki::regression::AnovaTable']]],
+  ['dftotal_16',['dfTotal',['../structloki_1_1regression_1_1_anova_table.html#a09071260444a952f66f91da0d70bfb93',1,'loki::regression::AnovaTable']]],
+  ['dof_17',['dof',['../structloki_1_1_lsq_result.html#aa8070fe935f402823ea7b2fbe0fd0437',1,'loki::LsqResult::dof'],['../structloki_1_1regression_1_1_regression_result.html#aa6bf705c912e320ca3879dca18586d9c',1,'loki::regression::RegressionResult::dof']]],
+  ['dt_18',['dt',['../structloki_1_1simulate_1_1_kalman_simulator_1_1_config.html#a1d3d6bd572cd3a80f8e44d72828db70b',1,'loki::simulate::KalmanSimulator::Config']]]
+];

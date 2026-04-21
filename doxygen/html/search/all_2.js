@@ -1,0 +1,27 @@
+var searchData=
+[
+  ['bandwidth_0',['bandwidth',['../structloki_1_1_filter_window_advisor_1_1_advice.html#ac18ecaeacbba84409752a4731718218d',1,'loki::FilterWindowAdvisor::Advice::bandwidth'],['../structloki_1_1_kernel_smoother_1_1_config.html#a27d80561f7f8a0c9353a6323941e52c9',1,'loki::KernelSmoother::Config::bandwidth'],['../structloki_1_1_loess_filter_1_1_config.html#a99f2cfa8ce68e2434ee1d9e826820bed',1,'loki::LoessFilter::Config::bandwidth']]],
+  ['bc_1',['bc',['../structloki_1_1math_1_1_cubic_spline_config.html#a7b3dd07481e822514b613952da92e495',1,'loki::math::CubicSplineConfig']]],
+  ['begin_2',['begin',['../classloki_1_1_time_series.html#a5a91bf7fef9a164e1da27acc8292f45e',1,'loki::TimeSeries']]],
+  ['beta_3',['beta',['../classloki_1_1stats_1_1_sampler.html#a5ef492118d9f33a338fb40aed9af6b65',1,'loki::stats::Sampler']]],
+  ['bias_4',['bias',['../structloki_1_1stats_1_1_bootstrap_result.html#a880f26cf1557c521bdb6421f409e487f',1,'loki::stats::BootstrapResult::bias'],['../structloki_1_1stats_1_1_metrics.html#ab8a122e35524c58c52a5d213ffe97a71',1,'loki::stats::Metrics::bias'],['../structloki_1_1regression_1_1_polynomial_regressor_1_1_c_v_result.html#afeafff33851f794b04b8598ca290ee05',1,'loki::regression::PolynomialRegressor::CVResult::bias'],['../structloki_1_1simulate_1_1_parameter_c_i.html#aef4dd7affd14545c3c767e3475e02f54',1,'loki::simulate::ParameterCI::bias']]],
+  ['bic_5',['bic',['../structloki_1_1regression_1_1_regression_result.html#a0b90086cb86e876a85b316e9eb935553',1,'loki::regression::RegressionResult']]],
+  ['binomial_6',['binomial',['../classloki_1_1stats_1_1_sampler.html#a8c3d79bd0875cc6c0e269b56bc520389',1,'loki::stats::Sampler']]],
+  ['blockbootstrapindices_7',['blockBootstrapIndices',['../classloki_1_1stats_1_1_sampler.html#a914ccf7b132a9d72d85825c9e9e59604',1,'loki::stats::Sampler']]],
+  ['blocklength_8',['blockLength',['../structloki_1_1stats_1_1_bootstrap_config.html#ad0932966439ff79663a0031ad4186134',1,'loki::stats::BootstrapConfig']]],
+  ['blockmaxima_9',['blockMaxima',['../structloki_1_1evt_1_1_evt_result.html#a7669a747607875f9bcb46e44195b7420',1,'loki::evt::EvtResult']]],
+  ['blocksize_10',['blockSize',['../structloki_1_1_evt_block_maxima_config.html#aaa020d0056661fb69c4f5ea26aa4b1b0',1,'loki::EvtBlockMaximaConfig']]],
+  ['bocpddetector_11',['BocpdDetector',['../classloki_1_1homogeneity_1_1_bocpd_detector.html',1,'loki::homogeneity::BocpdDetector'],['../classloki_1_1homogeneity_1_1_bocpd_detector.html#a7683a6a5525fab77c0a01fa08d09b9b7',1,'loki::homogeneity::BocpdDetector::BocpdDetector()']]],
+  ['bocpddetectorconfig_12',['BocpdDetectorConfig',['../structloki_1_1homogeneity_1_1_bocpd_detector_config.html',1,'loki::homogeneity']]],
+  ['bocpdsection_13',['BocpdSection',['../structloki_1_1_bocpd_section.html',1,'loki']]],
+  ['bootstrapconfig_14',['BootstrapConfig',['../structloki_1_1stats_1_1_bootstrap_config.html',1,'loki::stats']]],
+  ['bootstrapindices_15',['bootstrapIndices',['../classloki_1_1stats_1_1_sampler.html#a6e9166cf551b8e21220437de7d64d211',1,'loki::stats::Sampler']]],
+  ['bootstrapmethod_16',['bootstrapMethod',['../structloki_1_1_simulate_config.html#a5b149c1ebe3d43f613677cf5c89f11ba',1,'loki::SimulateConfig']]],
+  ['bootstrapresult_17',['BootstrapResult',['../structloki_1_1stats_1_1_bootstrap_result.html',1,'loki::stats']]],
+  ['bounds_18',['Safety bounds',['../classloki_1_1kalman_1_1_em_estimator.html#autotoc_md22',1,'']]],
+  ['boxplot_19',['boxplot',['../classloki_1_1_plot.html#a53e6679ecfe2913eaf10a461d1e01420',1,'loki::Plot::boxplot(const TimeSeries &amp;ts)'],['../classloki_1_1_plot.html#a9e26b0623c48596940fde973a62f28c4',1,'loki::Plot::boxplot(const std::vector&lt; double &gt; &amp;values, const std::string &amp;title=&quot;boxplot&quot;)']]],
+  ['breuschpaganresult_20',['BreuschPaganResult',['../structloki_1_1regression_1_1_breusch_pagan_result.html',1,'loki::regression']]],
+  ['bsplineconfig_21',['BSplineConfig',['../structloki_1_1_b_spline_config.html',1,'loki']]],
+  ['bsplinefitresult_22',['BSplineFitResult',['../structloki_1_1math_1_1_b_spline_fit_result.html',1,'loki::math']]],
+  ['buildwindow_23',['buildWindow',['../classloki_1_1spectral_1_1_fft_analyzer.html#ab7254da3d761a4ff2ff1f61c2b0c0ccf',1,'loki::spectral::FftAnalyzer']]]
+];

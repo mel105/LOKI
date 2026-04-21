@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['observation_0',['Observation',['../structloki_1_1_observation.html',1,'loki']]],
+  ['operator_28_29_1',['operator()',['../classloki_1_1_gnuplot.html#a025e9aa8785311133117a6282af1a41d',1,'loki::Gnuplot']]],
+  ['operator_3c_3d_3e_2',['operator&lt;=&gt;',['../class_time_stamp.html#a5f49c2d81c241272e82710a346fe2879',1,'TimeStamp']]],
+  ['operator_5b_5d_3',['operator[]',['../classloki_1_1_time_series.html#a10a6fbc30c5a19b2f45e6d5e2c95312d',1,'loki::TimeSeries']]],
+  ['optimalnctrl_4',['optimalNCtrl',['../structloki_1_1spline_1_1_spline_result.html#a8200f3a2ff67e61e6275a14a117c88a9',1,'loki::spline::SplineResult']]],
+  ['optional_20keys_20all_20others_5',['Optional keys (all others)',['../classloki_1_1_config_loader.html#autotoc_md1',1,'']]],
+  ['order_6',['order',['../structloki_1_1arima_1_1_arima_fitter_config.html#a30a78c61fb3b15bd5f48c459121ae4c7',1,'loki::arima::ArimaFitterConfig::order'],['../structloki_1_1arima_1_1_arima_result.html#aa79999f84ae01632d67fd8fe7b4fba0c',1,'loki::arima::ArimaResult::order']]],
+  ['ordinarykriging_7',['OrdinaryKriging',['../classloki_1_1math_1_1_ordinary_kriging.html',1,'loki::math::OrdinaryKriging'],['../classloki_1_1math_1_1_ordinary_kriging.html#a7c5a8f0ee30ef3bdcc3e133c6dbceb5d',1,'loki::math::OrdinaryKriging::OrdinaryKriging()']]],
+  ['original_8',['original',['../structloki_1_1kalman_1_1_kalman_result.html#a43c65c15f1d9edeb79ae47fced56dd7c',1,'loki::kalman::KalmanResult::original'],['../structloki_1_1simulate_1_1_simulation_result.html#a27d80efb109f203e618382ebc0adef4a',1,'loki::simulate::SimulationResult::original']]],
+  ['originalvalue_9',['originalValue',['../structloki_1_1outlier_1_1_outlier_point.html#a53ce9978f57a59c92e277d14c58a8cb4',1,'loki::outlier::OutlierPoint']]],
+  ['others_10',['Optional keys (all others)',['../classloki_1_1_config_loader.html#autotoc_md1',1,'']]],
+  ['outliercleaner_11',['OutlierCleaner',['../classloki_1_1outlier_1_1_outlier_cleaner.html',1,'loki::outlier::OutlierCleaner'],['../classloki_1_1outlier_1_1_outlier_cleaner.html#ab6a050c4f330a429284cb8ec0bd0352e',1,'loki::outlier::OutlierCleaner::OutlierCleaner()']]],
+  ['outlierconfig_12',['OutlierConfig',['../structloki_1_1homogeneity_1_1_outlier_config.html',1,'loki::homogeneity::OutlierConfig'],['../structloki_1_1_outlier_config.html',1,'loki::OutlierConfig']]],
+  ['outlierdetector_13',['OutlierDetector',['../classloki_1_1outlier_1_1_outlier_detector.html',1,'loki::outlier']]],
+  ['outlierenabled_14',['outlierEnabled',['../structloki_1_1_qc_config.html#ab86cc088ab5112430849325d44d3dc31',1,'loki::QcConfig']]],
+  ['outlierfilterconfig_15',['OutlierFilterConfig',['../structloki_1_1_outlier_filter_config.html',1,'loki']]],
+  ['outlierindices_16',['outlierIndices',['../structloki_1_1outlier_1_1_hat_matrix_result.html#a4f02531fd1ee4dbb54973d8285ca95b6',1,'loki::outlier::HatMatrixResult::outlierIndices'],['../structloki_1_1clustering_1_1_clustering_result.html#a0cc5aca84353a958ffbaccf0bd3504f4',1,'loki::clustering::ClusteringResult::outlierIndices']]],
+  ['outlierpoint_17',['OutlierPoint',['../structloki_1_1outlier_1_1_outlier_point.html',1,'loki::outlier']]],
+  ['outlierresult_18',['OutlierResult',['../structloki_1_1outlier_1_1_outlier_result.html',1,'loki::outlier']]],
+  ['outputconfig_19',['OutputConfig',['../structloki_1_1_output_config.html',1,'loki']]],
+  ['overlap_20',['overlap',['../structloki_1_1_spectral_spectrogram_config.html#a66fb995c79d3352187bb04e307039d9f',1,'loki::SpectralSpectrogramConfig::overlap'],['../structloki_1_1spectral_1_1_spectrogram_params.html#a712e6cb4cc00140cd328e39f6481cfcf',1,'loki::spectral::SpectrogramParams::overlap']]],
+  ['oversampling_21',['oversampling',['../structloki_1_1_spectral_lomb_scargle_config.html#a69523880cb56c83a1e91517a94ba6ac0',1,'loki::SpectralLombScargleConfig::oversampling'],['../structloki_1_1spectral_1_1_lomb_scargle_params.html#af2790856ed55db78cb25d3d1b3c459aa',1,'loki::spectral::LombScargleParams::oversampling']]]
+];

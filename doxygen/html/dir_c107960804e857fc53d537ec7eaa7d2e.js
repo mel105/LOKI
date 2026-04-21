@@ -1,0 +1,4 @@
+var dir_c107960804e857fc53d537ec7eaa7d2e =
+[
+    [ "spectral", "dir_80e8487752202764bae46150c4e1b286.html", "dir_80e8487752202764bae46150c4e1b286" ]
+];
