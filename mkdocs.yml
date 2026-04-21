@@ -1,0 +1,78 @@
+site_name: Michal Elias
+site_url: https://mel105.github.io/LOKI
+site_description: Personal research profile and home of the LOKI time series analysis framework.
+site_author: Michal Elias
+
+repo_name: mel105/LOKI
+repo_url: https://github.com/mel105/LOKI
+
+copyright: "© 2026 Michal Elias"
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mel105
+      name: GitHub
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/michal-elias-7ab2b354
+      name: LinkedIn
+    - icon: fontawesome/solid/graduation-cap
+      link: https://www.researchgate.net/profile/Michal-Elias
+      name: ResearchGate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - About: about.md
+  - LOKI:
+    - Overview: loki/overview.md
+    - Modules: loki/modules.md
+    - Getting Started: loki/getting_started.md
+    - Configuration: loki/config.md
+    - Roadmap: loki/roadmap.md
+  - Changelog: changelog.md
