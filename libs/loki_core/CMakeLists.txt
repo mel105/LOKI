@@ -13,6 +13,7 @@ target_sources(loki_core
         src/timeseries/deseasonalizer.cpp
         src/timeseries/medianYearSeries.cpp
         src/io/loader.cpp
+        src/io/spatialLoader.cpp
         src/io/dataManager.cpp
         src/io/gnuplot.cpp
         src/io/plot.cpp
@@ -34,6 +35,9 @@ target_sources(loki_core
         src/math/spline.cpp
         src/math/nelderMead.cpp
         src/math/krigingVariogram.cpp
+        src/math/spatialVariogram.cpp
+        src/math/rbf.cpp
+        src/math/naturalNeighbor.cpp 
         src/math/krigingBase.cpp
         src/math/simpleKriging.cpp
         src/math/ordinaryKriging.cpp

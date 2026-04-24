@@ -31,6 +31,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 18. [loki_evt](#18-loki_evt)
 19. [loki_kriging](#19-loki_kriging)
 20. [loki_spline](#20-loki_spline)
+21. [loki_spatial](#21-loki_spatial)
 
 ---
 
@@ -5840,3 +5841,449 @@ at the control points. For noisy data always use `approximation`.
 | `loki_kriging` | Both smooth time series. Kriging provides a probabilistic model with a physically interpretable variogram; B-spline provides a deterministic curve with CV-selected smoothness. For forecasting beyond the data, use Kriging. For smooth interpolation and trend description, use B-spline. |
 | `loki_regression` PolynomialRegressor | Polynomial regression is a degenerate B-spline with one segment. Use `loki_spline` when the signal is too complex for a global polynomial. |
 | `loki_clustering` | B-spline residuals and fitted values can be used as features for clustering (e.g. slope of fit within a window). |
+
+# 21. loki_spatial
+
+`loki_spatial` performs 2-D spatial interpolation from irregularly distributed
+scatter observations (x, y, value) to a regular output grid. Input data is
+loaded from a flat text file (including GSLIB format); output is a grid CSV,
+a protocol, and a set of plots.
+
+Six interpolation methods are available:
+
+| Method | Uncertainty | Parameters | Best for |
+|--------|-------------|------------|----------|
+| `kriging` | Yes (variance) | variogram model | Geostatistical data with spatial correlation |
+| `idw` | No | power | Quick baseline, no assumptions |
+| `rbf` | No | kernel, epsilon | Smooth scattered data, arbitrary geometry |
+| `natural_neighbor` | No | none | Dense irregular grids, no extrapolation needed |
+| `bspline_surface` | No | degree, nCtrl | Quasi-regular grids, smooth surfaces |
+| `nurbs` | — | — | PLACEHOLDER — throws `AlgorithmException` |
+
+---
+
+## 21.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "spatial": {
+        "method": "kriging",
+        "cross_validate": true,
+        "confidence_level": 0.95,
+
+        "input": {
+            "file": "STATIONS.dat",
+            "delimiter": " ",
+            "comment_prefix": "#",
+            "x_column": 0,
+            "y_column": 1,
+            "value_columns": [2],
+            "no_data_value": -999.9999,
+            "no_data_tolerance": 0.01,
+            "coordinate_unit": "m"
+        },
+
+        "kriging": {
+            "method": "ordinary",
+            "variogram": {
+                "model": "spherical"
+            }
+        }
+    },
+
+    "plots": {
+        "output_format": "png"
+    }
+}
+```
+
+All unspecified keys fall back to documented defaults. The pipeline will
+auto-detect the grid resolution from the data, fit a spherical variogram,
+run Ordinary Kriging, perform LOO cross-validation, and write plots and CSV.
+
+---
+
+## 21.2 Top-level spatial keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `method` | string | `"kriging"` | Interpolation method. See Section 21.3. |
+| `cross_validate` | bool | `true` | Run leave-one-out cross-validation. Writes a CV CSV and CV plot. |
+| `confidence_level` | double | `0.95` | Confidence level for Kriging CI bands. Must be in (0, 1). Ignored for non-Kriging methods. |
+
+---
+
+## 21.3 Input sub-section
+
+The `spatial.input` block configures the scatter data loader. It is independent
+of the time series `input` block used by other LOKI modules.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `file` | string | — | Input file name, relative to `workspace/INPUT/`. Required. |
+| `delimiter` | string | `" "` | Column delimiter character. Use `" "` to split on any whitespace. Use `";"`, `","`, or `"\t"` for fixed delimiters. |
+| `comment_prefix` | string | `"#"` | Prefix that marks a line as a comment. Accepted values: `"#"`, `"%"`, `"!"`, `"//"`, `";"`, `"*"`. Any other value raises `ConfigException`. |
+| `x_column` | int | `0` | 0-based column index of the X coordinate. |
+| `y_column` | int | `1` | 0-based column index of the Y coordinate. |
+| `value_columns` | int[] | `[]` | 0-based indices of value columns to interpolate. Empty array = all columns except `x_column` and `y_column`. |
+| `no_data_value` | double | `-999.0` | Sentinel value for missing observations. |
+| `no_data_tolerance` | double | `0.01` | Values within `|v - no_data_value| <= tolerance` are treated as missing. |
+| `coordinate_unit` | string | `""` | Informational label for the coordinate unit: `"m"`, `"km"`, `"deg"`, `"rad"`, or `""`. No transformation is applied. |
+
+### 21.3.1 GSLIB format auto-detection
+
+If the second non-empty comment line in the file is a bare integer N, the file
+is treated as GSLIB format:
+
+```
+# Dataset title           ← ignored
+# 8                       ← N = number of columns
+# X m  ...                ← column 0 name
+# Y m  ...                ← column 1 name
+# Thk m ...               ← column 2 name
+...
+12100 8300 37.15 ...      ← data begins here
+```
+
+Column names are extracted from the N name lines (first word of each line).
+For non-GSLIB files the loader extracts names generically from comment lines
+matching `# NAME ...` where NAME is a valid identifier `[A-Za-z][A-Za-z0-9_]*`.
+
+### 21.3.2 Coordinate system
+
+Coordinates are treated as Cartesian. For geographic data (latitude/longitude)
+in a small region (< 5° extent), the Mercator approximation holds and no
+transformation is needed — interpolation proceeds as if coordinates were metres.
+
+For large regions or accuracy-critical geodetic work, project to a local
+Cartesian system (e.g. UTM) before loading. Coordinate transformation is the
+domain of the planned `loki_geodesy` module.
+
+---
+
+## 21.4 Grid sub-section
+
+The output grid geometry can be fully automatic or manually configured.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `resolution_x` | double | `0.0` | Grid spacing in the X direction. `0` = auto. |
+| `resolution_y` | double | `0.0` | Grid spacing in the Y direction. `0` = auto (same as X). |
+| `x_min` | double | `0.0` | Grid left boundary. `0` with `x_max = 0` = auto from data. |
+| `x_max` | double | `0.0` | Grid right boundary. |
+| `y_min` | double | `0.0` | Grid bottom boundary. |
+| `y_max` | double | `0.0` | Grid top boundary. |
+
+**Auto resolution heuristic:** median of all nearest-neighbour distances
+divided by 2. This adapts to the local data density without being skewed
+by outlier point pairs.
+
+**Auto bounds:** data range extended by one grid cell padding on each side,
+so edge observations are always interior to the grid.
+
+Grid dimensions are derived as:
+```
+nCols = round((xMax - xMin) / resX) + 1
+nRows = round((yMax - yMin) / resY) + 1
+```
+
+---
+
+## 21.5 Kriging sub-section
+
+Used when `method = "kriging"`.
+
+### 21.5.1 Kriging method
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `method` | string | `"ordinary"` | Kriging variant. See table below. |
+| `known_mean` | double | `0.0` | Global mean for Simple Kriging. Ignored for other variants. |
+| `trend_degree` | int | `1` | Polynomial drift degree for Universal Kriging. Valid: `1` or `2`. |
+
+| Variant | When to use |
+|---------|-------------|
+| `"ordinary"` | Default. Unknown local mean. Robust for most geostatistical applications. |
+| `"simple"` | Use when the global mean is known from domain knowledge (e.g. a long-term average). Slightly more precise than Ordinary when the mean is correct. |
+| `"universal"` | Use when the data has a systematic spatial trend (gradient across the field). Includes a polynomial drift term of degree `trend_degree`. |
+
+**Diagnosing the need for Universal Kriging:** if the omnidirectional variogram
+does not reach a sill but keeps growing linearly with lag distance, a spatial
+trend is present. Switch to `method = "universal"` with `trend_degree = 1`.
+The variogram is then fitted to the residuals after drift removal, and the
+resulting sill and range are physically meaningful.
+
+### 21.5.2 Variogram sub-section
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `model` | string | `"spherical"` | Theoretical variogram model. See table below. |
+| `n_lag_bins` | int | `20` | Number of lag bins for the empirical variogram. Must be >= 3. |
+| `max_lag` | double | `0.0` | Maximum lag distance for binning. `0` = auto (half of max pairwise distance). |
+| `nugget` | double | `0.0` | Initial nugget for WLS fitting. `0` = estimated from data. |
+| `sill` | double | `0.0` | Initial sill for WLS fitting. `0` = estimated from data. |
+| `range` | double | `0.0` | Initial range for WLS fitting. `0` = estimated from data. |
+
+| Model | Behaviour | When to use |
+|-------|-----------|-------------|
+| `"spherical"` | Reaches sill at finite range. Most common in practice. | Default for most datasets. |
+| `"exponential"` | Approaches sill asymptotically. Lighter tail than Gaussian. | Porosity, permeability data. Slightly more robust than spherical for noisy empirical variograms. |
+| `"gaussian"` | Parabolic near origin (very smooth process). | Smoothly varying fields (temperature, elevation). |
+| `"power"` | No sill — intrinsic process. | Fractal or non-stationary fields. Incompatible with Simple Kriging. |
+| `"nugget"` | Pure nugget effect (no spatial correlation). | Nugget-only baseline; rarely useful alone. |
+
+**Choosing a model:** plot the empirical variogram (`spatial_variogram` plot)
+and compare the shape near the origin with the theoretical models:
+
+- Steep linear rise near origin → spherical or exponential.
+- Parabolic (smooth) rise → gaussian.
+- No levelling off → power model or spatial trend (consider Universal Kriging).
+- Near-zero semi-variance at short lags with a jump → nugget > 0.
+
+---
+
+## 21.6 IDW sub-section
+
+Used when `method = "idw"`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `power` | double | `2.0` | Distance decay exponent. Higher values give more weight to nearby points. Must be > 0. |
+
+Typical values: `1.0` (linear), `2.0` (standard), `3.0` (sharp local influence).
+IDW does not provide uncertainty estimates; variance and CI grids are zero-filled.
+
+Bilineárna interpolácia (interpBilinear) je implementovaná v loki_core/spatial/spatialInterp.hpp ako pomocná funkcia, ale nie je vystavená ako samostatná metóda v pipeline. Dôvod: bilineárna interpolácia operuje na existujúcom pravidelnom gridi (prevzorkuje ho na iné rozlíšenie), nie na nepravidelných scatter bodoch. Pre vstup vo forme scatter dát preto nemá priame uplatnenie.
+Typické interné použitie:
+
+```
+//Reprojekcia výstupného gridu z hrubého na jemné rozlíšenie
+Eigen::MatrixXd fineGrid = loki::spatial::interpBilinear(
+    coarseGrid, coarseExtent, fineExtent);
+```
+
+Ak potrebuješ jednoduchú a rýchlu interpoláciu scatter dát bez štatistických predpokladov, použij "idw" s power = 1.0 — výsledok je podobný bilineárnej interpolácii, ale funguje priamo na nepravidelných vstupných bodoch.
+
+Vložiť to môžeš buď za úvodnú tabuľku metód (ako poznámku pod čiarou), alebo na koniec sekcie 21.6 IDW ako porovnávací komentár. Ja by som ho dal za tabuľku v úvode — tam je kontext najčistejší.
+
+---
+
+## 21.7 RBF sub-section
+
+Used when `method = "rbf"`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `kernel` | string | `"thin_plate_spline"` | RBF kernel type. See table below. |
+| `epsilon` | double | `0.0` | Shape parameter. `0` = auto: `1 / (sqrt(n) * medianNNdist)`. Ignored for `thin_plate_spline` and `cubic`. |
+
+| Kernel | phi(r) | Shape param | Notes |
+|--------|--------|-------------|-------|
+| `"thin_plate_spline"` | r² log(r) | — | Natural 2-D generalisation of cubic spline. No shape parameter. Default. |
+| `"cubic"` | r³ | — | Simpler conditionally PD kernel. Smoother than TPS for small r. |
+| `"multiquadric"` | sqrt(r² + ε²) | ε | Larger ε = flatter, smoother interpolant. |
+| `"inverse_multiquadric"` | 1/sqrt(r² + ε²) | ε | Strictly PD. Decays at large r; most robust for irregular configurations. |
+| `"gaussian"` | exp(−ε² r²) | ε | Strictly PD. Very smooth. May be ill-conditioned for small ε or dense grids. |
+
+**Shape parameter guidance:** for `multiquadric` and `inverse_multiquadric`,
+a common heuristic is `epsilon = 1 / (sqrt(n) * d_avg)` where `d_avg` is the
+mean nearest-neighbour distance. The auto-estimation (`epsilon = 0`) uses this
+formula. For `gaussian`, `epsilon ~ 1 / (2 * d_avg)` is a reasonable starting
+point.
+
+**Numerical note:** RBF coordinates are normalised to [0,1] internally before
+assembling the system matrix. This is necessary for `thin_plate_spline` and
+`cubic` kernels where phi values scale as r²log(r) in metre-scale coordinates,
+causing severe ill-conditioning of the saddle-point system. Normalisation
+reduces the condition number from ~1e20 to ~300 in typical configurations.
+
+---
+
+## 21.8 B-spline surface sub-section
+
+Used when `method = "bspline_surface"`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `degree_u` | int | `3` | B-spline degree in the X (U) direction. Valid: 1–5. |
+| `degree_v` | int | `3` | B-spline degree in the Y (V) direction. Valid: 1–5. |
+| `n_ctrl_u` | int | `6` | Control points in U. Must be >= `degree_u + 1`. |
+| `n_ctrl_v` | int | `6` | Control points in V. Must be >= `degree_v + 1`. |
+| `knot_placement` | string | `"uniform"` | `"uniform"` or `"chord_length"`. |
+
+The surface is a tensor product B-spline `S(u,v) = sum_ij c_ij * N_i(u) * N_j(v)`.
+Scatter (x, y) coordinates are normalised to [0,1] separately before fitting.
+The overdetermined LSQ system is solved via `ColPivHouseholderQR`.
+
+**Note:** tensor product B-splines assume a quasi-regular distribution of input
+points. For strongly irregular scatter data, `rbf` with `thin_plate_spline` or
+`kriging` is generally preferable.
+
+Minimum required observations: `n_ctrl_u * n_ctrl_v`. The pipeline raises
+`DataException` if fewer points are available.
+
+---
+
+## 21.9 Plot flags
+
+Add these keys inside the top-level `"plots"` object.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `spatial_heatmap` | bool | `true` | Interpolated grid as a pm3d colour map. |
+| `spatial_scatter` | bool | `true` | Input scatter points coloured by value. Requires `cross_validate: true` (point coordinates come from the CV result). |
+| `spatial_variogram` | bool | `true` | Empirical variogram bins + fitted model curve. Only generated for `method = "kriging"`. |
+| `spatial_crossval` | bool | `true` | LOO error scatter map — each input point coloured by its LOO prediction error. |
+| `spatial_variance` | bool | `true` | Kriging prediction variance grid as a colour map. Only generated for `method = "kriging"`. |
+
+```json
+"plots": {
+    "output_format": "png",
+    "spatial_heatmap":   true,
+    "spatial_scatter":   true,
+    "spatial_variogram": true,
+    "spatial_crossval":  true,
+    "spatial_variance":  true
+}
+```
+
+---
+
+## 21.10 Output files
+
+| File | Location | Description |
+|------|----------|-------------|
+| `spatial_[dataset]_[variable]_heatmap.png` | `IMG/` | Interpolated regular grid as colour map. |
+| `spatial_[dataset]_[variable]_scatter.png` | `IMG/` | Input scatter points coloured by observed value. |
+| `spatial_[dataset]_[variable]_variogram.png` | `IMG/` | Variogram plot (Kriging only). |
+| `spatial_[dataset]_[variable]_crossval.png` | `IMG/` | LOO error scatter map. |
+| `spatial_[dataset]_[variable]_variance.png` | `IMG/` | Kriging variance grid (Kriging only). |
+| `spatial_[dataset]_[variable]_protocol.txt` | `PROTOCOLS/` | Plain-text protocol: method, n, mean, variance, grid geometry, variogram parameters, CV diagnostics. |
+| `spatial_[dataset]_[variable]_grid.csv` | `CSV/` | Grid values: `x;y;value[;variance;ci_lower;ci_upper]`. CI columns present for Kriging only. |
+| `spatial_[dataset]_[variable]_cv.csv` | `CSV/` | LOO cross-validation: `x;y;error[;std_error]`. `std_error` present for Kriging only. |
+
+---
+
+## 21.11 Best practices by use case
+
+### Geostatistical data (geology, hydrogeology, environmental monitoring)
+
+Ordinary Kriging with a fitted variogram is the standard approach. Let the
+auto-resolution heuristic set the grid, inspect the variogram plot, and
+adjust the model if needed.
+
+```json
+"spatial": {
+    "method": "kriging",
+    "kriging": {
+        "method": "ordinary",
+        "variogram": {
+            "model": "spherical",
+            "n_lag_bins": 20,
+            "max_lag": 0.0
+        }
+    }
+}
+```
+
+If the variogram does not reach a sill (linear growth), switch to Universal
+Kriging with `trend_degree = 1`. This removes the linear spatial trend before
+variogram fitting, making the sill and range physically meaningful.
+
+### GNSS station network (tropospheric delay, ZTD interpolation)
+
+Stations have irregular spatial coverage; LLA coordinates can be treated as
+Cartesian for regional networks (< 500 km extent). Ordinary Kriging with
+a Gaussian variogram typically fits well for smoothly varying atmospheric
+fields.
+
+```json
+"spatial": {
+    "method": "kriging",
+    "input": { "coordinate_unit": "deg" },
+    "kriging": {
+        "method": "ordinary",
+        "variogram": { "model": "gaussian", "n_lag_bins": 15 }
+    },
+    "grid": { "resolution_x": 0.5, "resolution_y": 0.5 }
+}
+```
+
+### Quick exploratory baseline (IDW)
+
+IDW requires no variogram fitting and has a single intuitive parameter.
+Use it as a fast sanity check before committing to Kriging.
+
+```json
+"spatial": {
+    "method": "idw",
+    "idw": { "power": 2.0 }
+}
+```
+
+Compare the IDW heatmap with the Kriging heatmap. If they agree qualitatively,
+the spatial structure is robust. If they differ significantly, the variogram
+model choice matters — inspect the variogram plot carefully.
+
+### Smooth physical surface (RBF thin plate spline)
+
+RBF with thin plate spline is the natural 2-D extension of cubic spline
+interpolation. It minimises the bending energy of the surface and requires
+no shape parameter. Use when data is dense enough that exact interpolation
+through all points is appropriate.
+
+```json
+"spatial": {
+    "method": "rbf",
+    "rbf": { "kernel": "thin_plate_spline" }
+}
+```
+
+For sparser data where smoothing is preferred over exact interpolation,
+use `bspline_surface` with `n_ctrl_u` and `n_ctrl_v` smaller than the
+number of points.
+
+### Dense irregular scatter (Natural Neighbor)
+
+Natural Neighbor interpolation is parameter-free and reproduces linear
+functions exactly. It is well-suited for datasets where point density is
+sufficient to define Voronoi cells reliably (typically n > 20). It does not
+extrapolate beyond the convex hull of input points — queries outside the
+hull fall back to the nearest observed value with a logged warning.
+
+```json
+"spatial": {
+    "method": "natural_neighbor",
+    "cross_validate": true
+}
+```
+
+---
+
+## 21.12 Diagnosing a poor result
+
+| Symptom | Likely cause | Remedy |
+|---------|-------------|--------|
+| Variogram sill and range are unrealistically large | Spatial trend in data | Switch to `kriging.method = "universal"` with `trend_degree = 1` |
+| Heatmap shows bull's-eye artefacts around data points | IDW with high power, or RBF overfitting | Reduce IDW `power`; or switch to Kriging / Natural Neighbor |
+| Heatmap is too smooth, misses local features | Kriging range too large, or IDW power too low | Reduce initial `range`; increase IDW `power`; inspect variogram |
+| RBF raises rank-deficient exception | Near-coincident or collinear input points | Check for duplicate coordinates; switch to `"inverse_multiquadric"` or `"gaussian"` kernel which are strictly positive definite |
+| Natural Neighbor: many "outside convex hull" warnings | Queries cover area beyond data extent | Tighten grid bounds manually via `x_min / x_max / y_min / y_max`; or switch to IDW/Kriging which extrapolate |
+| CV RMSE >> sample variance | Method poorly suited to data structure | Try an alternative method; inspect scatter and heatmap plots |
+| B-spline raises DataException (too few points) | `n_ctrl_u * n_ctrl_v > n` | Reduce `n_ctrl_u` and `n_ctrl_v` |
+| Variance map is uniformly high everywhere | Nugget dominates; very short spatial correlation | Reduce nugget initial value; increase `n_lag_bins`; try exponential model |
+| Variance is zero at observation locations but high elsewhere | Normal Kriging behaviour (exact interpolation property) | Expected; not a bug |
+
+---
+
+## 21.13 Relationship to other LOKI modules
+
+| Module | Relationship |
+|--------|-------------|
+| `loki_kriging` | Temporal 1-D Kriging in time. `loki_spatial` reuses the same variogram infrastructure (`loki_core/math/krigingVariogram.hpp`) but operates on 2-D Euclidean lag. The two modules are independent pipelines with separate configs. |
+| `loki_geodesy` (planned) | Geodetic coordinate transformations with covariance propagation. When available, project LLA → local Cartesian before passing to `loki_spatial`. |
+| `loki_multivariate` (planned) | Co-kriging (cross-variogram between variables) will be implemented there, reusing the Kriging math primitives from `loki_core/math/`. |
+| `loki_qc` | Run `loki_qc` first on each station time series. Pass only the QC-approved mean or trend value per station to `loki_spatial` as the scatter observation. |
+| `loki_decomposition` / `loki_ssa` | Extract the signal component of interest (trend, seasonal anomaly) per station before spatial interpolation, rather than interpolating raw observations. |

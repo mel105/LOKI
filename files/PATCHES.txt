@@ -1,0 +1,64 @@
+== PATCH: libs/loki_core/CMakeLists.txt ==
+
+In the add_library(loki_core STATIC ...) block, add these three lines
+alongside the other src/math/*.cpp entries:
+
+    src/math/spatialVariogram.cpp
+    src/math/rbf.cpp
+    src/math/naturalNeighbor.cpp
+
+Example (after patch):
+    add_library(loki_core STATIC
+        ...
+        src/math/krigingVariogram.cpp
+        src/math/spatialVariogram.cpp
+        src/math/rbf.cpp
+        src/math/naturalNeighbor.cpp
+        ...
+    )
+
+== PATCH: libs/loki_core/include/loki/core/config.hpp ==
+
+1. Add to PlotConfig struct (after existing kriging_* fields):
+       bool spatialHeatmap   {true};
+       bool spatialScatter   {true};
+       bool spatialVariogram {true};
+       bool spatialCrossval  {true};
+       bool spatialVariance  {true};
+
+2. Add the new structs BEFORE AppConfig (in order):
+       SpatialGridConfig
+       SpatialIdwConfig
+       SpatialRbfConfig
+       SpatialBSplineSurfaceConfig
+       SpatialKrigingSubConfig
+       SpatialConfig
+   (full definitions in config_patch.txt)
+
+3. Add to AppConfig struct:
+       SpatialConfig  spatial;
+
+== PATCH: libs/loki_core/include/loki/core/configLoader.hpp ==
+
+Add in ConfigLoader class (with other _parse* declarations):
+    static SpatialConfig _parseSpatial(const nlohmann::json& j);
+
+== PATCH: libs/loki_core/src/core/configLoader.cpp ==
+
+1. In ConfigLoader::load(), after the last cfg.X = _parseX(...) line, add:
+       cfg.spatial = _parseSpatial(j.value("spatial", json::object()));
+
+2. Append the full _parseSpatial() function body from
+   configLoader_parseSpatial.cpp INSIDE the closing namespace loki { } block,
+   before the final closing brace.
+
+== PATCH: loki.sh ==
+
+In the module-to-binary map, add:
+    ["spatial"]="loki_spatial_app"
+
+== PATCH: root CMakeLists.txt ==
+
+Add the two new subdirectories:
+    add_subdirectory(libs/loki_spatial)
+    add_subdirectory(apps/loki_spatial)

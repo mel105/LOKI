@@ -19,9 +19,9 @@ general-purpose toolkit for quantitative analysis of scientific datasets.*
 
 Current domains:
 - Time series analysis (1D): complete, see module inventory below.
-- Spatial analysis (2D): in development -- loki_spatial is next.
+- Spatial analysis (2D): complete.
 - Multivariate analysis: planned -- loki_multivariate.
-- Geodetic computations: planned -- loki_geodesy.
+- Geodetic computations: is next -- loki_geodesy.
 
 ---
 
@@ -40,7 +40,7 @@ Current domains:
 LOKI documentation is published as two separate PDF documents written in LaTeX:
 - **Part A (Theory)** -- Slovak. Mathematical foundations and algorithmic description
   of all modules. Target audience: researchers and developers.
-- **Part B (Manual)** -- English. User guide, configuration reference, worked examples.
+- **Part B (Manual)** -- Slovak. User guide, configuration reference, worked examples.
   Target audience: users of LOKI applications.
 
 ### LaTeX conventions
@@ -270,13 +270,14 @@ loki_kriging          (depends on loki_core only)                   <- COMPLETE
 
 loki_spline           (depends on loki_core only)                   <- COMPLETE
 
-loki_spatial          (depends on loki_core only)                   <- NEXT
+loki_spatial          (depends on loki_core only)                   <- COMPLETE
+
+loki_geodesy          (depends on loki_core only)                   <- NEXT
 
 loki_multivariate     (depends on loki_core only)                   <- PLANNED
 
 loki_wavelet          (depends on loki_core only)                   <- PLANNED
 
-loki_geodesy          (depends on loki_core only)                   <- PLANNED
 ```
 
 ### Rules
@@ -313,8 +314,8 @@ loki/
 |   +-- loki_evt/                    <- COMPLETE
 |   +-- loki_kriging/                <- COMPLETE
 |   +-- loki_spline/                 <- COMPLETE
-|   +-- loki_spatial/                <- NEXT
-|   +-- loki_geodesy/                <- PLANNED
+|   +-- loki_spatial/                <- COMPLETE
+|   +-- loki_geodesy/                <- NEXT
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
@@ -345,8 +346,8 @@ loki/
 |   +-- loki_evt/                    <- COMPLETE
 |   +-- loki_kriging/                <- COMPLETE
 |   +-- loki_spline/                 <- COMPLETE
-|   +-- loki_spatial/                <- NEXT
-|   +-- loki_geodesy/                <- PLANNED
+|   +-- loki_spatial/                <- COMPLETE
+|   +-- loki_geodesy/                <- NEXT
 +-- tests/
 |   +-- CMakeLists.txt
 |   +-- demo/
@@ -418,8 +419,8 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ["evt"]="loki_evt_app"              <- COMPLETE
 ["kriging"]="loki_kriging_app"      <- COMPLETE
 ["spline"]="loki_spline_app"        <- COMPLETE
-["spatial"]="loki_spatial_app"      <- NEXT
-["geodesy"]="loki_geodesy_app"      <- PLANNED
+["spatial"]="loki_spatial_app"      <- COMPLETE
+["geodesy"]="loki_geodesy_app"      <- NEXT
 ```
 
 ---
@@ -495,38 +496,8 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ### loki_simulate -- complete
 ### loki_evt -- complete
 ### loki_kriging -- complete (temporal only; spatial/space_time = placeholder)
-
 ### loki_spline -- COMPLETE
-**Architecture:** Math primitives in `loki_core/math/` (bspline, bsplineFit).
-`loki_spline` is a thin orchestrator.
-
-**Files in `loki_spline`:**
-- `splineResult.hpp`         -- SplineResult + using aliases for loki::math types
-- `splineAnalyzer.hpp/.cpp`  -- orchestrator: gap fill, knot placement detection,
-                                 CV or manual nCtrl, fit, CI, protocol, CSV
-- `plotSpline.hpp/.cpp`      -- overlay, residuals, basis, knots, CV curve plots
-
-**Key implementation notes:**
-- B-spline degree 1-5, default cubic (degree=3).
-- fitMode: "approximation" (LSQ, nCtrl < nObs) or "exact_interpolation" (nCtrl == nObs,
-  guarded by exactInterpolationMaxN=2000).
-- knotPlacement: "uniform" or "chord_length" (Hartley-Judd averaging).
-  Auto-detection: if CV of timestep diffs > 0.1, switches to chord_length.
-- CV: k-fold (default 5), sweeps nCtrl in [nControlMin, min(n/5, 200)].
-  One-SE elbow rule for optimal nCtrl selection.
-- CI band: residual-based, fitted +/- z * residualStd (homoscedastic).
-- NURBS: placeholder only -- throws AlgorithmException if requested.
-- namespace: loki::spline
-
-**PlotConfig flags added:**
-```cpp
-bool splineOverlay     {true};
-bool splineResiduals   {true};
-bool splineBasis       {false};
-bool splineKnots       {true};
-bool splineCv          {true};
-bool splineDiagnostics {false};
-```
+### loki_spatial -- COMPLETE
 
 ---
 
@@ -553,98 +524,6 @@ bool splineDiagnostics {false};
 ---
 
 ## Planned Modules
-
-### loki_spatial -- NEXT
-
-**Purpose:** 2D spatial interpolation and analysis. Input: irregular scatter
-points (x, y, variable). Output: interpolated regular grid, variogram analysis,
-spatial statistics, visualisation (contour/heatmap).
-
-**This is not a time series module.** LOKI has grown beyond its original 1D
-scope -- loki_spatial is the first purely spatial module.
-
-**Architecture:** same pattern as loki_kriging.
-- Math primitives in `loki_core/math/` (spatial variogram, grid builder,
-  interpolation kernels).
-- `loki_spatial` is a thin orchestrator (analyzer + plots).
-
-**Interpolation methods planned:**
-- Spatial Kriging (Ordinary/Universal) -- reuse KrigingBase, change lag to
-  Euclidean distance sqrt((xi-xj)^2 + (yi-yj)^2). This is the primary
-  upgrade of the existing kriging placeholder.
-- IDW (Inverse Distance Weighting) -- simple baseline, fast.
-- Natural Neighbor (Sibson) -- Voronoi/Delaunay-based, good for irregular networks.
-- RBF (Radial Basis Functions):
-  - Multiquadric: phi(r) = sqrt(r^2 + epsilon^2)
-  - Gaussian:     phi(r) = exp(-epsilon^2 * r^2)
-  - Thin plate spline: phi(r) = r^2 * log(r)  -- natural 2D extension of
-    cubic spline, minimises surface bending energy, recommended for scatter data.
-- Tensor product B-spline surface -- reuses bspline.hpp from loki_core.
-  Works well for quasi-regular input grids. For truly irregular scatter,
-  thin plate spline is preferred.
-- Bilinear interpolation -- only for regular input grids (e.g. NWM output).
-  Implemented in spatialInterp alongside IDW and polynomial surface.
-- NURBS surface -- PLACEHOLDER, same pattern as loki_spline: config parsed,
-  AlgorithmException thrown if requested. Reserved for future implementation.
-
-**New math primitives in loki_core/math/:**
-```
-spatialTypes.hpp          -- SpatialPoint {x,y,z}, SpatialGrid, GridExtent
-spatialInterp.hpp/.cpp    -- IDW, bilinear (regular grid), polynomial surface (LSQ)
-rbf.hpp/.cpp              -- RBF kernels: multiquadric, Gaussian, thin plate spline
-naturalNeighbor.hpp/.cpp  -- Sibson interpolation (Delaunay triangulation)
-```
-Kriging math stays in existing files -- only lag computation changes
-(Euclidean distance instead of |t_i - t_j|).
-
-**Additional spatial analysis features:**
-- 2D variogram (isotropic and anisotropic)
-- LOO cross-validation on the spatial network
-- Spatial autocorrelation: Moran's I, Geary's C
-- Voronoi diagram / Thiessen polygons
-- 2D Kernel Density Estimation (KDE)
-- Spatial outlier detection
-
-**Visualisation (gnuplot):**
-- Contour map (interpolated grid)
-- Heatmap (pm3d)
-- Scatter map (input points coloured by value)
-- Variogram plot (2D, optionally directional)
-- Cross-validation scatter (predicted vs observed)
-
-**Input format:** CSV with columns (x, y, variable). Multiple variable columns
-supported. Coordinate system is user-defined (degrees, metres, etc.) --
-loki_spatial does not perform coordinate transformations.
-
-**Config structure (to be designed in implementation thread):**
-```
-SpatialConfig {
-    method          -- "kriging" | "idw" | "rbf" | "natural_neighbor" | "bilinear"
-    gridResolution  -- output grid spacing (same units as input coords)
-    gridExtent      -- auto or explicit [xmin, xmax, ymin, ymax]
-    kriging { ... } -- reuse KrigingVariogramConfig
-    idw { power }
-    rbf { kernel, epsilon }
-    crossValidate
-    confidenceLevel
-}
-```
-
-**Files to request at thread start:**
-- `libs/loki_core/include/loki/core/config.hpp`
-- `libs/loki_core/include/loki/core/configLoader.hpp`
-- `libs/loki_core/src/core/configLoader.cpp` (last 200 lines -- _parseSpline as pattern)
-- `libs/loki_core/include/loki/math/krigingBase.hpp`
-- `libs/loki_core/include/loki/math/krigingVariogram.hpp`
-- `libs/loki_core/include/loki/math/krigingTypes.hpp`
-- `libs/loki_core/include/loki/math/bspline.hpp`
-- `libs/loki_core/include/loki/math/bsplineFit.hpp`
-- `libs/loki_core/include/loki/math/spline.hpp`
-- `apps/loki_kriging/main.cpp` (pipeline pattern)
-- `libs/loki_kriging/src/krigingAnalyzer.cpp` (orchestrator pattern)
-- `libs/loki_kriging/include/loki/kriging/krigingResult.hpp`
-
----
 
 ### loki_multivariate -- PLANNED
 
@@ -675,7 +554,7 @@ multiple files merged). Uses existing DataManager merge functionality.
 
 ---
 
-### loki_geodesy -- PLANNED
+### loki_geodesy -- IS NEXT
 
 **Purpose:** Geodetic coordinate transformations with full covariance
 propagation. Part of LOKI -- same module pattern as all other modules
@@ -893,7 +772,7 @@ and future spatial math files.
   subory -- ide o systemovu vec. NIKDY sa nepytaj ci su prilozene alebo nie.
   Jednoducho ich naplnit podla dizajnu. TOTO PRAVIDLO NEMAZES.
 - Publikacia Part A: slovensky, LaTeX, teoria, ~10 stran/kapitola.
-- Publikacia Part B: anglicky, LaTeX, manual a prakticke priklady.
+- Publikacia Part B: slovensky, LaTeX, manual a prakticke priklady.
 - Obsah Part I (Time Series): kapitoly 1-18 podla hrubej osnovy v docs/.
 - Kapitola 3 obsahuje: nas algoritmus (t-statistika, Csorgo-Horvath,
   Jaruskova 1996, Elias-Jaruskova), SNHT, PELT, BOCPD.
