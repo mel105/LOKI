@@ -1,0 +1,35 @@
+{
+    "workspace": "C:/Users/eliasmichal/Dokumenty/LOKI",
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png"
+    },
+
+    "geodesy": {
+        "task": "transform",
+        "output_system": "geod",
+        "ellipsoid": "WGS84",
+        "ref_body": "ellipsoid",
+        "distance_method": "vincenty",
+        "mc_samples": 2000,
+        "mc_tolerance": 0.05,
+        "confidence_level": 0.95,
+
+        "enu_origin": {
+            "lat":  50.024884,
+            "lon":  15.802715,
+            "h":    234.0
+        },
+
+        "input": {
+            "file": "test_ecef.csv",
+            "delimiter": ";",
+            "coord_system": "ecef",
+            "state_size": 3
+        }
+    }
+}

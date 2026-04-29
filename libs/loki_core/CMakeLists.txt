@@ -14,6 +14,7 @@ target_sources(loki_core
         src/timeseries/medianYearSeries.cpp
         src/io/loader.cpp
         src/io/spatialLoader.cpp
+        src/io/geodesyLoader.cpp
         src/io/dataManager.cpp
         src/io/gnuplot.cpp
         src/io/plot.cpp

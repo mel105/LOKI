@@ -69,6 +69,7 @@ private:
     static KrigingConfig         _parseKriging          (const nlohmann::json& j);
     static SplineConfig          _parseSpline           (const nlohmann::json& j);
     static SpatialConfig         _parseSpatial          (const nlohmann::json& j);
+    static GeodesyConfig         _parseGeodesy          (const nlohmann::json& j);
 
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).

@@ -213,6 +213,11 @@ All plot output files follow this naming convention:
 - **gnuplot `-persist` flag is REMOVED** from `gnuplot.cpp`. Do not add it back.
 - **CRITICAL -- multiplot and inline data**: `plot '-'` inside `set multiplot` is NOT
   supported. Always use datablocks (`$name << EOD`) defined before `set multiplot`.
+- **CRITICAL -- gnuplot user-defined functions via pipe**: Do NOT define gnuplot
+  variables and then reference them in a function definition via separate `gp()` calls.
+  Each `gp()` call is a separate `fputs` -- variables are not committed before the
+  function definition is parsed on Windows/MinGW. Solution: compute model curves in
+  C++ (e.g. 200 sample points) and send as a named datablock `$model << EOD ... EOD`.
 
 ---
 
@@ -221,9 +226,9 @@ All plot output files follow this naming convention:
 ### Project identity and domain scope
 LOKI is no longer limited to time series. The framework covers:
 - 1D time series analysis (complete)
-- 2D spatial analysis (loki_spatial -- in development)
+- 2D spatial analysis (loki_spatial -- complete)
 - Multivariate analysis (loki_multivariate -- planned)
-- Geodetic computations (GeoKit -- separate project, uses loki_core)
+- Geodetic computations (loki_geodesy -- next)
 
 ### Architecture principle -- math primitives in loki_core
 All reusable math primitives go into `loki_core/math/` (flat, no sub-directories).
@@ -324,12 +329,13 @@ loki/
 |   |       |                  medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
 |   |       |                  wCorrelation, sampling, bootstrap, permutation)
-|   |       +-- io/           (loader, dataManager, gnuplot, plot)
+|   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
 |   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead,
 |   |                          krigingTypes, krigingVariogram, krigingBase,
 |   |                          simpleKriging, ordinaryKriging, universalKriging,
-|   |                          krigingFactory, bspline, bsplineFit)
+|   |                          krigingFactory, bspline, bsplineFit,
+|   |                          spatialTypes, spatialVariogram, rbf, naturalNeighbor)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -436,8 +442,12 @@ target_include_directories(loki_core SYSTEM PUBLIC
                   `OutlierConfig`, `StationarityConfig`, `ArimaConfig`, `SsaConfig`,
                   `DecompositionConfig`, `SpectralConfig`, `KalmanConfig`, `QcConfig`,
                   `ClusteringConfig`, `SplineFilterConfig`, `EvtConfig`,
-                  `KrigingConfig`, `SplineConfig` (with `BSplineConfig`, `NurbsConfig`)
-- `configLoader.hpp / .cpp` -- all parse methods including `_parseKriging`, `_parseSpline`
+                  `KrigingConfig`, `SplineConfig` (with `BSplineConfig`, `NurbsConfig`),
+                  `SpatialConfig` (with `SpatialInputConfig`, `SpatialGridConfig`,
+                  `SpatialKrigingSubConfig`, `SpatialIdwConfig`, `SpatialRbfConfig`,
+                  `SpatialBSplineSurfaceConfig`)
+- `configLoader.hpp / .cpp` -- all parse methods including `_parseKriging`,
+                               `_parseSpline`, `_parseSpatial`
 - `timeStamp.hpp / .cpp`
 - `timeSeries.hpp / .cpp`
 - `gapFiller.hpp / .cpp` -- Strategy::SPLINE added
@@ -455,6 +465,9 @@ target_include_directories(loki_core SYSTEM PUBLIC
 - `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
 - `gnuplot.hpp / .cpp` -- `-persist` flag REMOVED
 - `plot.hpp / .cpp`
+- `spatialLoader.hpp / .cpp` -- namespace `loki::io`; loads scatter data;
+                                auto-detects GSLIB format (2nd comment line = integer N);
+                                filters no-data values per column independently
 
 ### loki_core/math -- complete
 - `lsqResult.hpp`
@@ -480,6 +493,19 @@ target_include_directories(loki_core SYSTEM PUBLIC
                                       normaliseParams, evalBSpline
 - `bsplineFit.hpp / .cpp`          -- BSplineFitResult, CvPoint, fitBSpline,
                                       crossValidateBSpline, selectOptimalNCtrl
+- `spatialTypes.hpp`               -- SpatialPoint, GridExtent, SpatialGrid,
+                                      SpatialPrediction, SpatialCrossValidationResult
+- `spatialVariogram.hpp / .cpp`    -- empirical variogram via Euclidean lag;
+                                      delegates fitting to fitVariogram()
+- `rbf.hpp / .cpp`                 -- RBF kernels (TPS, cubic, multiquadric, IM, Gaussian);
+                                      saddle-point system; coordinate normalisation to [0,1]
+                                      (critical for metre-scale data -- without it
+                                      TPS phi ~ 1e7, cond ~ 1e20, rank-deficient);
+                                      Tikhonov regularisation lambda=1e-6*max(Phi);
+                                      normX/normY/xMin/yMin/scale stored in RbfFitResult
+- `naturalNeighbor.hpp / .cpp`     -- Bowyer-Watson Delaunay triangulation;
+                                      Sibson weights via circumcentre stolen-area;
+                                      nearest-point fallback outside convex hull
 
 ### loki_outlier -- complete (O1-O4)
 ### loki_homogeneity -- complete
@@ -498,6 +524,25 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ### loki_kriging -- complete (temporal only; spatial/space_time = placeholder)
 ### loki_spline -- COMPLETE
 ### loki_spatial -- COMPLETE
+
+**loki_spatial key implementation notes:**
+- Methods: kriging (simple/ordinary/universal), idw, rbf, natural_neighbor,
+  bspline_surface, nurbs (placeholder -- always throws AlgorithmException)
+- LOO cross-validation: n explicit refits for all Kriging variants.
+  The Dubrule shortcut e_i = alpha_i / K^{-1}_{ii} is only exact for
+  Simple Kriging. For OK/UK the upper-left block of the extended matrix
+  inverse is NOT the inverse of K -- explicit refits are mandatory.
+- SpatialAnalyzer::run() returns SpatialResult (not void) -- plotter
+  receives the result from main, not called inside analyzer.
+- _parseSpatial() must be registered in configLoader.cpp:
+  cfg.spatial = _parseSpatial(j.value("spatial", json::object()));
+  Without this, spatial.input is never read from JSON and all loader
+  defaults are used (wrong value_columns, wrong no_data_value, etc.).
+- bilinear interpolation (interpBilinear) exists in spatialInterp.hpp/.cpp
+  as an internal utility (resampling regular grid to another regular grid),
+  NOT exposed as a method= option in the pipeline.
+- NURBS: placeholder only. Decision pending on whether to implement as
+  part of loki_spatial or as separate loki_nurbs module.
 
 ---
 
@@ -566,24 +611,91 @@ loki_spatial and loki_multivariate. The "not a time series" argument applies
 equally to loki_spatial, which is already in LOKI. Consistent decision:
 all quantitative scientific analysis tools belong in LOKI.
 
-**Planned functionality:**
-- Coordinate transformations:
-  - ECEF (X, Y, Z) <-> geodetic (phi, lambda, h)
-  - ECEF <-> local topocentric (ENU / NEU)
-  - Helmert 7-parameter transformation (datum shift)
-- Full covariance matrix propagation through each transformation
-  (law of error propagation: Cx_out = J * Cx_in * J^T)
-- Visualisation of error ellipses (2D) and ellipsoids (3D) via gnuplot
-- Transformation parameter estimation from control points (LSQ)
-- Protocol output: transformation parameters, residuals, quality metrics
+**Planned functionality (v1):**
 
-**Input:** CSV with coordinate columns + optional variance/covariance columns.
-**Config:** transformation type, source/target system, ellipsoid parameters.
+Coordinate transformations:
+- ECEF (X, Y, Z) <-> geodetic (phi, lambda, h) -- Bowring iterative or
+  Zhu (1994) closed-form
+- ECEF <-> local topocentric ENU (East-North-Up) / NEU / NED
+- Geodetic <-> spherical (simplified models)
+- Cartographic projections: UTM, Mercator (needed by loki_spatial for LLA
+  data), Krovak / S-JTSK (Czech/Slovak national system)
+
+Reference ellipsoids and frames:
+- GRS80, WGS84, Bessel 1841, Krasovsky
+- Helmert 7-parameter transformation (datum shift): ECEF -> ECEF
+- ITRF/ETRS89 via published Helmert parameters (IERS)
+
+Geodetic tasks (main problems of geodesy):
+- 1st geodetic task (direct): given (phi1, lambda1), azimuth and distance
+  -> compute (phi2, lambda2) -- Vincenty (1975) direct formula
+- 2nd geodetic task (inverse): given two points -> azimuth + geodesic
+  distance -- Vincenty inverse formula
+- Orthodrome (great circle) and loxodrome (rhumb line)
+- Intersection (forward resection): two baselines + azimuths -> point
+- Resection (backward): distances/angles to known points -> own position
+- Geodetic polygon area computation
+
+Covariance propagation:
+- Full analytical propagation: C_out = J * C_in * J^T for each transformation
+- Jacobians computed analytically
+- Monte Carlo verification: N Gaussian realisations -> compare empirical
+  vs analytical covariance (validates Jacobian correctness)
+
+Visualisation -- graphical covariance matrix:
+- k x k matrix plot (e.g. k=3 for X,Y,Z or phi,lambda,h)
+- Diagonal (i,i): histogram of component x_i + fitted normal density
+- Off-diagonal (i,j): scatter plot (x_i, x_j) + 95% error ellipse
+  from 2x2 block C_ij via eigendecomposition
+- Helmert error curve: ellipse boundary from Mahalanobis distance
+  chi^2_{2,0.95} ~ 2.448, overlaid on scatter panels
+- Two versions: theoretical (analytical C_out) and empirical (Monte Carlo)
+  -- agreement validates Jacobian implementation
+
+**Architecture decision -- NO loki_core/gnss subdirectory:**
+GNSS-specific primitives (RINEX, satellite geometry, DOP) belong in a
+future loki_gnss module depending on loki_geodesy + loki_core. They must
+NOT pollute loki_core which is shared by all modules including those that
+never need GNSS. Geodesy math primitives (ellipsoid, Helmert, covariance
+propagation) go into loki_core/math/ following the established pattern.
+
+**loki_gnss -- future separate module:**
+Will depend on loki_geodesy + loki_core. GNSS data processing, DOP
+computation, RINEX parsing, satellite geometry. Separate from loki_geodesy.
 
 **Math primitives needed in loki_core/math/:**
-- `helmert.hpp/.cpp` -- 7-parameter Helmert transformation + LSQ estimation
-- `ellipsoid.hpp`    -- ellipsoid parameters (GRS80, WGS84, Bessel, etc.)
-- `covariance.hpp`   -- covariance propagation J * C * J^T helper
+- `ellipsoid.hpp`          -- ellipsoid constants (GRS80, WGS84, Bessel, Krasovsky)
+- `helmert.hpp / .cpp`     -- 7-parameter Helmert transformation + LSQ estimation
+- `covariancePropag.hpp`   -- J * C * J^T + Monte Carlo simulation
+
+**Proposed file structure:**
+```
+loki_core/math/
+  ellipsoid.hpp
+  helmert.hpp / .cpp
+  covariancePropag.hpp
+
+loki_geodesy/
+  include/loki/geodesy/
+    coordTransform.hpp
+    projection.hpp
+    geodesicLine.hpp
+    geodesyTasks.hpp
+    geodesyAnalyzer.hpp
+    geodesyResult.hpp
+    plotGeodesy.hpp
+  src/
+    coordTransform.cpp
+    projection.cpp
+    geodesicLine.cpp
+    geodesyTasks.cpp
+    geodesyAnalyzer.cpp
+    plotGeodesy.cpp
+
+apps/loki_geodesy/
+  main.cpp
+  CMakeLists.txt
+```
 
 ---
 
@@ -620,7 +732,7 @@ real-time sensor data. Complement to the offline batch processing in
 existing modules.
 
 **Note:** LOKI is primarily a post-processing toolkit. loki_realtime is a
-long-term goal, not near-term.
+long-term future goal, not near-term.
 
 ---
 
@@ -665,6 +777,7 @@ Config field: `cfg.minYears` (NOT `minYearsPerSlot`).
 ### nelderMead -- must be in loki_core CMakeLists
 `nelderMead.cpp` must be listed in `add_library(loki_core STATIC ...)`.
 Same applies to all new math .cpp files: `bspline.cpp`, `bsplineFit.cpp`,
+`spatialVariogram.cpp`, `rbf.cpp`, `naturalNeighbor.cpp`,
 and future spatial math files.
 
 ### `TimeSeries` API
@@ -682,6 +795,8 @@ and future spatial math files.
 - `-persist` flag REMOVED from gnuplot.cpp -- do not add it back
 - Use `plot '-'` (inline data) instead of tmp files wherever possible
 - `plot '-'` inside `set multiplot` NOT supported -- use datablocks (`$name << EOD`)
+- Do NOT use gnuplot user-defined functions via pipe -- compute curves in C++
+  and send as datablocks (variables are not committed between separate gp() calls)
 
 ### loki_spline -- implementation notes
 - `_isNonUniform()` uses `gpsTotalSeconds()` for timestep CV detection.
@@ -715,6 +830,15 @@ and future spatial math files.
 - Spatial Kriging: lag = Euclidean distance, not time difference.
   Variogram fitting same procedure as temporal, but isotropy assumption
   should be verified (directional variograms for anisotropic fields).
+- Spatial RBF: coordinate normalisation to [0,1] is mandatory for CPD kernels
+  (TPS, cubic, multiquadric) on metre-scale data. Without normalisation:
+  phi(r) ~ 1e7, condition number ~ 1e20, system rank-deficient.
+- Spatial LOO CV: explicit n refits required for OK and UK. Dubrule shortcut
+  only valid for SK where K_ext == K (no Lagrange multiplier rows/cols).
+- GSLIB format auto-detection: 2nd comment line = integer N -> N column name
+  lines follow. Without correct GSLIB parsing, colName() mapping is offset
+  by the number of non-name comment lines (e.g. "# Zone A Data" counts as
+  a name line in generic mode, shifting all subsequent column names by 1).
 
 ---
 
@@ -726,13 +850,13 @@ and future spatial math files.
 | done | `loki_core/math/bspline` | core extension | COMPLETE |
 | done | `loki_core/math/bsplineFit` | core extension | COMPLETE |
 | done | `loki_spline` | new app | COMPLETE |
-| next | `loki_spatial` | new app | NEXT |
+| done | `loki_spatial` | new app | COMPLETE |
+| next | `loki_geodesy` | new app | NEXT |
 | planned | `loki_multivariate` | new app | PLANNED |
 | planned | `loki_wavelet` | new app | PLANNED |
-| planned | `loki_geodesy` | new app | PLANNED |
 | future | `loki_realtime` | new app | FUTURE |
 | future | `loki_ml` | new app | FUTURE |
-| separate | `GeoKit` | separate project | PLANNED |
+| future | `loki_gnss` | new app | FUTURE (after loki_geodesy) |
 | in progress | Publication Part A (Theory, SK) | docs | IN PROGRESS |
 | in progress | Publication Part B (Manual, EN) | docs | IN PROGRESS |
 
@@ -753,9 +877,12 @@ and future spatial math files.
 - Build directory `build/` is gitignored.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
+- `spatialLoader.hpp` is in `loki_core/io/`, namespace `loki::io`.
 - `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp`, `embedMatrix.hpp`,
   `randomizedSvd.hpp`, `spline.hpp`, `nelderMead.hpp`, `bspline.hpp`,
   `bsplineFit.hpp` are in `loki_core/math/`.
+- Spatial math files also in `loki_core/math/`: `spatialTypes.hpp`,
+  `spatialVariogram.hpp/.cpp`, `rbf.hpp/.cpp`, `naturalNeighbor.hpp/.cpp`.
 - Kriging math files also in `loki_core/math/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
 - `krigingFactory.hpp` is header-only (inline factory function).
@@ -763,7 +890,7 @@ and future spatial math files.
 - TimeStamp: `.mjd()` | `.utcString()` | `.gpsTotalSeconds()`
 - SNHT v rekurzivnom mode: min_segment_points >= 3-4 roky.
 - PELT mbic je najkonzervativnejsi penalty typ -- odporucany default.
-- BOCPD vyzaduje kalibраciu prior_beta blizko skutocnemu sigma^2 serie.
+- BOCPD vyzaduje kalibraciu prior_beta blizko skutocnemu sigma^2 serie.
 - loki_spline: NURBS = placeholder, hodi AlgorithmException ak je requested.
   Spatial/trajectory NURBS rezervovane pre loki_spatial / loki_multivariate.
 - loki_geodesy: sucast LOKI (nie samostatny projekt). Rovnaky argument ako

@@ -98,6 +98,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.kriging       = _parseKriging      (j.value("kriging",      json::object()));
     cfg.spline        = _parseSpline       (j.value("spline",       json::object()));
     cfg.spatial       = _parseSpatial      (j.value("spatial",      json::object()));
+    cfg.geodesy       = _parseGeodesy      (j.value("geodesy",      json::object()));
 
     return cfg;
 }
@@ -2234,6 +2235,128 @@ SpatialConfig ConfigLoader::_parseSpatial(const nlohmann::json& j)
             "ConfigLoader: spatial.input section is required for loki_spatial.");
     }   
 
+    return cfg;
+}
+
+// =============================================================================
+//  _parseGeodesy implementation -- add to configLoader.cpp
+// =============================================================================
+ 
+GeodesyConfig ConfigLoader::_parseGeodesy(const nlohmann::json& j)
+{
+    GeodesyConfig cfg;
+ 
+    if (j.empty()) return cfg;
+ 
+    cfg.task = j.value("task", "transform");
+    if (cfg.task != "transform" && cfg.task != "distance" && cfg.task != "monte_carlo") {
+        throw ConfigException(
+            "ConfigLoader: geodesy.task '" + cfg.task
+            + "' not recognised. Valid: transform, distance, monte_carlo.");
+    }
+ 
+    cfg.outputSystem = j.value("output_system", "geod");
+    {
+        static const std::vector<std::string> validSys{
+            "ecef", "geod", "geodetic", "sphere", "enu"};
+        if (std::find(validSys.begin(), validSys.end(), cfg.outputSystem) == validSys.end()) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.output_system '" + cfg.outputSystem + "' not recognised.");
+        }
+    }
+ 
+    cfg.ellipsoid = j.value("ellipsoid", "WGS84");
+    {
+        static const std::vector<std::string> validEll{
+            "WGS84", "WGS-84", "GRS80", "GRS-80",
+            "Bessel", "Krasovsky", "Clarke1866", "Clarke-1866"};
+        if (std::find(validEll.begin(), validEll.end(), cfg.ellipsoid) == validEll.end()) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.ellipsoid '" + cfg.ellipsoid + "' not recognised.");
+        }
+    }
+ 
+    cfg.refBody = j.value("ref_body", "ellipsoid");
+    if (cfg.refBody != "ellipsoid" && cfg.refBody != "sphere") {
+        throw ConfigException(
+            "ConfigLoader: geodesy.ref_body '" + cfg.refBody
+            + "' not recognised. Valid: ellipsoid, sphere.");
+    }
+ 
+    cfg.distanceMethod = j.value("distance_method", "vincenty");
+    if (cfg.distanceMethod != "vincenty" && cfg.distanceMethod != "haversine") {
+        throw ConfigException(
+            "ConfigLoader: geodesy.distance_method '" + cfg.distanceMethod
+            + "' not recognised. Valid: vincenty, haversine.");
+    }
+ 
+    cfg.mcSamples = j.value("mc_samples", 1000);
+    if (cfg.mcSamples < 10) {
+        throw ConfigException(
+            "ConfigLoader: geodesy.mc_samples must be >= 10, got "
+            + std::to_string(cfg.mcSamples) + ".");
+    }
+ 
+    cfg.mcTolerance = j.value("mc_tolerance", 0.05);
+    if (cfg.mcTolerance <= 0.0 || cfg.mcTolerance >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: geodesy.mc_tolerance must be in (0, 1).");
+    }
+ 
+    cfg.confidenceLevel = j.value("confidence_level", 0.95);
+    if (cfg.confidenceLevel <= 0.0 || cfg.confidenceLevel >= 1.0) {
+        throw ConfigException(
+            "ConfigLoader: geodesy.confidence_level must be in (0, 1).");
+    }
+ 
+    // ENU origin
+    if (j.contains("enu_origin")) {
+        const auto& o = j["enu_origin"];
+        cfg.enuOrigin.lat = o.value("lat", 0.0);
+        cfg.enuOrigin.lon = o.value("lon", 0.0);
+        cfg.enuOrigin.h   = o.value("h",   0.0);
+        if (cfg.enuOrigin.lat < -90.0 || cfg.enuOrigin.lat > 90.0) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.enu_origin.lat must be in [-90, 90].");
+        }
+        if (cfg.enuOrigin.lon < -180.0 || cfg.enuOrigin.lon > 180.0) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.enu_origin.lon must be in [-180, 180].");
+        }
+    }
+ 
+    // Input section
+    if (j.contains("input")) {
+        const auto& i      = j["input"];
+        cfg.input.file     = i.value("file",        "");
+        cfg.input.delimiter= i.value("delimiter",   ";");
+        cfg.input.coordSystem = i.value("coord_system", "ecef");
+        cfg.input.stateSize   = i.value("state_size",   3);
+ 
+        if (cfg.input.file.empty()) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.input.file must not be empty.");
+        }
+        if (cfg.input.stateSize != 3 && cfg.input.stateSize != 6) {
+            throw ConfigException(
+                "ConfigLoader: geodesy.input.state_size must be 3 or 6, got "
+                + std::to_string(cfg.input.stateSize) + ".");
+        }
+        {
+            static const std::vector<std::string> validSys{
+                "ecef", "geod", "geodetic", "sphere", "enu"};
+            if (std::find(validSys.begin(), validSys.end(), cfg.input.coordSystem)
+                == validSys.end()) {
+                throw ConfigException(
+                    "ConfigLoader: geodesy.input.coord_system '"
+                    + cfg.input.coordSystem + "' not recognised.");
+            }
+        }
+    } else {
+        throw ConfigException(
+            "ConfigLoader: geodesy.input section is required for loki_geodesy.");
+    }
+ 
     return cfg;
 }
 

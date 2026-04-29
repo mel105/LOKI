@@ -1320,6 +1320,35 @@ struct SpatialConfig {
     SpatialBSplineSurfaceConfig bsplineSurface {};
 };
 
+// -- GeodesyConfig sub-configs (outside struct -- GCC 13 aggregate-init rule) -
+ 
+struct GeodesyEnuOriginConfig {
+    double lat{ 0.0 };   ///< ENU origin latitude [deg]
+    double lon{ 0.0 };   ///< ENU origin longitude [deg]
+    double h  { 0.0 };   ///< ENU origin height [m]
+};
+ 
+struct GeodesyInputConfig {
+    std::string file;                      ///< Input data file path (relative to INPUT/)
+    std::string delimiter{ ";" };          ///< Column delimiter
+    std::string coordSystem{ "ecef" };     ///< "ecef" | "geod" | "sphere" | "enu"
+    int         stateSize{ 3 };            ///< 3 (pos only) or 6 (pos + velocity)
+    bool        hasCovarariance{ false };  ///< True if file contains covariance columns
+};
+ 
+struct GeodesyConfig {
+    std::string            task{ "transform" };   ///< "transform" | "distance" | "monte_carlo"
+    std::string            outputSystem{ "geod" };///< Output coordinate system
+    std::string            ellipsoid{ "WGS84" };  ///< Ellipsoid model name
+    std::string            refBody{ "ellipsoid" };///< "ellipsoid" | "sphere"
+    std::string            distanceMethod{ "vincenty" }; ///< "vincenty" | "haversine"
+    int                    mcSamples{ 1000 };     ///< Monte Carlo sample count
+    double                 mcTolerance{ 0.05 };   ///< MC relative tolerance
+    double                 confidenceLevel{ 0.95 };
+    GeodesyEnuOriginConfig enuOrigin{};
+    GeodesyInputConfig     input{};
+};
+
 // -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
@@ -1348,8 +1377,8 @@ struct AppConfig {
     KrigingConfig       kriging;
     SplineConfig        spline;
     SpatialConfig       spatial;
-    // SpatialInputConfig  input;
-
+    GeodesyConfig       geodesy;
+    
     std::filesystem::path logDir;
     std::filesystem::path csvDir;
     std::filesystem::path imgDir;
