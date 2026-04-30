@@ -1,7 +1,5 @@
 #pragma once
 
-#include <loki/geodesy/coordTransform.hpp>
-#include <loki/geodesy/geodesicLine.hpp>
 #include <loki/geodesy/geodesyResult.hpp>
 #include <loki/io/geodesyLoader.hpp>
 #include <loki/math/ellipsoid.hpp>
@@ -36,24 +34,48 @@ DistanceMethod distanceMethodFromString(const std::string& s);
 /**
  * @brief Runtime configuration for GeodesyAnalyzer.
  *
- * All coordinate system and reference body fields are stored as strings
- * to avoid GCC 13 aggregate-init issues with enum members that have
- * default values.  Conversion to the appropriate enums happens inside
- * GeodesyAnalyzer at construction time.
+ * Uses an explicit constructor to satisfy GCC 13 on Windows/MinGW where
+ * aggregate initialisation of structs with enum members and default values
+ * fails to compile. All coordinate system fields are strings; enum conversion
+ * happens inside GeodesyAnalyzer methods in the .cpp file.
  */
 struct GeodesyConfig {
-    GeodesyTask  task        { GeodesyTask::TRANSFORM };
-    std::string  inputSystem { "ecef" };   ///< "ecef"|"geod"|"sphere"|"enu"
-    std::string  outputSystem{ "geod" };   ///< "ecef"|"geod"|"sphere"|"enu"
-    loki::math::EllipsoidModel ellipsoidModel{ loki::math::EllipsoidModel::WGS84 };
-    std::string  ellipsoidName{ "WGS84" };
-    std::string  refBody     { "ellipsoid" }; ///< "ellipsoid"|"sphere"
-    int          stateSize   { 3 };
-    DistanceMethod distMethod{ DistanceMethod::VINCENTY };
-    int          mcSamples   { 1000 };
-    double       mcTolerance { 0.05 };
-    GeodPoint    enuOrigin   { 0.0, 0.0, 0.0 };
-    std::string  outputDir   { "OUTPUT/" };
+    // Explicit constructor -- required by GCC 13 aggregate-init bug on Windows
+    GeodesyConfig()
+        : task       { GeodesyTask::TRANSFORM }
+        , inputSystem{ "ecef" }
+        , outputSystem{ "geod" }
+        , ellipsoidModel{ loki::math::EllipsoidModel::WGS84 }
+        , ellipsoidName{ "WGS84" }
+        , refBody    { "ellipsoid" }
+        , stateSize  { 3 }
+        , distMethod { DistanceMethod::VINCENTY }
+        , mcSamples  { 1000 }
+        , mcTolerance{ 0.05 }
+        , enuOriginLat{ 0.0 }
+        , enuOriginLon{ 0.0 }
+        , enuOriginH  { 0.0 }
+        , protocolDir{ "" }
+        , imgDir     { "" }
+        , csvDir     { "" }
+    {}
+
+    GeodesyTask                task;
+    std::string                inputSystem;   ///< "ecef"|"geod"|"sphere"|"enu"
+    std::string                outputSystem;  ///< "ecef"|"geod"|"sphere"|"enu"
+    loki::math::EllipsoidModel ellipsoidModel;
+    std::string                ellipsoidName;
+    std::string                refBody;       ///< "ellipsoid"|"sphere"
+    int                        stateSize;
+    DistanceMethod             distMethod;
+    int                        mcSamples;
+    double                     mcTolerance;
+    double                     enuOriginLat;  ///< ENU origin latitude [deg]
+    double                     enuOriginLon;  ///< ENU origin longitude [deg]
+    double                     enuOriginH;    ///< ENU origin height [m]
+    std::string                protocolDir;  ///< OUTPUT/PROTOCOLS/
+    std::string                imgDir;       ///< OUTPUT/IMG/
+    std::string                csvDir;       ///< OUTPUT/CSV/
 };
 
 // ---------------------------------------------------------------------------
@@ -63,14 +85,16 @@ struct GeodesyConfig {
 /**
  * @brief Orchestrates coordinate transformation, geodesic computation and
  *        Monte Carlo covariance validation.
+ *
+ * The loader (GeodesyLoader) is called in main() and the result passed
+ * directly to run(). GeodesyAnalyzer does not own a loader.
  */
 class GeodesyAnalyzer {
 public:
 
     /**
      * @brief Construct with configuration.
-     *
-     * Converts string fields in GeodesyConfig to enums once at construction.
+     * @param cfg  Fully populated GeodesyConfig.
      */
     explicit GeodesyAnalyzer(const GeodesyConfig& cfg);
 
@@ -86,23 +110,17 @@ private:
     GeodesyConfig         m_cfg;
     loki::math::Ellipsoid m_ell;
 
-    // Resolved enums (converted from strings in constructor)
-    InputCoordSystem m_inputSystem;
-    InputCoordSystem m_outputSystem;
-    RefBody          m_refBody;
+    // All private helpers defined only in .cpp (which includes coordTransform.hpp)
+    TransformResult  _transformPoint(const Eigen::VectorXd& pos,
+                                     const Eigen::MatrixXd& cov) const;
 
-    TransformResult transformPoint(const Eigen::VectorXd& pos,
-                                   const Eigen::MatrixXd& cov) const;
+    MonteCarloResult _monteCarlo    (const Eigen::VectorXd& pos,
+                                     const Eigen::MatrixXd& cov) const;
 
-    MonteCarloResult monteCarlo(const Eigen::VectorXd& pos,
-                                const Eigen::MatrixXd& cov) const;
-
-    std::vector<GeodLineResult> computeDistances(
+    std::vector<GeodLineResult> _computeDistances(
         const loki::io::GeodesyLoadResult& ds) const;
 
-    void writeProtocol(const GeodesyResult& result) const;
-
-    static std::string sysName(InputCoordSystem s) noexcept;
+    void _writeProtocol(const GeodesyResult& result) const;
 };
 
 } // namespace loki::geodesy

@@ -1,4 +1,6 @@
 #include <loki/geodesy/geodesyAnalyzer.hpp>
+#include <loki/geodesy/coordTransform.hpp>
+#include <loki/geodesy/geodesicLine.hpp>
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 
@@ -34,10 +36,12 @@ DistanceMethod loki::geodesy::distanceMethodFromString(const std::string& s)
 }
 
 // ---------------------------------------------------------------------------
-// sysName helper
+// Local helpers (file-scope only)
 // ---------------------------------------------------------------------------
 
-std::string GeodesyAnalyzer::sysName(InputCoordSystem s) noexcept
+namespace {
+
+std::string sysName(InputCoordSystem s) noexcept
 {
     switch (s) {
         case InputCoordSystem::ECEF:   return "ECEF";
@@ -48,33 +52,44 @@ std::string GeodesyAnalyzer::sysName(InputCoordSystem s) noexcept
     return "UNKNOWN";
 }
 
+// Build GeodPoint from the three separate origin doubles in GeodesyConfig
+GeodPoint originFromCfg(const GeodesyConfig& cfg) noexcept
+{
+    return { cfg.enuOriginLat, cfg.enuOriginLon, cfg.enuOriginH };
+}
+
+} // anonymous namespace
+
 // ---------------------------------------------------------------------------
-// Constructor -- resolve strings to enums once
+// Constructor
 // ---------------------------------------------------------------------------
 
 GeodesyAnalyzer::GeodesyAnalyzer(const GeodesyConfig& cfg)
     : m_cfg(cfg)
     , m_ell(makeEllipsoid(cfg.ellipsoidModel))
-    , m_inputSystem (inputCoordSystemFromString(cfg.inputSystem))
-    , m_outputSystem(inputCoordSystemFromString(cfg.outputSystem))
-    , m_refBody     (cfg.refBody == "sphere" ? RefBody::SPHERE : RefBody::ELLIPSOID)
 {}
 
 // ---------------------------------------------------------------------------
-// transformPoint
+// _transformPoint
 // ---------------------------------------------------------------------------
 
-TransformResult GeodesyAnalyzer::transformPoint(const Eigen::VectorXd& pos,
-                                                  const Eigen::MatrixXd& cov) const
+TransformResult GeodesyAnalyzer::_transformPoint(const Eigen::VectorXd& pos,
+                                                   const Eigen::MatrixXd& cov) const
 {
+    InputCoordSystem in  = inputCoordSystemFromString(m_cfg.inputSystem);
+    InputCoordSystem out = inputCoordSystemFromString(m_cfg.outputSystem);
+    RefBody          ref = (m_cfg.refBody == "sphere")
+                           ? RefBody::SPHERE : RefBody::ELLIPSOID;
+    GeodPoint        org = originFromCfg(m_cfg);
+
     TransformResult res;
     res.inputPos      = pos;
     res.inputCov      = cov;
     res.ellipsoidName = m_cfg.ellipsoidName;
-    res.inputSystem   = sysName(m_inputSystem);
-    res.outputSystem  = sysName(m_outputSystem);
+    res.inputSystem   = sysName(in);
+    res.outputSystem  = sysName(out);
 
-    if (m_inputSystem == m_outputSystem) {
+    if (in == out) {
         res.outputPos = pos;
         res.outputCov = cov;
         return res;
@@ -82,37 +97,35 @@ TransformResult GeodesyAnalyzer::transformPoint(const Eigen::VectorXd& pos,
 
     Eigen::VectorXd outPos;
     Eigen::MatrixXd outCov;
-    auto in  = m_inputSystem;
-    auto out = m_outputSystem;
 
     if (in == InputCoordSystem::ECEF) {
         if      (out == InputCoordSystem::GEOD)
-            trEcef2Geod(pos, cov, m_ell, outPos, outCov);
+            trEcef2Geod  (pos, cov, m_ell,      outPos, outCov);
         else if (out == InputCoordSystem::ENU)
-            trEcef2Enu(pos, cov, m_cfg.enuOrigin, m_refBody, m_ell, outPos, outCov);
+            trEcef2Enu   (pos, cov, org, ref, m_ell, outPos, outCov);
         else if (out == InputCoordSystem::SPHERE)
-            trEcef2Sphere(pos, cov, outPos, outCov);
+            trEcef2Sphere(pos, cov,             outPos, outCov);
     } else if (in == InputCoordSystem::GEOD) {
         if      (out == InputCoordSystem::ECEF)
-            trGeod2Ecef(pos, cov, m_ell, outPos, outCov);
+            trGeod2Ecef  (pos, cov, m_ell,      outPos, outCov);
         else if (out == InputCoordSystem::ENU)
-            trGeod2Enu(pos, cov, m_cfg.enuOrigin, m_ell, outPos, outCov);
+            trGeod2Enu   (pos, cov, org, m_ell, outPos, outCov);
         else if (out == InputCoordSystem::SPHERE)
-            trGeod2Sphere(pos, cov, m_ell, outPos, outCov);
+            trGeod2Sphere(pos, cov, m_ell,      outPos, outCov);
     } else if (in == InputCoordSystem::ENU) {
         if      (out == InputCoordSystem::ECEF)
-            trEnu2Ecef(pos, cov, m_cfg.enuOrigin, m_refBody, m_ell, outPos, outCov);
+            trEnu2Ecef   (pos, cov, org, ref, m_ell, outPos, outCov);
         else if (out == InputCoordSystem::GEOD)
-            trEnu2Geod(pos, cov, m_cfg.enuOrigin, m_ell, outPos, outCov);
+            trEnu2Geod   (pos, cov, org, m_ell, outPos, outCov);
         else if (out == InputCoordSystem::SPHERE)
-            trEnu2Sphere(pos, cov, m_cfg.enuOrigin, m_ell, outPos, outCov);
+            trEnu2Sphere (pos, cov, org, m_ell, outPos, outCov);
     } else if (in == InputCoordSystem::SPHERE) {
         if      (out == InputCoordSystem::ECEF)
-            trSphere2Ecef(pos, cov, outPos, outCov);
+            trSphere2Ecef(pos, cov,             outPos, outCov);
         else if (out == InputCoordSystem::GEOD)
-            trSphere2Geod(pos, cov, m_ell, outPos, outCov);
+            trSphere2Geod(pos, cov, m_ell,      outPos, outCov);
         else if (out == InputCoordSystem::ENU)
-            trSphere2Enu(pos, cov, m_cfg.enuOrigin, m_ell, outPos, outCov);
+            trSphere2Enu (pos, cov, org, m_ell, outPos, outCov);
     }
 
     res.outputPos = outPos;
@@ -121,11 +134,11 @@ TransformResult GeodesyAnalyzer::transformPoint(const Eigen::VectorXd& pos,
 }
 
 // ---------------------------------------------------------------------------
-// monteCarlo
+// _monteCarlo
 // ---------------------------------------------------------------------------
 
-MonteCarloResult GeodesyAnalyzer::monteCarlo(const Eigen::VectorXd& pos,
-                                               const Eigen::MatrixXd& cov) const
+MonteCarloResult GeodesyAnalyzer::_monteCarlo(const Eigen::VectorXd& pos,
+                                                const Eigen::MatrixXd& cov) const
 {
     int N = static_cast<int>(pos.size());
 
@@ -139,7 +152,7 @@ MonteCarloResult GeodesyAnalyzer::monteCarlo(const Eigen::VectorXd& pos,
         L = Eigen::MatrixXd::Identity(N, N);
     }
 
-    TransformResult analytical = transformPoint(pos, cov);
+    TransformResult analytical = _transformPoint(pos, cov);
 
     Eigen::MatrixXd zeroCov = Eigen::MatrixXd::Zero(N, N);
     std::mt19937_64            rng(42);
@@ -149,7 +162,7 @@ MonteCarloResult GeodesyAnalyzer::monteCarlo(const Eigen::VectorXd& pos,
     for (int s = 0; s < m_cfg.mcSamples; ++s) {
         Eigen::VectorXd z(N);
         for (int i = 0; i < N; ++i) z(i) = nd(rng);
-        TransformResult tr = transformPoint(pos + L * z, zeroCov);
+        TransformResult tr = _transformPoint(pos + L * z, zeroCov);
         samples.col(s) = tr.outputPos;
     }
 
@@ -170,6 +183,7 @@ MonteCarloResult GeodesyAnalyzer::monteCarlo(const Eigen::VectorXd& pos,
     mc.analyticalCov = analytical.outputCov;
     mc.empiricalCov  = empCov;
     mc.empiricalMean = mean;
+    mc.samples       = samples;
     mc.nSamples      = m_cfg.mcSamples;
     mc.maxRelDiff    = maxRel;
     mc.passed        = (maxRel < m_cfg.mcTolerance);
@@ -186,17 +200,20 @@ MonteCarloResult GeodesyAnalyzer::monteCarlo(const Eigen::VectorXd& pos,
 }
 
 // ---------------------------------------------------------------------------
-// computeDistances
+// _computeDistances
 // ---------------------------------------------------------------------------
 
 std::vector<GeodLineResult>
-GeodesyAnalyzer::computeDistances(const loki::io::GeodesyLoadResult& ds) const
+GeodesyAnalyzer::_computeDistances(const loki::io::GeodesyLoadResult& ds) const
 {
     std::vector<GeodLineResult> results;
     if (ds.positions.size() < 2) return results;
 
+    InputCoordSystem in  = inputCoordSystemFromString(m_cfg.inputSystem);
+    GeodPoint        org = originFromCfg(m_cfg);
+
     auto toGeod = [&](const Eigen::VectorXd& p) -> GeodPoint {
-        switch (m_inputSystem) {
+        switch (in) {
             case InputCoordSystem::GEOD:
                 return { p(0), p(1), p(2) };
             case InputCoordSystem::ECEF:
@@ -204,7 +221,7 @@ GeodesyAnalyzer::computeDistances(const loki::io::GeodesyLoadResult& ds) const
             case InputCoordSystem::SPHERE:
                 return sphere2geod({ p(0), p(1), p(2) }, m_ell);
             case InputCoordSystem::ENU:
-                return enu2geod({ p(0), p(1), p(2) }, m_cfg.enuOrigin, m_ell);
+                return enu2geod({ p(0), p(1), p(2) }, org, m_ell);
         }
         return {};
     };
@@ -229,57 +246,152 @@ GeodesyAnalyzer::computeDistances(const loki::io::GeodesyLoadResult& ds) const
 }
 
 // ---------------------------------------------------------------------------
-// writeProtocol
+// _writeProtocol
 // ---------------------------------------------------------------------------
 
-void GeodesyAnalyzer::writeProtocol(const GeodesyResult& result) const
+void GeodesyAnalyzer::_writeProtocol(const GeodesyResult& result) const
 {
     namespace fs = std::filesystem;
-    fs::create_directories(m_cfg.outputDir + "PROTOCOLS/");
-    std::string path = m_cfg.outputDir + "PROTOCOLS/geodesy_protocol.csv";
+    fs::create_directories(m_cfg.protocolDir);
+    std::string path = m_cfg.protocolDir + "/geodesy_protocol.txt";
 
     std::ofstream f(path);
     if (!f.is_open())
         throw loki::IoException(
             "GeodesyAnalyzer: cannot write protocol to " + path);
 
-    f << std::fixed << std::setprecision(9);
-    f << "# loki_geodesy protocol\n";
-    f << "# Ellipsoid;" << m_cfg.ellipsoidName << "\n";
-    f << "# Input;"     << sysName(m_inputSystem)  << "\n";
-    f << "# Output;"    << sysName(m_outputSystem) << "\n";
+    InputCoordSystem in  = inputCoordSystemFromString(m_cfg.inputSystem);
+    InputCoordSystem out = inputCoordSystemFromString(m_cfg.outputSystem);
 
-    f << "idx;in0;in1;in2;out0;out1;out2\n";
+    f << std::fixed << std::setprecision(9);
+    f << "================================================================================\n";
+    f << "  LOKI GEODESY PROTOCOL\n";
+    f << "================================================================================\n";
+    f << "  Ellipsoid    : " << m_cfg.ellipsoidName << "\n";
+    f << "  Input system : " << sysName(in)  << "\n";
+    f << "  Output system: " << sysName(out) << "\n";
+    f << "  Points       : " << result.transforms.size() << "\n";
+    f << "--------------------------------------------------------------------------------\n";
+    f << "\n";
+
+    f << "COORDINATE TRANSFORMATIONS\n";
+    f << "\n";
+    f << "  " << std::left
+      << std::setw(5)  << "idx"
+      << std::setw(20) << ("in_0 [" + sysName(in) + "]")
+      << std::setw(20) << "in_1"
+      << std::setw(20) << "in_2"
+      << std::setw(20) << ("out_0 [" + sysName(out) + "]")
+      << std::setw(20) << "out_1"
+      << std::setw(20) << "out_2"
+      << "\n";
+    f << "  " << std::string(125, '-') << "\n";
+
     for (std::size_t i = 0; i < result.transforms.size(); ++i) {
         const auto& tr = result.transforms[i];
-        f << i << ";"
-          << tr.inputPos(0)  << ";" << tr.inputPos(1)  << ";" << tr.inputPos(2)  << ";"
-          << tr.outputPos(0) << ";" << tr.outputPos(1) << ";" << tr.outputPos(2) << "\n";
+        f << "  " << std::left << std::setw(5) << i
+          << std::setw(20) << tr.inputPos(0)
+          << std::setw(20) << tr.inputPos(1)
+          << std::setw(20) << tr.inputPos(2)
+          << std::setw(20) << tr.outputPos(0)
+          << std::setw(20) << tr.outputPos(1)
+          << std::setw(20) << tr.outputPos(2)
+          << "\n";
+
+        // Print input covariance if available
+        bool hasCov = (tr.inputCov.rows() > 0 && tr.inputCov.norm() > 1e-30);
+        bool hasOutCov = (tr.outputCov.rows() > 0 && tr.outputCov.norm() > 1e-30);
+        if (hasCov || hasOutCov) {
+            int Nc = static_cast<int>(tr.inputPos.size());
+            f << "       Input  sigma  : ";
+            for (int c = 0; c < Nc; ++c) {
+                double var = hasCov ? tr.inputCov(c, c) : 0.0;
+                f << std::scientific << std::setprecision(4)
+                  << std::sqrt(var);
+                if (c < Nc - 1) f << "  ";
+            }
+            f << "\n";
+            f << "       Output sigma  : ";
+            for (int c = 0; c < Nc; ++c) {
+                double var = hasOutCov ? tr.outputCov(c, c) : 0.0;
+                f << std::scientific << std::setprecision(4)
+                  << std::sqrt(var);
+                if (c < Nc - 1) f << "  ";
+            }
+            f << "\n";
+            f << "       Input  cov    : [";
+            for (int r = 0; r < Nc; ++r)
+                for (int c = 0; c < Nc; ++c) {
+                    f << std::scientific << std::setprecision(4)
+                      << (hasCov ? tr.inputCov(r,c) : 0.0);
+                    if (r < Nc-1 || c < Nc-1) f << "  ";
+                }
+            f << "]\n";
+            f << "       Output cov    : [";
+            for (int r = 0; r < Nc; ++r)
+                for (int c = 0; c < Nc; ++c) {
+                    f << std::scientific << std::setprecision(4)
+                      << (hasOutCov ? tr.outputCov(r,c) : 0.0);
+                    if (r < Nc-1 || c < Nc-1) f << "  ";
+                }
+            f << "]\n";
+            f << std::fixed << std::setprecision(9);
+        }
     }
 
     if (result.hasLines) {
-        f << "# distances\nidx;distance_m;azFwd_deg;azRev_deg;method\n";
+        f << "\n";
+        f << "GEODESIC DISTANCES\n";
+        f << "\n";
+        f << "  " << std::left
+          << std::setw(5)  << "idx"
+          << std::setw(18) << "distance [m]"
+          << std::setw(18) << "az_fwd [deg]"
+          << std::setw(18) << "az_rev [deg]"
+          << std::setw(12) << "method"
+          << "\n";
+        f << "  " << std::string(71, '-') << "\n";
         for (std::size_t i = 0; i < result.lines.size(); ++i) {
             const auto& lr = result.lines[i];
-            f << i << ";"
-              << lr.geodesic.distance    << ";"
-              << lr.geodesic.azimuthFwd  << ";"
-              << lr.geodesic.azimuthRev  << ";"
-              << lr.method << "\n";
+            f << "  " << std::left << std::setw(5) << i
+              << std::setw(18) << lr.geodesic.distance
+              << std::setw(18) << lr.geodesic.azimuthFwd
+              << std::setw(18) << lr.geodesic.azimuthRev
+              << std::setw(12) << lr.method
+              << "\n";
         }
     }
 
     if (result.hasMonteCarlo) {
         const auto& mc = result.monteCarlo;
-        f << "# monte_carlo\nsamples;" << mc.nSamples << "\n";
-        f << "maxRelDiff;" << mc.maxRelDiff << "\n";
-        f << "passed;"     << (mc.passed ? "YES" : "NO") << "\n";
-        int N = static_cast<int>(mc.analyticalCov.rows());
-        for (int i = 0; i < N; ++i)
-            f << "ana_cov_" << i << ";" << mc.analyticalCov(i, i) << "\n";
-        for (int i = 0; i < N; ++i)
-            f << "emp_cov_" << i << ";" << mc.empiricalCov(i, i) << "\n";
+        f << "\n";
+        f << "MONTE CARLO VALIDATION\n";
+        f << "\n";
+        f << "  Samples      : " << mc.nSamples   << "\n";
+        f << "  Max rel diff : " << mc.maxRelDiff  << "\n";
+        f << "  Result       : " << (mc.passed ? "PASSED" : "FAILED") << "\n";
+        f << "\n";
+        int Nmc = static_cast<int>(mc.analyticalCov.rows());
+        f << "  " << std::left << std::setw(5) << "comp"
+          << std::setw(22) << "analytical_var"
+          << std::setw(22) << "empirical_var"
+          << std::setw(14) << "rel_diff"
+          << "\n";
+        f << "  " << std::string(63, '-') << "\n";
+        for (int i = 0; i < Nmc; ++i) {
+            double an = mc.analyticalCov(i, i);
+            double em = mc.empiricalCov(i, i);
+            double rd = (std::fabs(an) > 1e-30) ? std::fabs(an - em) / std::fabs(an) : 0.0;
+            f << "  " << std::left << std::setw(5) << i
+              << std::setw(22) << an
+              << std::setw(22) << em
+              << std::setw(14) << rd
+              << "\n";
+        }
     }
+
+    f << "\n";
+    f << "================================================================================\n";
 
     LOKI_INFO("GeodesyAnalyzer: protocol written to " + path);
 }
@@ -301,24 +413,32 @@ GeodesyResult GeodesyAnalyzer::run(const loki::io::GeodesyLoadResult& loadResult
         const Eigen::MatrixXd& cov = loadResult.covariances.empty()
                                      ? zeroCov
                                      : loadResult.covariances[i];
-        result.transforms.push_back(transformPoint(loadResult.positions[i], cov));
-    }
+        TransformResult tr = _transformPoint(loadResult.positions[i], cov);
 
-    if (m_cfg.task == GeodesyTask::MONTE_CARLO && !loadResult.positions.empty()) {
-        const Eigen::MatrixXd& cov = loadResult.covariances.empty()
-                                     ? Eigen::MatrixXd::Identity(N, N)
-                                     : loadResult.covariances[0];
-        result.monteCarlo    = monteCarlo(loadResult.positions[0], cov);
-        result.hasMonteCarlo = true;
-        if (!result.transforms.empty())
-            result.transforms[0].empiricalCov = result.monteCarlo.empiricalCov;
+        if (m_cfg.task == GeodesyTask::MONTE_CARLO) {
+            const Eigen::MatrixXd& mcCov = loadResult.covariances.empty()
+                                           ? Eigen::MatrixXd::Identity(N, N)
+                                           : loadResult.covariances[i];
+            MonteCarloResult mc = _monteCarlo(loadResult.positions[i], mcCov);
+            tr.empiricalCov  = mc.empiricalCov;
+            tr.empiricalMean = mc.empiricalMean;
+            tr.mcSamples     = mc.samples;
+
+            // Store first point MC in top-level for protocol
+            if (i == 0) {
+                result.monteCarlo    = mc;
+                result.hasMonteCarlo = true;
+            }
+        }
+
+        result.transforms.push_back(std::move(tr));
     }
 
     if (m_cfg.task == GeodesyTask::DISTANCE) {
-        result.lines    = computeDistances(loadResult);
+        result.lines    = _computeDistances(loadResult);
         result.hasLines = !result.lines.empty();
     }
 
-    writeProtocol(result);
+    _writeProtocol(result);
     return result;
 }

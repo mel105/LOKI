@@ -10,61 +10,41 @@
 
 namespace loki::geodesy {
 
-// ---------------------------------------------------------------------------
-// Single-point transformation result
-// ---------------------------------------------------------------------------
-
 /// @brief Result of a coordinate transformation for one point.
 struct TransformResult {
-    // Input
-    Eigen::VectorXd inputPos;    ///< Input state vector (size 3 or 6)
-    Eigen::MatrixXd inputCov;    ///< Input covariance matrix
-
-    // Output
-    Eigen::VectorXd outputPos;   ///< Output state vector (size 3 or 6)
-    Eigen::MatrixXd outputCov;   ///< Output covariance matrix (analytical propagation)
-    Eigen::MatrixXd empiricalCov;///< Empirical covariance from Monte Carlo (if run)
-
-    // Metadata
-    std::string inputSystem;     ///< e.g. "ECEF", "GEOD", "ENU", "SPHERE"
-    std::string outputSystem;    ///< e.g. "ENU", "GEOD", etc.
-    std::string ellipsoidName;   ///< e.g. "WGS84"
+    Eigen::VectorXd inputPos;
+    Eigen::MatrixXd inputCov;
+    Eigen::VectorXd outputPos;
+    Eigen::MatrixXd outputCov;      ///< Analytical (Jacobian-propagated) covariance
+    Eigen::MatrixXd empiricalCov;   ///< Empirical covariance from MC
+    Eigen::MatrixXd mcSamples;      ///< MC sample matrix (N x nSamples)
+    Eigen::VectorXd empiricalMean;  ///< Empirical mean of MC samples
+    std::string inputSystem;
+    std::string outputSystem;
+    std::string ellipsoidName;
 };
 
-// ---------------------------------------------------------------------------
-// Monte Carlo validation result
-// ---------------------------------------------------------------------------
-
-/// @brief Result of Monte Carlo covariance validation.
+/// @brief Summary MC validation result (first point only, for protocol).
 struct MonteCarloResult {
-    Eigen::MatrixXd analyticalCov;   ///< Analytical (Jacobian-propagated) covariance
-    Eigen::MatrixXd empiricalCov;    ///< Empirical covariance from N samples
-    Eigen::VectorXd empiricalMean;   ///< Empirical mean of transformed samples
-    int             nSamples;        ///< Number of Monte Carlo samples used
-    double          maxRelDiff;      ///< Max relative difference on diagonal: |a-e|/|a|
-    bool            passed;          ///< True if maxRelDiff < tolerance
+    Eigen::MatrixXd analyticalCov;
+    Eigen::MatrixXd empiricalCov;
+    Eigen::VectorXd empiricalMean;
+    Eigen::MatrixXd samples;
+    int             nSamples{ 0 };
+    double          maxRelDiff{ 0.0 };
+    bool            passed{ false };
 };
 
-// ---------------------------------------------------------------------------
-// Geodesic computation result
-// ---------------------------------------------------------------------------
-
-/// @brief Result of a geodesic distance/direction computation.
 struct GeodLineResult {
-    GeodesicResult geodesic;   ///< Distance [m] and azimuths [deg]
-    std::string    method;     ///< "vincenty" or "haversine"
+    GeodesicResult geodesic;
+    std::string    method;
     std::string    ellipsoidName;
 };
 
-// ---------------------------------------------------------------------------
-// Full pipeline result
-// ---------------------------------------------------------------------------
-
-/// @brief Aggregated result of one loki_geodesy run.
 struct GeodesyResult {
-    std::vector<TransformResult> transforms;  ///< Transformation results per point
-    std::vector<GeodLineResult>  lines;        ///< Geodesic results (if requested)
-    MonteCarloResult             monteCarlo;   ///< MC validation (if enabled)
+    std::vector<TransformResult> transforms;
+    std::vector<GeodLineResult>  lines;
+    MonteCarloResult             monteCarlo;
     bool                         hasMonteCarlo{ false };
     bool                         hasLines{ false };
 };

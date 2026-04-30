@@ -2231,9 +2231,8 @@ SpatialConfig ConfigLoader::_parseSpatial(const nlohmann::json& j)
                 "ConfigLoader: spatial.input.no_data_tolerance must be >= 0.");
         }
     } else {
-        throw ConfigException(
-            "ConfigLoader: spatial.input section is required for loki_spatial.");
-    }   
+        return cfg;
+    }
 
     return cfg;
 }

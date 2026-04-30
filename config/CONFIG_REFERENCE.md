@@ -32,6 +32,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 19. [loki_kriging](#19-loki_kriging)
 20. [loki_spline](#20-loki_spline)
 21. [loki_spatial](#21-loki_spatial)
+22. [loki_geodesy](#22-loki_geodesy)
 
 ---
 
@@ -6287,3 +6288,320 @@ hull fall back to the nearest observed value with a logged warning.
 | `loki_multivariate` (planned) | Co-kriging (cross-variogram between variables) will be implemented there, reusing the Kriging math primitives from `loki_core/math/`. |
 | `loki_qc` | Run `loki_qc` first on each station time series. Pass only the QC-approved mean or trend value per station to `loki_spatial` as the scatter observation. |
 | `loki_decomposition` / `loki_ssa` | Extract the signal component of interest (trend, seasonal anomaly) per station before spatial interpolation, rather than interpolating raw observations. |
+
+# 22. loki_geodesy
+
+`loki_geodesy` performs geodetic coordinate transformations between the
+coordinate systems ECEF, GEOD, ENU and SPHERE, propagates covariance matrices
+between systems using the analytical Jacobian, validates the propagation by
+Monte Carlo simulation, and computes geodesic distances and azimuths between
+point pairs using Vincenty or Haversine formulae.
+
+---
+
+## 22.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "geodesy": {
+        "task": "transform",
+        "output_system": "geod",
+        "ellipsoid": "WGS84",
+
+        "input": {
+            "file": "stations.csv",
+            "delimiter": ";",
+            "coord_system": "ecef",
+            "state_size": 3
+        }
+    }
+}
+```
+
+This reads ECEF coordinates from `INPUT/stations.csv`, transforms them to
+geodetic (lat, lon, h) on the WGS84 ellipsoid, writes a protocol to
+`OUTPUT/PROTOCOLS/geodesy_protocol.txt`, and exits.
+
+---
+
+## 22.2 Tasks
+
+The `geodesy.task` key controls the pipeline:
+
+| Task | Description |
+|------|-------------|
+| `"transform"` | Transform coordinates only. No covariance propagation, no plots. |
+| `"monte_carlo"` | Transform + propagate covariance (Jacobian) + validate by Monte Carlo. Generates covariance panel plots per point. |
+| `"distance"` | Compute geodesic distance and azimuths between consecutive point pairs. |
+
+---
+
+## 22.3 Top-level geodesy keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `task` | string | `"transform"` | Pipeline task. See Section 22.2. |
+| `output_system` | string | `"geod"` | Target coordinate system. See Section 22.5. |
+| `ellipsoid` | string | `"WGS84"` | Reference ellipsoid. See Section 22.4. |
+| `ref_body` | string | `"ellipsoid"` | Reference surface for ENU origin reduction. `"ellipsoid"` or `"sphere"`. |
+| `distance_method` | string | `"vincenty"` | Distance formula. `"vincenty"` (accurate, iterative) or `"haversine"` (fast, spherical approximation). |
+| `mc_samples` | int | `1000` | Number of Monte Carlo samples for covariance validation. Used only for `task = "monte_carlo"`. |
+| `mc_tolerance` | double | `0.05` | Maximum acceptable relative difference between analytical and empirical variance diagonal. |
+| `confidence_level` | double | `0.95` | Confidence level for error ellipse computation. Used in covariance panel plots. |
+
+---
+
+## 22.4 Reference ellipsoids
+
+| Name | a [m] | 1/f | Use |
+|------|-------|-----|-----|
+| `"WGS84"` | 6 378 137.0 | 298.257 223 563 | GPS, global default |
+| `"GRS80"` | 6 378 137.0 | 298.257 222 101 | ETRS89, European networks |
+| `"Bessel"` | 6 377 397.155 | 299.152 812 853 | S-JTSK, Central Europe |
+| `"Krasovsky"` | 6 378 245.0 | 298.3 | Soviet geodetic systems |
+| `"Clarke1866"` | 6 378 206.4 | 294.978 698 2 | NAD27, North America |
+
+Choose the ellipsoid that matches the geodetic datum of your input data.
+For modern GNSS data use `"WGS84"`. For Slovak national coordinates (S-JTSK)
+use `"Bessel"`.
+
+---
+
+## 22.5 Coordinate systems
+
+| `coord_system` / `output_system` | Columns | Units |
+|-----------------------------------|---------|-------|
+| `"ecef"` | X, Y, Z | metres |
+| `"geod"` | lat, lon, h | degrees, degrees, metres |
+| `"enu"` | E, N, U | metres (relative to `enu_origin`) |
+| `"sphere"` | lat, lon, R | degrees, degrees, metres |
+
+Any combination of input → output is supported, except identity (same system
+in and out) which is a no-op and is logged as a warning.
+
+---
+
+## 22.6 ENU origin
+
+Required when `coord_system = "enu"` or `output_system = "enu"`. Specifies
+the geodetic coordinates of the local origin on the reference ellipsoid.
+
+```json
+"enu_origin": {
+    "lat":  48.148600,
+    "lon":  17.107700,
+    "h":    134.0
+}
+```
+
+| Key | Type | Units | Description |
+|-----|------|-------|-------------|
+| `lat` | double | degrees | Geodetic latitude of ENU origin. |
+| `lon` | double | degrees | Geodetic longitude of ENU origin. |
+| `h` | double | metres | Ellipsoidal height of ENU origin. |
+
+---
+
+## 22.7 Input sub-section
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `file` | string | — | Input file name, relative to `workspace/INPUT/`. Required. |
+| `delimiter` | string | `";"` | Column delimiter. |
+| `coord_system` | string | `"ecef"` | Input coordinate system. See Section 22.5. |
+| `state_size` | int | `3` | Number of coordinate components. Always 3 for current systems. |
+
+### 22.7.1 Input file format — coordinates only
+
+```
+# X[m];Y[m];Z[m]
+4074868.2239;1254192.6279;4728016.3177
+3972073.7666;1022648.9453;4868397.5605
+```
+
+Lines starting with `#` are skipped.
+
+### 22.7.2 Input file format — coordinates with covariance
+
+When `task = "monte_carlo"`, the input file must contain the upper triangle
+of the 3×3 covariance matrix appended after the coordinates:
+
+```
+# X[m];Y[m];Z[m];C00;C01;C02;C11;C12;C22
+4074868.2239;1254192.6279;4728016.3177;1000;30;50;800;30;200
+```
+
+The covariance matrix is reconstructed symmetrically from the upper triangle.
+Units of the covariance matrix must match units of the coordinates (m² for
+ECEF, deg² for GEOD). The matrix must be positive definite — a Cholesky
+factorisation is attempted at load time and an error is raised if it fails.
+
+---
+
+## 22.8 Use case configurations
+
+### 22.8.1 Transform coordinates only (no covariance)
+
+```json
+{
+    "workspace": "C:/data/project",
+    "geodesy": {
+        "task": "transform",
+        "output_system": "geod",
+        "ellipsoid": "WGS84",
+        "input": {
+            "file": "stations_ecef.csv",
+            "delimiter": ";",
+            "coord_system": "ecef",
+            "state_size": 3
+        }
+    }
+}
+```
+
+Output: `geodesy_protocol.txt` with transformed coordinates.
+No covariance columns needed in input file.
+
+### 22.8.2 Transform coordinates and covariance matrix
+
+```json
+{
+    "workspace": "C:/data/project",
+    "geodesy": {
+        "task": "monte_carlo",
+        "output_system": "geod",
+        "ellipsoid": "WGS84",
+        "mc_samples": 10000,
+        "mc_tolerance": 0.10,
+        "confidence_level": 0.95,
+        "input": {
+            "file": "stations_ecef_with_cov.csv",
+            "delimiter": ";",
+            "coord_system": "ecef",
+            "state_size": 3
+        }
+    }
+}
+```
+
+Input file must contain 9 columns: X;Y;Z;C00;C01;C02;C11;C12;C22.
+
+Output:
+- Protocol with analytical covariance per point (input sigma, output sigma,
+  full covariance matrix).
+- Monte Carlo validation table (analytical vs empirical variance, rel. diff).
+- For each point: two PNG covariance panels — empirical and analytical —
+  showing the 3×3 scatter/histogram matrix.
+
+Increase `mc_samples` for tighter empirical estimates (10 000 gives ~1% MC
+error on variance). Increase `mc_tolerance` if MC consistently fails by a
+small margin (~0.06–0.10) due to finite sample noise.
+
+### 22.8.3 Transform to local ENU
+
+```json
+{
+    "workspace": "C:/data/project",
+    "geodesy": {
+        "task": "transform",
+        "output_system": "enu",
+        "ellipsoid": "WGS84",
+        "ref_body": "ellipsoid",
+        "enu_origin": {
+            "lat":  48.148600,
+            "lon":  17.107700,
+            "h":    134.0
+        },
+        "input": {
+            "file": "stations_ecef.csv",
+            "delimiter": ";",
+            "coord_system": "ecef",
+            "state_size": 3
+        }
+    }
+}
+```
+
+### 22.8.4 First geodetic problem — geodesic distance and azimuth
+
+```json
+{
+    "workspace": "C:/data/project",
+    "geodesy": {
+        "task": "distance",
+        "ellipsoid": "WGS84",
+        "distance_method": "vincenty",
+        "input": {
+            "file": "stations_geod.csv",
+            "delimiter": ";",
+            "coord_system": "geod",
+            "state_size": 3
+        }
+    }
+}
+```
+
+Computes Vincenty inverse formula between consecutive point pairs.
+Output in protocol: distance [m], forward azimuth [deg], reverse azimuth [deg].
+
+Use `"haversine"` for a fast spherical approximation (error < 0.3% for
+distances < 500 km).
+
+---
+
+## 22.9 Output files
+
+| File | Location | Description |
+|------|----------|-------------|
+| `geodesy_protocol.txt` | `PROTOCOLS/` | Transformed coordinates, input/output sigma and covariance per point (if covariance loaded), MC validation table, geodesic distances. |
+| `geodesy_[dataset]_ecef_to_geod_pt[N]_empirical_covariance.png` | `IMG/` | 3×3 covariance panel using empirical (MC) covariance matrix. |
+| `geodesy_[dataset]_ecef_to_geod_pt[N]_analytical_covariance.png` | `IMG/` | 3×3 covariance panel using analytical (Jacobian) covariance matrix. |
+
+The covariance panel layout follows the standard scatter matrix convention:
+- **Diagonal**: horizontal histogram of MC samples + fitted normal PDF. Title shows sigma.
+- **Lower triangle** (`iRow > iCol`): scatter of samples with error ellipse and Helmert curve. Title shows covariance.
+- **Upper triangle** (`iRow < iCol`): scatter with OLS regression line. Title shows R[p-value].
+
+---
+
+## 22.10 Covariance propagation — technical note
+
+The analytical covariance matrix in the output system is computed as:
+
+```
+Sigma_out = J^{-1} * Sigma_in * (J^{-1})^T
+```
+
+where J = d(ECEF)/d(GEOD_rad) is the 3×3 Jacobian of the forward
+transformation, inverted via LU decomposition. Angular output coordinates
+(lat, lon) are converted from radians to degrees by a diagonal scaling matrix
+T = diag(180/pi, 180/pi, 1):
+
+```
+Sigma_out_deg = T * Sigma_out_rad * T^T
+```
+
+The Monte Carlo validation draws N samples from the multivariate normal
+N(x, Sigma_in) using Cholesky factorisation, transforms each sample, and
+computes the empirical covariance of the outputs. The maximum relative
+difference on the diagonal is reported as `max_rel_diff`.
+
+---
+
+## 22.11 Best practices
+
+- For GNSS data with sub-centimetre sigma, use `mc_samples = 10000` and
+  `mc_tolerance = 0.10`. With 2 000 samples the MC estimator has ~7% noise
+  on the variance, which routinely exceeds a 5% tolerance.
+- Always verify that input covariance matrices are positive definite before
+  running. A non-PD matrix causes the Cholesky step to fall back to identity,
+  making MC results meaningless.
+- For Central European station networks in S-JTSK, set `ellipsoid = "Bessel"`
+  to get correct radii of curvature.
+- For ENU transformations, the origin should be the approximate centroid of
+  the network to minimise linearisation error.
+- Use `task = "distance"` with `distance_method = "vincenty"` for precise
+  inter-station baselines. Haversine is adequate for rough estimates or
+  sorted ranking where absolute accuracy is not critical.

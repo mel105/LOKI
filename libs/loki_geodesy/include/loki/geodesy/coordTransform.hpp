@@ -31,6 +31,19 @@ namespace loki::geodesy {
  */
 enum class RefBody { ELLIPSOID, SPHERE };
 
+/// @brief Coordinate system of input/output data.
+enum class InputCoordSystem {
+    ECEF,    ///< Earth-Centred Earth-Fixed: X, Y, Z [m]
+    GEOD,    ///< Geodetic: lat [deg], lon [deg], h [m]
+    SPHERE,  ///< Spherical: lat [deg], lon [deg], radius [m]
+    ENU      ///< Local topocentric: E [m], N [m], U [m]
+};
+
+/// @brief Parse InputCoordSystem from string.
+/// Accepted: "ecef", "geod", "geodetic", "sphere", "enu".
+/// @throws loki::ConfigException for unknown strings.
+InputCoordSystem inputCoordSystemFromString(const std::string& s);
+
 // ---------------------------------------------------------------------------
 // Point structs
 // ---------------------------------------------------------------------------

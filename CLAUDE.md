@@ -228,7 +228,7 @@ LOKI is no longer limited to time series. The framework covers:
 - 1D time series analysis (complete)
 - 2D spatial analysis (loki_spatial -- complete)
 - Multivariate analysis (loki_multivariate -- planned)
-- Geodetic computations (loki_geodesy -- next)
+- Geodetic computations (loki_geodesy -- complete)
 
 ### Architecture principle -- math primitives in loki_core
 All reusable math primitives go into `loki_core/math/` (flat, no sub-directories).
@@ -277,11 +277,11 @@ loki_spline           (depends on loki_core only)                   <- COMPLETE
 
 loki_spatial          (depends on loki_core only)                   <- COMPLETE
 
-loki_geodesy          (depends on loki_core only)                   <- NEXT
+loki_geodesy          (depends on loki_core only)                   <- COMPLETE
 
-loki_multivariate     (depends on loki_core only)                   <- PLANNED
+loki_multivariate     (depends on loki_core only)                   <- NEXT
 
-loki_wavelet          (depends on loki_core only)                   <- PLANNED
+loki_gnss
 
 ```
 
@@ -320,7 +320,8 @@ loki/
 |   +-- loki_kriging/                <- COMPLETE
 |   +-- loki_spline/                 <- COMPLETE
 |   +-- loki_spatial/                <- COMPLETE
-|   +-- loki_geodesy/                <- NEXT
+|   +-- loki_geodesy/                <- COMPLETE
+|   +-- loki_multivariate            <- NEXT
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
@@ -329,7 +330,7 @@ loki/
 |   |       |                  medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
 |   |       |                  wCorrelation, sampling, bootstrap, permutation)
-|   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader)
+|   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader, geodesyLoader)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
 |   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead,
 |   |                          krigingTypes, krigingVariogram, krigingBase,
@@ -353,7 +354,8 @@ loki/
 |   +-- loki_kriging/                <- COMPLETE
 |   +-- loki_spline/                 <- COMPLETE
 |   +-- loki_spatial/                <- COMPLETE
-|   +-- loki_geodesy/                <- NEXT
+|   +-- loki_geodesy/                <- COMPLETE
+|   +-- loki_multivariate/           <- NEXT
 +-- tests/
 |   +-- CMakeLists.txt
 |   +-- demo/
@@ -426,7 +428,8 @@ target_include_directories(loki_core SYSTEM PUBLIC
 ["kriging"]="loki_kriging_app"      <- COMPLETE
 ["spline"]="loki_spline_app"        <- COMPLETE
 ["spatial"]="loki_spatial_app"      <- COMPLETE
-["geodesy"]="loki_geodesy_app"      <- NEXT
+["geodesy"]="loki_geodesy_app"      <- COMPLETE
+["multivariate"]="loki_multivariate_app" <- NEXT
 ```
 
 ---
@@ -599,129 +602,23 @@ multiple files merged). Uses existing DataManager merge functionality.
 
 ---
 
-### loki_geodesy -- IS NEXT
+### loki_geodesy -- IS COMPLETE
 
-**Purpose:** Geodetic coordinate transformations with full covariance
-propagation. Part of LOKI -- same module pattern as all other modules
-(JSON config, CSV input/output, protocol, gnuplot visualisation).
-
-Rationale for inclusion in LOKI: geodetic transformations with covariance
-propagation are quantitative scientific analysis -- the same domain as
-loki_spatial and loki_multivariate. The "not a time series" argument applies
-equally to loki_spatial, which is already in LOKI. Consistent decision:
-all quantitative scientific analysis tools belong in LOKI.
-
-**Planned functionality (v1):**
-
-Coordinate transformations:
-- ECEF (X, Y, Z) <-> geodetic (phi, lambda, h) -- Bowring iterative or
-  Zhu (1994) closed-form
-- ECEF <-> local topocentric ENU (East-North-Up) / NEU / NED
-- Geodetic <-> spherical (simplified models)
-- Cartographic projections: UTM, Mercator (needed by loki_spatial for LLA
-  data), Krovak / S-JTSK (Czech/Slovak national system)
-
-Reference ellipsoids and frames:
-- GRS80, WGS84, Bessel 1841, Krasovsky
-- Helmert 7-parameter transformation (datum shift): ECEF -> ECEF
-- ITRF/ETRS89 via published Helmert parameters (IERS)
-
-Geodetic tasks (main problems of geodesy):
-- 1st geodetic task (direct): given (phi1, lambda1), azimuth and distance
-  -> compute (phi2, lambda2) -- Vincenty (1975) direct formula
-- 2nd geodetic task (inverse): given two points -> azimuth + geodesic
-  distance -- Vincenty inverse formula
-- Orthodrome (great circle) and loxodrome (rhumb line)
-- Intersection (forward resection): two baselines + azimuths -> point
-- Resection (backward): distances/angles to known points -> own position
-- Geodetic polygon area computation
-
-Covariance propagation:
-- Full analytical propagation: C_out = J * C_in * J^T for each transformation
-- Jacobians computed analytically
-- Monte Carlo verification: N Gaussian realisations -> compare empirical
-  vs analytical covariance (validates Jacobian correctness)
-
-Visualisation -- graphical covariance matrix:
-- k x k matrix plot (e.g. k=3 for X,Y,Z or phi,lambda,h)
-- Diagonal (i,i): histogram of component x_i + fitted normal density
-- Off-diagonal (i,j): scatter plot (x_i, x_j) + 95% error ellipse
-  from 2x2 block C_ij via eigendecomposition
-- Helmert error curve: ellipse boundary from Mahalanobis distance
-  chi^2_{2,0.95} ~ 2.448, overlaid on scatter panels
-- Two versions: theoretical (analytical C_out) and empirical (Monte Carlo)
-  -- agreement validates Jacobian implementation
-
-**Architecture decision -- NO loki_core/gnss subdirectory:**
-GNSS-specific primitives (RINEX, satellite geometry, DOP) belong in a
-future loki_gnss module depending on loki_geodesy + loki_core. They must
-NOT pollute loki_core which is shared by all modules including those that
-never need GNSS. Geodesy math primitives (ellipsoid, Helmert, covariance
-propagation) go into loki_core/math/ following the established pattern.
-
-**loki_gnss -- future separate module:**
-Will depend on loki_geodesy + loki_core. GNSS data processing, DOP
-computation, RINEX parsing, satellite geometry. Separate from loki_geodesy.
-
-**Math primitives needed in loki_core/math/:**
-- `ellipsoid.hpp`          -- ellipsoid constants (GRS80, WGS84, Bessel, Krasovsky)
-- `helmert.hpp / .cpp`     -- 7-parameter Helmert transformation + LSQ estimation
-- `covariancePropag.hpp`   -- J * C * J^T + Monte Carlo simulation
-
-**Proposed file structure:**
-```
-loki_core/math/
-  ellipsoid.hpp
-  helmert.hpp / .cpp
-  covariancePropag.hpp
-
-loki_geodesy/
-  include/loki/geodesy/
-    coordTransform.hpp
-    projection.hpp
-    geodesicLine.hpp
-    geodesyTasks.hpp
-    geodesyAnalyzer.hpp
-    geodesyResult.hpp
-    plotGeodesy.hpp
-  src/
-    coordTransform.cpp
-    projection.cpp
-    geodesicLine.cpp
-    geodesyTasks.cpp
-    geodesyAnalyzer.cpp
-    plotGeodesy.cpp
-
-apps/loki_geodesy/
-  main.cpp
-  CMakeLists.txt
-```
-
----
-
-### loki_wavelet -- PLANNED
-
-**Purpose:** Wavelet transform and wavelet-based signal processing as a
-complement to loki_spectral (FFT/Lomb-Scargle) and loki_decomposition (STL).
-
-**Motivation:** FFT gives global frequency content; wavelets give localised
-time-frequency content. For non-stationary signals (train sensors, GNSS with
-earthquake transients, climate with changing seasonal amplitude) wavelets are
-more informative than global spectral analysis.
-
-**Planned functionality:**
-- DWT (Discrete Wavelet Transform) -- Mallat algorithm, O(n).
-  Families: Haar, Daubechies (db2-db10), Symlets.
-- CWT (Continuous Wavelet Transform) -- Morlet, Mexican hat, Paul wavelets.
-- Wavelet power spectrum + significance test (Torrence & Compo 1998 --
-  standard reference in climatology).
-- Wavelet denoising: soft/hard thresholding (VisuShrink / SureShrink).
-- Multi-resolution analysis (MRA): decomposition and reconstruction.
-- Optional: wavelet-ARIMA hybrid forecast (decompose -> model each level
-  with ARIMA -> reconstruct).
-
-**Implementation note:** no external wavelet library needed -- DWT via
-filter bank (Mallat) is straightforward with Eigen. CWT via FFT convolution.
+Tasks: transform, monte_carlo, distance.
+Coordinate systems: ECEF, GEOD, ENU, SPHERE -- vsetky kombinacie.
+Ellipsoids: WGS84, GRS80, Bessel, Krasovsky, Clarke1866.
+Covariance propagation: analyticky Jacobian (LU solve, nie inverse()).
+MC validation: bezi pre kazdy vstupny bod, ulozi samples do TransformResult.
+Protocol: per-bod input/output sigma a plna kovariancna matica.
+Plots: NxN covariance panel (empirical + analytical) per bod.
+  Diagonal: horizontalny histogram + normalna PDF.
+  Lower triangle: scatter + elipsa chyb + Helmertova krivka.
+  Upper triangle: scatter + regresia + R[p-value].
+GeodesyConfig: explicitny konstruktor (GCC 13 fix); inputSystem/outputSystem
+  ako std::string; enuOriginLat/Lon/H ako separate doubles; protocolDir/imgDir/csvDir.
+InputCoordSystem enum: definovany v coordTransform.hpp, nie v geodesyLoader.
+inputCoordSystemFromString(): definovana v coordTransform.cpp.
+_parseSpatial(): vracia default config (nie haze) ked spatial.input chyba.
 
 ---
 
@@ -851,12 +748,12 @@ and future spatial math files.
 | done | `loki_core/math/bsplineFit` | core extension | COMPLETE |
 | done | `loki_spline` | new app | COMPLETE |
 | done | `loki_spatial` | new app | COMPLETE |
-| next | `loki_geodesy` | new app | NEXT |
-| planned | `loki_multivariate` | new app | PLANNED |
-| planned | `loki_wavelet` | new app | PLANNED |
+| next | `loki_geodesy` | new app | COMPLETE |
+| planned | `loki_multivariate` | new app | NEXT |
+| planned | `loki_wavelet` | new app | FUTURE |
 | future | `loki_realtime` | new app | FUTURE |
 | future | `loki_ml` | new app | FUTURE |
-| future | `loki_gnss` | new app | FUTURE (after loki_geodesy) |
+| future | `loki_gnss` | new app | PLANED |
 | in progress | Publication Part A (Theory, SK) | docs | IN PROGRESS |
 | in progress | Publication Part B (Manual, EN) | docs | IN PROGRESS |
 

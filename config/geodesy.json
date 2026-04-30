@@ -1,5 +1,5 @@
 {
-    "workspace": "C:/Users/eliasmichal/Dokumenty/LOKI",
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
 
     "output": {
         "log_level": "info"
@@ -10,13 +10,13 @@
     },
 
     "geodesy": {
-        "task": "transform",
-        "output_system": "geod",
+        "task": "distance",
+        "output_system": "sphere",
         "ellipsoid": "WGS84",
         "ref_body": "ellipsoid",
         "distance_method": "vincenty",
         "mc_samples": 2000,
-        "mc_tolerance": 0.05,
+        "mc_tolerance": 0.15,
         "confidence_level": 0.95,
 
         "enu_origin": {
@@ -26,7 +26,7 @@
         },
 
         "input": {
-            "file": "test_ecef.csv",
+            "file": "test_ecef_with_cov.csv",
             "delimiter": ";",
             "coord_system": "ecef",
             "state_size": 3

@@ -2,27 +2,52 @@
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 
-#include <charconv>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using namespace loki::io;
 
-namespace loki::io {
-
 // ---------------------------------------------------------------------------
-// Constructor
+// Private helpers
 // ---------------------------------------------------------------------------
 
-GeodesyLoader::GeodesyLoader(const AppConfig& cfg)
-    : m_cfg(cfg)
+std::vector<double> GeodesyLoader::_tokenise(const std::string& line, char delim)
 {
-    int ss = m_cfg.geodesy.input.stateSize;
-    if (ss != 3 && ss != 6)
-        throw loki::ConfigException(
-            "GeodesyLoader: state_size must be 3 or 6, got "
-            + std::to_string(ss));
+    std::vector<double> vals;
+    std::stringstream   ss(line);
+    std::string         token;
+    while (std::getline(ss, token, delim)) {
+        if (token.empty()) continue;
+        try {
+            vals.push_back(std::stod(token));
+        } catch (...) {
+            throw loki::ParseException(
+                "GeodesyLoader: cannot parse token '" + token + "'");
+        }
+    }
+    return vals;
+}
+
+Eigen::MatrixXd GeodesyLoader::_upperTriangleToMatrix(
+    const std::vector<double>& vals, int N, std::size_t offset)
+{
+    int expected = N * (N + 1) / 2;
+    if (static_cast<int>(vals.size()) - static_cast<int>(offset) < expected)
+        throw loki::ParseException(
+            "GeodesyLoader: not enough columns for " + std::to_string(N)
+            + "x" + std::to_string(N) + " covariance");
+
+    Eigen::MatrixXd C = Eigen::MatrixXd::Zero(N, N);
+    std::size_t idx = offset;
+    for (int i = 0; i < N; ++i)
+        for (int j = i; j < N; ++j) {
+            C(i, j) = vals[idx];
+            C(j, i) = vals[idx];
+            ++idx;
+        }
+    return C;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,57 +62,17 @@ std::filesystem::path GeodesyLoader::_resolvePath() const
 }
 
 // ---------------------------------------------------------------------------
-// _tokenise
+// Constructor
 // ---------------------------------------------------------------------------
 
-std::vector<double> GeodesyLoader::_tokenise(const std::string& line, char delim)
+GeodesyLoader::GeodesyLoader(const AppConfig& cfg)
+    : m_cfg(cfg)
 {
-    std::vector<double> vals;
-    std::istringstream  ss(line);
-    std::string         tok;
-
-    // whitespace delimiter: split on any whitespace run
-    if (delim == ' ') {
-        double v{};
-        while (ss >> v) vals.push_back(v);
-        return vals;
-    }
-
-    while (std::getline(ss, tok, delim)) {
-        if (tok.empty()) continue;
-        // strip \r
-        if (!tok.empty() && tok.back() == '\r') tok.pop_back();
-        double v{};
-        auto [ptr, ec] = std::from_chars(tok.data(), tok.data() + tok.size(), v);
-        if (ec != std::errc{})
-            throw loki::ParseException(
-                "GeodesyLoader: cannot parse token '" + tok + "'");
-        vals.push_back(v);
-    }
-    return vals;
-}
-
-// ---------------------------------------------------------------------------
-// _upperTriangleToMatrix
-// ---------------------------------------------------------------------------
-
-Eigen::MatrixXd GeodesyLoader::_upperTriangleToMatrix(
-    const std::vector<double>& vals, int N, std::size_t offset)
-{
-    int expected = N * (N + 1) / 2;
-    if (static_cast<int>(vals.size() - offset) < expected)
-        throw loki::ParseException(
-            "GeodesyLoader: not enough columns for covariance matrix");
-
-    Eigen::MatrixXd C = Eigen::MatrixXd::Zero(N, N);
-    std::size_t idx = offset;
-    for (int i = 0; i < N; ++i)
-        for (int j = i; j < N; ++j) {
-            C(i, j) = vals[idx];
-            C(j, i) = vals[idx];
-            ++idx;
-        }
-    return C;
+    int ss = m_cfg.geodesy.input.stateSize;
+    if (ss != 3 && ss != 6)
+        throw loki::ConfigException(
+            "GeodesyLoader: stateSize must be 3 or 6, got "
+            + std::to_string(ss));
 }
 
 // ---------------------------------------------------------------------------
@@ -96,106 +81,86 @@ Eigen::MatrixXd GeodesyLoader::_upperTriangleToMatrix(
 
 GeodesyLoadResult GeodesyLoader::load() const
 {
-    namespace fs = std::filesystem;
-
-    const fs::path filePath = _resolvePath();
-    if (!fs::exists(filePath))
-        throw loki::FileNotFoundException(
-            "GeodesyLoader: file not found: '" + filePath.string() + "'");
-
-    std::ifstream file(filePath);
+    std::filesystem::path resolvedPath = _resolvePath();
+    std::ifstream         file(resolvedPath);
     if (!file.is_open())
-        throw loki::IoException(
-            "GeodesyLoader: cannot open '" + filePath.string() + "'");
+        throw loki::FileNotFoundException(
+            "GeodesyLoader: cannot open '" + resolvedPath.string() + "'");
 
-    LOKI_INFO("GeodesyLoader: opening '" + filePath.string() + "'");
+    int  N        = m_cfg.geodesy.input.stateSize;
+    const std::string& delimStr = m_cfg.geodesy.input.delimiter;
+    char delim    = delimStr.empty() ? ';' : delimStr[0];
+    int  covElems = N * (N + 1) / 2;   // 6 for N=3, 21 for N=6
+    int  fullCols = N + covElems;
 
-    GeodesyLoadResult ds;
-    ds.filePath    = filePath;
-    ds.coordSystem = m_cfg.geodesy.input.coordSystem;
-    ds.stateSize   = m_cfg.geodesy.input.stateSize;
+    GeodesyLoadResult res;
+    res.filePath    = resolvedPath;
+    res.coordSystem = m_cfg.geodesy.input.coordSystem;
+    res.stateSize   = N;
 
-    const int    N        = ds.stateSize;
-    const int    covElems = N * (N + 1) / 2;
-    const int    minCols  = N;
-    const int    fullCols = N + covElems;
-    const char   delim    = m_cfg.geodesy.input.delimiter.empty()
-                            ? ';'
-                            : m_cfg.geodesy.input.delimiter[0];
-
-    bool hasCov    = false;
-    bool layoutSet = false;
+    bool hasCov   = false;
+    bool covKnown = false;
 
     std::string line;
-    while (std::getline(file, line)) {
-        ++ds.linesRead;
+    int         lineNo = 0;
 
-        // Strip \r
+    while (std::getline(file, line)) {
+        ++lineNo;
+
+        // Strip Windows \r
         if (!line.empty() && line.back() == '\r') line.pop_back();
 
-        // Skip comments and blanks
-        if (line.empty() || line[0] == '#') { ++ds.linesSkipped; continue; }
-        if (line.find_first_not_of(" \t") == std::string::npos)
-            { ++ds.linesSkipped; continue; }
+        // Skip comments and blank lines
+        if (line.empty() || line[0] == '#') { ++res.linesSkipped; continue; }
 
-        std::vector<double> vals;
-        try {
-            vals = _tokenise(line, delim);
-        } catch (const loki::ParseException& ex) {
-            LOKI_WARNING(std::string("GeodesyLoader: line ")
-                         + std::to_string(ds.linesRead) + ": " + ex.what()
-                         + " -- skipping");
-            ++ds.linesSkipped;
-            continue;
+        std::vector<double> vals = _tokenise(line, delim);
+        if (vals.empty()) { ++res.linesSkipped; continue; }
+
+        // Detect covariance columns from first data line
+        if (!covKnown) {
+            if (static_cast<int>(vals.size()) >= fullCols) {
+                hasCov = true;
+                LOKI_INFO("GeodesyLoader: covariance columns detected (N="
+                          + std::to_string(N) + ")");
+            } else if (static_cast<int>(vals.size()) >= N) {
+                hasCov = false;
+            } else {
+                throw loki::ParseException(
+                    "GeodesyLoader: line " + std::to_string(lineNo)
+                    + " has too few columns (" + std::to_string(vals.size())
+                    + ", expected >= " + std::to_string(N) + ")");
+            }
+            covKnown = true;
         }
 
-        if (static_cast<int>(vals.size()) < minCols) {
-            LOKI_WARNING("GeodesyLoader: line " + std::to_string(ds.linesRead)
-                         + " has too few columns ("
-                         + std::to_string(vals.size()) + ", need "
-                         + std::to_string(minCols) + ") -- skipping");
-            ++ds.linesSkipped;
-            continue;
-        }
+        // Enforce consistent column count
+        if (hasCov && static_cast<int>(vals.size()) < fullCols)
+            throw loki::ParseException(
+                "GeodesyLoader: line " + std::to_string(lineNo)
+                + " expected " + std::to_string(fullCols) + " columns, got "
+                + std::to_string(vals.size()));
 
-        // Auto-detect covariance presence from first data line
-        if (!layoutSet) {
-            hasCov    = (static_cast<int>(vals.size()) >= fullCols);
-            layoutSet = true;
-            LOKI_INFO("GeodesyLoader: stateSize=" + std::to_string(N)
-                      + " covariance=" + (hasCov ? "yes" : "no"));
-        }
-
-        // State vector
+        // Parse state vector
         Eigen::VectorXd pos(N);
         for (int i = 0; i < N; ++i)
             pos(i) = vals[static_cast<std::size_t>(i)];
-        ds.positions.push_back(pos);
+        res.positions.push_back(pos);
 
-        // Covariance
-        if (hasCov) {
-            if (static_cast<int>(vals.size()) < fullCols) {
-                LOKI_WARNING("GeodesyLoader: line " + std::to_string(ds.linesRead)
-                             + " expected " + std::to_string(fullCols)
-                             + " columns, got " + std::to_string(vals.size())
-                             + " -- using zero covariance");
-                ds.covariances.push_back(Eigen::MatrixXd::Zero(N, N));
-            } else {
-                ds.covariances.push_back(
-                    _upperTriangleToMatrix(vals, N,
-                                           static_cast<std::size_t>(N)));
-            }
-        }
+        // Parse covariance (upper triangle)
+        if (hasCov)
+            res.covariances.push_back(
+                _upperTriangleToMatrix(vals, N,
+                                       static_cast<std::size_t>(N)));
+
+        ++res.linesRead;
     }
 
-    if (ds.positions.empty())
+    if (res.positions.empty())
         throw loki::DataException(
-            "GeodesyLoader: no valid data found in '" + filePath.string() + "'");
+            "GeodesyLoader: no data rows found in '"
+            + resolvedPath.string() + "'");
 
-    LOKI_INFO("GeodesyLoader: loaded " + std::to_string(ds.positions.size())
-              + " points  (read=" + std::to_string(ds.linesRead)
-              + " skipped=" + std::to_string(ds.linesSkipped) + ")");
-    return ds;
+    LOKI_INFO("GeodesyLoader: loaded " + std::to_string(res.positions.size())
+              + " points from '" + resolvedPath.string() + "'");
+    return res;
 }
-
-} // namespace loki::io

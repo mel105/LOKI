@@ -63,40 +63,30 @@ static CliArgs parseArgs(int argc, char* argv[])
     return args;
 }
 
-// ---------------------------------------------------------------------------
-// Build GeodesyAnalyzer config from AppConfig
-// ---------------------------------------------------------------------------
-
 static loki::geodesy::GeodesyConfig buildAnalyzerConfig(const loki::AppConfig& cfg)
 {
     loki::geodesy::GeodesyConfig gcfg;
 
-    gcfg.task         = loki::geodesy::geodesyTaskFromString(cfg.geodesy.task);
-    gcfg.inputSystem  = loki::geodesy::inputCoordSystemFromString(
-                            cfg.geodesy.input.coordSystem);
-    gcfg.outputSystem = loki::geodesy::inputCoordSystemFromString(
-                            cfg.geodesy.outputSystem);
-    gcfg.ellipsoidModel  = loki::math::ellipsoidFromString(cfg.geodesy.ellipsoid);
-    gcfg.ellipsoidName   = cfg.geodesy.ellipsoid;
-    gcfg.refBody = (cfg.geodesy.refBody == "sphere")
-                   ? loki::geodesy::RefBody::SPHERE
-                   : loki::geodesy::RefBody::ELLIPSOID;
-    gcfg.stateSize       = cfg.geodesy.input.stateSize;
-    gcfg.distMethod      = loki::geodesy::distanceMethodFromString(
-                               cfg.geodesy.distanceMethod);
-    gcfg.mcSamples       = cfg.geodesy.mcSamples;
-    gcfg.mcTolerance     = cfg.geodesy.mcTolerance;
-    gcfg.enuOrigin.lat   = cfg.geodesy.enuOrigin.lat;
-    gcfg.enuOrigin.lon   = cfg.geodesy.enuOrigin.lon;
-    gcfg.enuOrigin.h     = cfg.geodesy.enuOrigin.h;
-    gcfg.outputDir       = cfg.csvDir.string() + "/";
+    gcfg.task           = loki::geodesy::geodesyTaskFromString(cfg.geodesy.task);
+    gcfg.inputSystem    = cfg.geodesy.input.coordSystem;
+    gcfg.outputSystem   = cfg.geodesy.outputSystem;
+    gcfg.ellipsoidModel = loki::math::ellipsoidFromString(cfg.geodesy.ellipsoid);
+    gcfg.ellipsoidName  = cfg.geodesy.ellipsoid;
+    gcfg.refBody        = cfg.geodesy.refBody;
+    gcfg.stateSize      = cfg.geodesy.input.stateSize;
+    gcfg.distMethod     = loki::geodesy::distanceMethodFromString(
+                              cfg.geodesy.distanceMethod);
+    gcfg.mcSamples      = cfg.geodesy.mcSamples;
+    gcfg.mcTolerance    = cfg.geodesy.mcTolerance;
+    gcfg.enuOriginLat   = cfg.geodesy.enuOrigin.lat;
+    gcfg.enuOriginLon   = cfg.geodesy.enuOrigin.lon;
+    gcfg.enuOriginH     = cfg.geodesy.enuOrigin.h;
+    gcfg.protocolDir    = cfg.protocolsDir.string();
+    gcfg.imgDir         = cfg.imgDir.string();
+    gcfg.csvDir         = cfg.csvDir.string();
 
     return gcfg;
 }
-
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[])
 {
@@ -128,7 +118,6 @@ int main(int argc, char* argv[])
     std::filesystem::create_directories(cfg.imgDir);
     std::filesystem::create_directories(cfg.protocolsDir);
 
-    // Load geodetic data
     loki::io::GeodesyLoadResult loadResult;
     try {
         loki::io::GeodesyLoader loader(cfg);
@@ -149,8 +138,7 @@ int main(int argc, char* argv[])
     LOKI_INFO("Loaded " + std::to_string(loadResult.positions.size())
               + " points from '" + loadResult.filePath.string() + "'");
 
-    // Build analyzer config and run
-    loki::geodesy::GeodesyConfig  gcfg     = buildAnalyzerConfig(cfg);
+    loki::geodesy::GeodesyConfig   gcfg     = buildAnalyzerConfig(cfg);
     loki::geodesy::GeodesyAnalyzer analyzer(gcfg);
 
     loki::geodesy::GeodesyResult result;
@@ -161,34 +149,39 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // Plots
     loki::geodesy::PlotGeodesy plotter(gcfg, datasetName);
 
-    // Error ellipse for first point (if covariance available)
-    if (!result.transforms.empty()) {
-        const auto& tr = result.transforms[0];
-        int N = static_cast<int>(tr.outputCov.rows());
-        if (N >= 2 && tr.outputCov.norm() > 1e-30) {
-            Eigen::Matrix2d sub;
-            sub << tr.outputCov(0, 0), tr.outputCov(0, 1),
-                   tr.outputCov(1, 0), tr.outputCov(1, 1);
-            plotter.plotErrorEllipse(sub, cfg.geodesy.confidenceLevel,
-                                     "Component 0", "Component 1", "c01");
+    // Monte Carlo: one combined panel per point showing both covariance matrices.
+    // Scatter = MC samples (empirical reality)
+    // Blue ellipse   = analytical cov (Jacobian propagation)
+    // Green ellipse  = empirical cov (computed from MC samples)
+    // Red dashed     = Helmert curve (analytical)
+    if (gcfg.task == loki::geodesy::GeodesyTask::MONTE_CARLO) {
+        for (std::size_t i = 0; i < result.transforms.size(); ++i) {
+            const auto& tr = result.transforms[i];
+            if (tr.mcSamples.cols() < 2) continue;
+
+            // Skip points where MC was not run (no empirical cov)
+            if (tr.empiricalCov.rows() == 0) continue;
+
+            std::string ptTag = gcfg.inputSystem + "_to_" + gcfg.outputSystem
+                                + "_pt" + std::to_string(i);
+
+            std::string panelTitle = gcfg.inputSystem + " -> " + gcfg.outputSystem
+                                     + "  pt" + std::to_string(i)
+                                     + "  (blue=analytical, green=empirical)";
+
+            plotter.plotCovariancePanel(
+                tr.mcSamples,
+                tr.outputCov,       // analytical: Jacobian-propagated
+                tr.empiricalCov,    // empirical:  cov(MC samples)
+                tr.empiricalMean,
+                cfg.geodesy.confidenceLevel,
+                ptTag,
+                panelTitle);
         }
     }
 
-    // Monte Carlo covariance panel
-    if (result.hasMonteCarlo) {
-        int N = static_cast<int>(result.monteCarlo.analyticalCov.rows());
-        std::vector<std::string> labels;
-        for (int i = 0; i < N; ++i)
-            labels.push_back("c" + std::to_string(i));
-        Eigen::MatrixXd dummy = Eigen::MatrixXd::Zero(N, 0);
-        plotter.plotCovariancePanel(result.monteCarlo, dummy, labels,
-                                    cfg.geodesy.confidenceLevel);
-    }
-
-    // Geodesic distances chart
     if (result.hasLines)
         plotter.plotDistances(result.lines);
 
