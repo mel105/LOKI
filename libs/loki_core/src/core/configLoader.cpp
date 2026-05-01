@@ -99,6 +99,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.spline        = _parseSpline       (j.value("spline",       json::object()));
     cfg.spatial       = _parseSpatial      (j.value("spatial",      json::object()));
     cfg.geodesy       = _parseGeodesy      (j.value("geodesy",      json::object()));
+    cfg.multivariate  = _parseMultivariate (j.value("multivariate", json::object()), inputDir);
 
     return cfg;
 }
@@ -570,6 +571,32 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
         if (e.contains("spectral_psd"))         cfg.spectralPsd         = e["spectral_psd"].get<bool>();
         if (e.contains("spectral_peaks"))       cfg.spectralPeaks       = e["spectral_peaks"].get<bool>();
         if (e.contains("spectral_spectrogram")) cfg.spectralSpectrogram = e["spectral_spectrogram"].get<bool>();
+
+        // Multivariate pipeline plots
+        if (e.contains("correlation_matrix"))  cfg.mvCorrelationMatrix = e["correlation_matrix"].get<bool>();
+        if (e.contains("ccf_heatmap"))         cfg.mvCcfHeatmap        = e["ccf_heatmap"].get<bool>();
+        if (e.contains("pca_scree"))           cfg.mvPcaScree          = e["pca_scree"].get<bool>();
+        if (e.contains("pca_biplot"))          cfg.mvPcaBiplot         = e["pca_biplot"].get<bool>();
+        if (e.contains("pca_scores"))          cfg.mvPcaScores         = e["pca_scores"].get<bool>();
+        if (e.contains("mssa_eigenvalues"))    cfg.mvMssaEigenvalues   = e["mssa_eigenvalues"].get<bool>();
+        if (e.contains("mssa_components"))     cfg.mvMssaComponents    = e["mssa_components"].get<bool>();
+        if (e.contains("var_coefficients"))    cfg.mvVarCoefficients   = e["var_coefficients"].get<bool>();
+        if (e.contains("var_residuals"))       cfg.mvVarResiduals      = e["var_residuals"].get<bool>();
+        if (e.contains("granger_heatmap"))     cfg.mvGrangerHeatmap    = e["granger_heatmap"].get<bool>();
+        if (e.contains("factor_loadings"))     cfg.mvFactorLoadings    = e["factor_loadings"].get<bool>();
+        if (e.contains("cca_scores"))          cfg.mvCcaScores         = e["cca_scores"].get<bool>();
+        if (e.contains("lda_boundaries"))      cfg.mvLdaBoundaries     = e["lda_boundaries"].get<bool>();
+        // -- Multivariate fáza 4 plots ----------------------------------------
+        if (e.contains("factor_heatmap"))       cfg.mvFactorHeatmap      = e["factor_heatmap"].get<bool>();
+        if (e.contains("factor_scores"))        cfg.mvFactorScores       = e["factor_scores"].get<bool>();
+        if (e.contains("cca_correlations"))     cfg.mvCcaCorrelations    = e["cca_correlations"].get<bool>();
+        if (e.contains("cca_scatter_pairs"))    cfg.mvCcaScatterPairs    = e["cca_scatter_pairs"].get<bool>();
+        if (e.contains("lda_projection"))       cfg.mvLdaProjection      = e["lda_projection"].get<bool>();
+        if (e.contains("lda_confusion"))        cfg.mvLdaConfusion       = e["lda_confusion"].get<bool>();
+        if (e.contains("mahalanobis_dist"))     cfg.mvMahalanobisDist    = e["mahalanobis_dist"].get<bool>();
+        if (e.contains("mahalanobis_qq"))       cfg.mvMahalanobisQq      = e["mahalanobis_qq"].get<bool>();
+        if (e.contains("manova_eigenvalues"))   cfg.mvManovaEigenvalues  = e["manova_eigenvalues"].get<bool>();
+        if (e.contains("manova_summary"))       cfg.mvManovaSummary      = e["manova_summary"].get<bool>();
     }
 
     // Spectral flags at top level of "plots" block (used by spectral.json)
@@ -622,6 +649,13 @@ PlotConfig ConfigLoader::_parsePlots(const nlohmann::json& j)
     if (j.contains("spline_knots"))       cfg.splineKnots       = j["spline_knots"].get<bool>();
     if (j.contains("spline_cv"))          cfg.splineCv          = j["spline_cv"].get<bool>();
     if (j.contains("spline_diagnostics")) cfg.splineDiagnostics = j["spline_diagnostics"].get<bool>();
+
+    // Spatial pipeline plots 
+    if (j.contains("spatial_heatmap"))   cfg.spatialHeatmap   = j["spatial_heatmap"].get<bool>();
+    if (j.contains("spatial_scatter"))   cfg.spatialScatter   = j["spatial_scatter"].get<bool>();
+    if (j.contains("spatial_variogram")) cfg.spatialVariogram = j["spatial_variogram"].get<bool>();
+    if (j.contains("spatial_crossval"))  cfg.spatialCrossval  = j["spatial_crossval"].get<bool>();
+    if (j.contains("spatial_variance"))  cfg.spatialVariance  = j["spatial_variance"].get<bool>();
 
     return cfg;
 }
@@ -2359,5 +2393,242 @@ GeodesyConfig ConfigLoader::_parseGeodesy(const nlohmann::json& j)
     return cfg;
 }
 
+MultivariateConfig ConfigLoader::_parseMultivariate(const nlohmann::json& j,
+                                                     const std::filesystem::path& inputDir)
+{
+    MultivariateConfig cfg;
+
+    // -- input ----------------------------------------------------------------
+    if (j.contains("input")) {
+        const auto& inp = j["input"];
+
+        cfg.input.syncStrategy         = inp.value("sync_strategy",          "inner");
+        cfg.input.syncToleranceSeconds = inp.value("sync_tolerance_seconds",  1.0);
+
+        if (cfg.input.syncStrategy != "inner" && cfg.input.syncStrategy != "outer") {
+            throw ConfigException(
+                "ConfigLoader: multivariate.input.sync_strategy must be "
+                "'inner' or 'outer', got '" + cfg.input.syncStrategy + "'.");
+        }
+        if (cfg.input.syncToleranceSeconds < 0.0) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.input.sync_tolerance_seconds must be >= 0.");
+        }
+
+        if (inp.contains("files") && inp["files"].is_array()) {
+            for (const auto& fj : inp["files"]) {
+                MultivariateFileConfig fc;
+
+                if (!fj.contains("path") || fj["path"].get<std::string>().empty()) {
+                    throw ConfigException(
+                        "ConfigLoader: each entry in multivariate.input.files "
+                        "must have a non-empty 'path' field.");
+                }
+                fc.path = _resolvePath(fj["path"].get<std::string>(), inputDir).string();
+
+                if (fj.contains("columns") && fj["columns"].is_array()) {
+                    fc.columns = fj["columns"].get<std::vector<int>>();
+                    // Remove non-positive indices (guard against user typos).
+                    fc.columns.erase(
+                        std::remove_if(fc.columns.begin(), fc.columns.end(),
+                                       [](int c){ return c <= 0; }),
+                        fc.columns.end());
+                }
+
+                fc.timeFormat  = fj.value("time_format",  "mjd");
+                fc.delimiter   = fj.value("delimiter",    " ");
+
+                // Convert "\t" string to actual tab character.
+                if (fc.delimiter == "\\t") fc.delimiter = "\t";
+
+                const std::string cmtStr = fj.value("comment_char", "%");
+                fc.commentChar = cmtStr.empty() ? '%' : cmtStr.front();
+
+                if (fj.contains("time_columns") && fj["time_columns"].is_array()) {
+                    fc.timeColumns = fj["time_columns"].get<std::vector<int>>();
+                } else {
+                    fc.timeColumns = {0};
+                }
+
+                cfg.input.files.push_back(std::move(fc));
+            }
+        }
+
+        if (cfg.input.files.empty()) {
+            LOKI_WARNING("ConfigLoader: multivariate.input.files is empty -- "
+                         "MultivariateAssembler will have nothing to process.");
+        }
+    }
+
+    // -- preprocessing --------------------------------------------------------
+    if (j.contains("preprocessing")) {
+        const auto& pp = j["preprocessing"];
+        cfg.preprocessing.standardize     = pp.value("standardize",      true);
+        cfg.preprocessing.applyGapFilling = pp.value("apply_gap_filling", true);
+
+        if (pp.contains("gap_filling")) {
+            const auto& gf = pp["gap_filling"];
+            cfg.preprocessing.gapStrategy   = gf.value("strategy",        "linear");
+            cfg.preprocessing.maxFillLength  =
+                static_cast<std::size_t>(gf.value("max_fill_length", 0));
+        }
+    }
+
+    // -- ccf ------------------------------------------------------------------
+    if (j.contains("ccf")) {
+        const auto& c = j["ccf"];
+        cfg.ccf.enabled           = c.value("enabled",            true);
+        cfg.ccf.maxLag            = c.value("max_lag",            100);
+        cfg.ccf.significanceLevel = c.value("significance_level", 0.05);
+
+        if (cfg.ccf.maxLag < 1) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.ccf.max_lag must be >= 1.");
+        }
+    }
+
+    // -- pca ------------------------------------------------------------------
+    if (j.contains("pca")) {
+        const auto& p = j["pca"];
+        cfg.pca.enabled                   = p.value("enabled",                      true);
+        cfg.pca.nComponents               = p.value("n_components",                 0);
+        cfg.pca.varianceThreshold         = p.value("variance_threshold",           0.95);
+        cfg.pca.useRandomizedSvd          = p.value("use_randomized_svd",           false);
+        cfg.pca.randomizedSvdOversampling = p.value("randomized_svd_oversampling",  10);
+
+        if (cfg.pca.nComponents < 0) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.pca.n_components must be >= 0.");
+        }
+        if (cfg.pca.varianceThreshold <= 0.0 || cfg.pca.varianceThreshold > 1.0) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.pca.variance_threshold must be in (0, 1].");
+        }
+    }
+
+    // -- mssa -----------------------------------------------------------------
+    if (j.contains("mssa")) {
+        const auto& m = j["mssa"];
+        cfg.mssa.enabled          = m.value("enabled",            false);
+        cfg.mssa.window           = m.value("window",             1461);
+        cfg.mssa.nComponents      = m.value("n_components",       6);
+        cfg.mssa.useRandomizedSvd = m.value("use_randomized_svd", false);
+
+        if (cfg.mssa.window < 2) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.mssa.window must be >= 2.");
+        }
+        if (cfg.mssa.nComponents < 1) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.mssa.n_components must be >= 1.");
+        }
+    }
+
+    // -- var ------------------------------------------------------------------
+    if (j.contains("var")) {
+        const auto& v = j["var"];
+        cfg.var_.enabled                  = v.value("enabled",                     true);
+        cfg.var_.maxOrder                 = v.value("max_order",                   10);
+        cfg.var_.orderCriterion           = v.value("order_criterion",             "aic");
+        cfg.var_.granger                  = v.value("granger",                     true);
+        cfg.var_.grangerSignificanceLevel = v.value("granger_significance_level",  0.05);
+
+        if (cfg.var_.maxOrder < 1) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.var.max_order must be >= 1.");
+        }
+        static const std::vector<std::string> validCrit{"aic", "bic", "hqc"};
+        if (std::find(validCrit.begin(), validCrit.end(), cfg.var_.orderCriterion)
+                == validCrit.end()) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.var.order_criterion must be "
+                "'aic', 'bic', or 'hqc', got '" + cfg.var_.orderCriterion + "'.");
+        }
+    }
+
+    // -- factor ---------------------------------------------------------------
+    if (j.contains("factor")) {
+        const auto& f = j["factor"];
+        cfg.factor.enabled   = f.value("enabled",   false);
+        cfg.factor.nFactors  = f.value("n_factors",  3);
+        cfg.factor.rotation  = f.value("rotation",  "varimax");
+        cfg.factor.maxIter   = f.value("max_iter",   1000);
+        cfg.factor.tolerance = f.value("tolerance",  1.0e-6);
+
+        if (cfg.factor.nFactors < 1) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.factor.n_factors must be >= 1.");
+        }
+        if (cfg.factor.rotation != "varimax" && cfg.factor.rotation != "none") {
+            throw ConfigException(
+                "ConfigLoader: multivariate.factor.rotation must be "
+                "'varimax' or 'none', got '" + cfg.factor.rotation + "'.");
+        }
+    }
+
+    // -- cca ------------------------------------------------------------------
+    if (j.contains("cca")) {
+        const auto& c = j["cca"];
+        cfg.cca.enabled     = c.value("enabled",      false);
+        cfg.cca.nComponents = c.value("n_components", 0);
+
+        if (c.contains("group_x") && c["group_x"].is_array()) {
+            cfg.cca.groupX = c["group_x"].get<std::vector<int>>();
+        }
+        if (c.contains("group_y") && c["group_y"].is_array()) {
+            cfg.cca.groupY = c["group_y"].get<std::vector<int>>();
+        }
+        if (cfg.cca.enabled && (cfg.cca.groupX.empty() || cfg.cca.groupY.empty())) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.cca requires non-empty "
+                "group_x and group_y when enabled.");
+        }
+        if (cfg.cca.nComponents < 0) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.cca.n_components must be >= 0.");
+        }
+    }
+
+    // -- lda ------------------------------------------------------------------
+    if (j.contains("lda")) {
+        const auto& l = j["lda"];
+        cfg.lda.enabled      = l.value("enabled",       false);
+        cfg.lda.groupsColumn = l.value("groups_column", "group");
+        cfg.lda.useQda       = l.value("use_qda",       false);
+
+        if (cfg.lda.enabled && cfg.lda.groupsColumn.empty()) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.lda.groups_column must not be empty.");
+        }
+    }
+
+    // -- mahalanobis ----------------------------------------------------------
+    if (j.contains("mahalanobis")) {
+        const auto& m = j["mahalanobis"];
+        cfg.mahalanobis.enabled           = m.value("enabled",            false);
+        cfg.mahalanobis.robust            = m.value("robust",             true);
+        cfg.mahalanobis.significanceLevel = m.value("significance_level", 0.05);
+        if (cfg.mahalanobis.significanceLevel <= 0.0 ||
+            cfg.mahalanobis.significanceLevel >= 1.0) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.mahalanobis.significance_level "
+                "must be in (0, 1).");
+        }
+    }
+
+    // -- manova ---------------------------------------------------------------
+    if (j.contains("manova")) {
+        const auto& m = j["manova"];
+        cfg.manova.enabled          = m.value("enabled",            false);
+        cfg.manova.groupsColumn     = m.value("groups_column",      "group");
+        cfg.manova.significanceLevel= m.value("significance_level", 0.05);
+        if (cfg.manova.enabled && cfg.manova.groupsColumn.empty()) {
+            throw ConfigException(
+                "ConfigLoader: multivariate.manova.groups_column must not be empty.");
+        }
+    }
+
+    return cfg;
+}
 
 } // namespace loki

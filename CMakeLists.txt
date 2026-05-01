@@ -43,6 +43,7 @@ add_subdirectory(libs/loki_kriging)
 add_subdirectory(libs/loki_spline)
 add_subdirectory(libs/loki_spatial)
 add_subdirectory(libs/loki_geodesy)
+add_subdirectory(libs/loki_multivariate)
 
 # ── Applications ──────────────────────────────────────────────────────────────
 add_subdirectory(apps/loki)
@@ -64,6 +65,7 @@ add_subdirectory(apps/loki_kriging)
 add_subdirectory(apps/loki_spline)
 add_subdirectory(apps/loki_spatial)
 add_subdirectory(apps/loki_geodesy)
+add_subdirectory(apps/loki_multivariate)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(LOKI_BUILD_TESTS)

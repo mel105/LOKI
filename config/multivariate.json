@@ -1,0 +1,155 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "input": {
+        "file": "",
+        "time_format": "mjd",
+        "delimiter": " ",
+        "comment_char": "%"
+    },
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png",
+        "time_format": "mjd",
+        "enabled": {
+            "correlation_matrix":   true,
+            "ccf_heatmap":          true,
+            "pca_scree":            true,
+            "pca_biplot":           true,
+            "pca_scores":           true,
+            "mssa_eigenvalues":     true,
+            "mssa_components":      true,
+            "var_coefficients":     true,
+            "var_residuals":        true,
+            "granger_heatmap":      true,
+            "factor_loadings":      false,
+            "cca_scores":           false,
+            "lda_boundaries":       false,
+            "factor_heatmap":       true,
+            "factor_scores":        false,
+            "cca_correlations":     true,
+            "cca_scatter_pairs":    false,
+            "lda_projection":       true,
+            "lda_confusion":        true,
+            "mahalanobis_dist":     true,
+            "mahalanobis_qq":       false,
+            "manova_eigenvalues":   true,
+            "manova_summary":       true
+        }
+    },
+
+    "stats": {
+        "enabled": true,
+        "nan_policy": "skip",
+        "hurst": false
+    },
+
+    "multivariate": {
+
+        "input": {
+            "files": [
+                {
+                    "path":         "station_A.txt",
+                    "columns":      [2],
+                    "time_format":  "mjd",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path":         "station_B.txt",
+                    "columns":      [4],
+                    "time_format":  "mjd",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path":         "station_C.txt",
+                    "columns":      [1, 2, 3],
+                    "time_format":  "mjd",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy":         "inner",
+            "sync_tolerance_seconds": 1.0
+        },
+
+        "preprocessing": {
+            "standardize":      true,
+            "apply_gap_filling": true,
+            "gap_filling": {
+                "strategy":        "linear",
+                "max_fill_length": 0
+            }
+        },
+
+        "ccf": {
+            "enabled":            true,
+            "max_lag":            100,
+            "significance_level": 0.05
+        },
+
+        "pca": {
+            "enabled":                     true,
+            "n_components":                0,
+            "variance_threshold":          0.95,
+            "use_randomized_svd":          false,
+            "randomized_svd_oversampling": 10
+        },
+
+        "mssa": {
+            "enabled":            false,
+            "window":             1461,
+            "n_components":       6,
+            "use_randomized_svd": false
+        },
+
+        "var": {
+            "enabled":                    true,
+            "max_order":                  10,
+            "order_criterion":            "aic",
+            "granger":                    true,
+            "granger_significance_level": 0.05
+        },
+
+        "factor": {
+            "enabled":   false,
+            "n_factors":  3,
+            "rotation":  "varimax",
+            "max_iter":   1000,
+            "tolerance":  1e-6
+        },
+
+        "cca": {
+            "enabled":      false,
+            "group_x":      [0, 1, 2],
+            "group_y":      [3, 4],
+            "n_components": 0
+        },
+
+        "lda": {
+            "enabled":       false,
+            "groups_column": "group",
+            "use_qda":       false
+        },
+
+        "mahalanobis": {
+            "enabled":            false,
+            "robust":             true,
+            "significance_level": 0.05
+        },
+
+        "manova": {
+            "enabled":            false,
+            "groups_column":      "group",
+            "significance_level": 0.05
+        }
+    }
+}

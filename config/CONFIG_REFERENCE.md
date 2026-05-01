@@ -33,6 +33,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 20. [loki_spline](#20-loki_spline)
 21. [loki_spatial](#21-loki_spatial)
 22. [loki_geodesy](#22-loki_geodesy)
+23. [loki_multivariate](#23-loki_multivariate)
 
 ---
 
@@ -6605,3 +6606,969 @@ difference on the diagonal is reported as `max_rel_diff`.
 - Use `task = "distance"` with `distance_method = "vincenty"` for precise
   inter-station baselines. Haversine is adequate for rough estimates or
   sorted ranking where absolute accuracy is not critical.
+
+# 23. loki_multivariate
+
+`loki_multivariate` performs simultaneous analysis of multiple time series
+channels loaded from one or more input files. Channels are first synchronised
+onto a common time axis and assembled into a single data matrix. The pipeline
+then runs any combination of the following methods, each independently
+controlled by an `enabled` flag:
+
+| Method | Class | Description |
+|--------|-------|-------------|
+| CCF | `MultivariateAnalyzer` | Pairwise cross-correlation function matrix |
+| PCA | `Pca` | Principal Component Analysis (SVD-based) |
+| MSSA | `Mssa` | Multivariate Singular Spectrum Analysis |
+| VAR | `Var` | Vector Autoregression with Granger causality |
+| Factor | `FactorAnalysis` | Factor Analysis with Varimax rotation |
+| CCA | `Cca` | Canonical Correlation Analysis |
+| LDA | `Lda` | Linear / Quadratic Discriminant Analysis |
+| Mahalanobis | `Mahalanobis` | Multivariate outlier detection |
+| MANOVA | `Manova` | One-way Multivariate Analysis of Variance |
+
+---
+
+## 23.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path": "station_A.txt",
+                    "columns": [2],
+                    "time_format": "mjd",
+                    "time_columns": [0],
+                    "delimiter": " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path": "station_B.txt",
+                    "columns": [2],
+                    "time_format": "mjd",
+                    "time_columns": [0],
+                    "delimiter": " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy": "inner",
+            "sync_tolerance_seconds": 1.0
+        },
+        "pca": { "enabled": true }
+    }
+}
+```
+
+This loads one value column from each of two files, synchronises them on a
+common inner-join time axis, and runs PCA with automatic component selection
+(95% variance threshold). All other methods are disabled by default.
+
+---
+
+## 23.2 Input assembly pipeline
+
+Before any analysis, `MultivariateAssembler` prepares the data matrix:
+
+1. **Per-file loading** — each entry in `input.files` is loaded independently
+   using the core `Loader` class with its own `time_format`, `delimiter`,
+   `comment_char`, `columns` and `time_columns`. Different files may have
+   different time formats (e.g. one in GPS total seconds, another in UTC).
+2. **Timestamp unification** — all timestamps are stored internally as MJD
+   regardless of input format. This is guaranteed by the `Loader` which
+   converts every format to `TimeStamp` at load time.
+3. **Synchronisation** — `sync_strategy` controls how the common time axis
+   is built:
+   - `"inner"` — keep only epochs present in **all** channels (safe default).
+   - `"outer"` — keep the union of all epochs; missing entries are filled by
+     GapFiller before analysis.
+4. **Tolerance matching** — `sync_tolerance_seconds` (default 1.0 s) defines
+   the window within which two timestamps are considered identical. For 6h
+   climate data 1 s is sufficient. For 1 ms sensor data set this to 0.001.
+5. **Gap filling** — controlled by `preprocessing.apply_gap_filling` and
+   `preprocessing.gap_filling`. Applied per channel after synchronisation.
+   Strategies: `"linear"` (default), `"forward_fill"`, `"mean"`, `"none"`.
+6. **Standardisation** — if `preprocessing.standardize = true` (default),
+   each channel is shifted to zero mean and scaled to unit variance. This is
+   recommended for PCA, Factor Analysis and CCA which are sensitive to scale.
+   VAR and CCF are not affected by standardisation since they operate on
+   relative differences.
+
+### Channel naming
+
+Channel names are derived from the file header (`% Columns: ...` comment line
+if present). If no header is found, the fallback is `<fileStem>_col_<N>`.
+These names appear on plot axes (biplot, CCF heatmap, Granger heatmap) and
+in the protocol.
+
+---
+
+## 23.3 Input file specification
+
+Each entry in `input.files` is an object with the following keys:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `path` | string | required | File name relative to `workspace/INPUT/`. |
+| `columns` | int[] | `[]` | 1-based column indices of value columns to load. Empty = all value columns. |
+| `time_format` | string | `"mjd"` | Time format. See Section 23.4. |
+| `time_columns` | int[] | `[0]` | 0-based field indices forming the time token. |
+| `delimiter` | string | `" "` | Column delimiter. Use `"\\t"` for tab. |
+| `comment_char` | string | `"%"` | Lines beginning with this character are skipped. |
+
+Multiple value columns from a single file are each treated as a separate
+channel. Example: loading columns 2 and 3 from one file produces two channels
+named `<fileStem>_col_2` and `<fileStem>_col_3`.
+
+---
+
+## 23.4 Time formats
+
+| `time_format` | Description | Example |
+|---------------|-------------|---------|
+| `"mjd"` | Modified Julian Date (double) | `58849.0` |
+| `"utc"` | UTC ISO string, one or two fields | `"2023-01-01 06:00:00"` |
+| `"gps_total_seconds"` | Seconds since 1980-01-06 UTC | `1356566418.0` |
+| `"gps_week_sow"` | GPS week + seconds of week | `week=2290 sow=432000` |
+| `"unix"` | Seconds since 1970-01-01 UTC | `1672531200.0` |
+| `"index"` | Integer sample index | `0, 1, 2, ...` |
+
+For UTC with date and time in separate columns, set `time_columns: [0, 1]`.
+The Loader joins the two fields with a space before parsing.
+
+---
+
+## 23.5 Top-level multivariate keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `input.sync_strategy` | `"inner"` | Time axis synchronisation. `"inner"` or `"outer"`. |
+| `input.sync_tolerance_seconds` | `1.0` | Timestamp match tolerance in seconds. |
+| `preprocessing.standardize` | `true` | Zero-mean unit-variance scaling per channel. |
+| `preprocessing.apply_gap_filling` | `true` | Run GapFiller after synchronisation. |
+| `preprocessing.gap_filling.strategy` | `"linear"` | Gap fill method. |
+| `preprocessing.gap_filling.max_fill_length` | `0` | Max gap length to fill (samples). 0 = unlimited. |
+
+---
+
+## 23.6 CCF — Cross-Correlation Function matrix
+
+Computes the pairwise normalised CCF for all channel pairs (A < B) at lags
+`[-max_lag, +max_lag]`. Peak lag and peak correlation are extracted per pair.
+Significance threshold: `1.96 / sqrt(n)` (two-sided 95% CI for white noise).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ccf.enabled` | `true` | Enable CCF. |
+| `ccf.max_lag` | `100` | Maximum lag in samples. |
+| `ccf.significance_level` | `0.05` | Threshold for significance flag. |
+
+**Plot:** CCF peak heatmap (channels × channels, value = max |CCF|). Red = strong positive, blue = negative correlation.
+
+---
+
+## 23.7 PCA — Principal Component Analysis
+
+SVD-based PCA on the centred data matrix X (n × p). Loadings = right
+singular vectors V (p × k). Scores = U × S (n × k).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `pca.enabled` | `true` | Enable PCA. |
+| `pca.n_components` | `0` | Number of components. 0 = auto via `variance_threshold`. |
+| `pca.variance_threshold` | `0.95` | Auto-select: retain components until cumulative variance ≥ threshold. |
+| `pca.use_randomized_svd` | `false` | Use Halko 2011 randomized SVD. Recommended for p > 500 or n > 10 000. |
+| `pca.randomized_svd_oversampling` | `10` | Extra columns in random projection for accuracy. |
+
+SVD backend: `use_randomized_svd = false` uses `Eigen::JacobiSVD` (exact,
+safe in static libraries on Windows/GCC 13). `use_randomized_svd = true`
+uses `loki::math::randomizedSvd` (Halko et al. 2011, reused from `loki_ssa`).
+
+**Plots:** scree plot (eigenvalues + cumulative variance), biplot (PC1/PC2
+scores + loading arrows), scores vs time (one panel per retained component).
+
+---
+
+## 23.8 MSSA — Multivariate Singular Spectrum Analysis
+
+Extends single-channel SSA to N channels by stacking Hankel trajectory
+matrices into one block matrix of shape (K × L·p) where K = n − L + 1.
+SVD of this matrix yields multivariate eigentriples. Each eigentriple is
+reconstructed via diagonal averaging per channel and summed over channels.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `mssa.enabled` | `false` | Enable MSSA. |
+| `mssa.window` | `1461` | Embedding window L in **samples** (not days). |
+| `mssa.n_components` | `6` | Number of eigentriples to reconstruct. |
+| `mssa.use_randomized_svd` | `false` | Use randomized SVD for large trajectory matrices. |
+
+Window guideline: L should be a multiple of the dominant period.
+- 6h climate data, 1-year period: L = 1461 samples (= 4 × 365.25 × 1).
+- 1s train data, 60s manoeuvre: L = 60–120 samples.
+
+**Plots:** eigenvalue spectrum (singular values + cumulative variance),
+reconstructed components vs time (one panel per component).
+
+---
+
+## 23.9 VAR — Vector Autoregression + Granger causality
+
+Fits VAR(p) model: Y_t = A_1·Y_{t−1} + ... + A_p·Y_{t−p} + ε_t by
+equation-by-equation OLS. Lag order p selected by minimising the chosen
+information criterion over p ∈ [1, max_order].
+
+Information criteria:
+
+| Criterion | Formula |
+|-----------|---------|
+| AIC | log\|Σ\| + 2·p·q²/T |
+| BIC | log\|Σ\| + log(T)·p·q²/T |
+| HQC | log\|Σ\| + 2·log(log(T))·p·q²/T |
+
+where T = n − p (effective sample size), q = number of channels.
+
+Granger F-test for pair (from → to): restricted model excludes all lags of
+channel `from` from the equation for channel `to`. F-statistic compared to
+F(p, T − p·q − 1) distribution. p-value computed via regularised incomplete
+beta function (Lentz continued fraction, no external dependency).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `var.enabled` | `true` | Enable VAR. |
+| `var.max_order` | `10` | Maximum lag order to search. |
+| `var.order_criterion` | `"aic"` | IC for order selection. `"aic"`, `"bic"`, `"hqc"`. |
+| `var.granger` | `true` | Run pairwise Granger F-tests. |
+| `var.granger_significance_level` | `0.05` | Threshold for Granger significance flag. |
+
+**Plots:** coefficient matrix heatmap per lag A_1..A_p, residuals vs time,
+Granger causality heatmap (−log₁₀ p-value, red = significant).
+
+---
+
+## 23.10 Factor Analysis
+
+Principal axis factoring with iterative communality updating. Initial
+communalities estimated from squared multiple correlations (SMC). Optional
+Varimax rotation (Kaiser 1958) maximises variance of squared loadings per
+factor for simpler interpretation.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `factor.enabled` | `false` | Enable Factor Analysis. |
+| `factor.n_factors` | `3` | Number of latent factors k. Must be < p. |
+| `factor.rotation` | `"varimax"` | Rotation method. `"varimax"` or `"none"`. |
+| `factor.max_iter` | `1000` | Maximum iterations for communality convergence. |
+| `factor.tolerance` | `1e-6` | Convergence tolerance on communality change. |
+
+**Plots:** loading heatmap (p × k, after rotation), factor scores vs time.
+
+---
+
+## 23.11 CCA — Canonical Correlation Analysis
+
+Finds linear combinations of two channel groups X (n × p) and Y (n × q)
+with maximum mutual correlation. Computed via SVD of K = Sxx^{-1/2}·Sxy·Syy^{-1/2}.
+Canonical correlations ρ_1 ≥ ρ_2 ≥ ... ≥ ρ_{min(p,q)}.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cca.enabled` | `false` | Enable CCA. |
+| `cca.group_x` | `[]` | 0-based channel indices for variable set X. |
+| `cca.group_y` | `[]` | 0-based channel indices for variable set Y. |
+| `cca.n_components` | `0` | Number of canonical pairs. 0 = all pairs (min(|X|, |Y|)). |
+
+Groups must be non-empty, non-overlapping, and cover different channels.
+
+**Plots:** canonical correlations bar chart, canonical variate scatter
+(first pair: U₁ vs V₁).
+
+---
+
+## 23.12 LDA — Linear / Quadratic Discriminant Analysis
+
+Finds linear combinations that maximally separate predefined groups. Groups
+are supplied as integer labels in a designated channel (rounded to nearest
+integer). LDA uses a pooled within-class covariance; QDA uses per-class
+covariance (more flexible, requires more data).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `lda.enabled` | `false` | Enable LDA/QDA. |
+| `lda.groups_column` | `"group"` | Channel name or 1-based index carrying integer group labels. |
+| `lda.use_qda` | `false` | `false` = LDA, `true` = QDA. |
+
+Number of discriminant axes: min(nClasses − 1, p). Classification accuracy
+is reported as fraction of correctly classified observations using nearest
+centroid in discriminant space.
+
+**Plots:** 2-D projection scatter (LD1 vs LD2, coloured by class), confusion
+matrix heatmap.
+
+---
+
+## 23.13 Mahalanobis — Multivariate outlier detection
+
+Computes squared Mahalanobis distance D²_i = (x_i − μ)ᵀ S⁻¹ (x_i − μ).
+Outlier threshold: chi²(p, α) quantile (Wilson-Hilferty approximation).
+Robust mode uses an approximate Minimum Covariance Determinant (MCD)
+estimator with subset size h = 0.75·n and 10 C-step iterations.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `mahalanobis.enabled` | `false` | Enable Mahalanobis detection. |
+| `mahalanobis.robust` | `true` | Use MCD robust estimator. Recommended when outliers are present. |
+| `mahalanobis.significance_level` | `0.05` | Chi² quantile threshold level α. |
+
+For SIL 4 safety applications use `robust = true`. Standard (non-robust)
+estimation is masked by outliers — the very observations to be detected inflate
+the covariance, lowering their own D² below the threshold.
+
+**Plots:** D² vs observation index with chi² threshold line (outliers in red),
+Chi² QQ plot of D² values.
+
+---
+
+## 23.14 MANOVA — One-way Multivariate Analysis of Variance
+
+Tests H₀: all group mean vectors are equal. Four test statistics are computed
+from eigenvalues λ_i of E⁻¹·H (between-group / within-group SSCP):
+
+| Statistic | Formula |
+|-----------|---------|
+| Wilks Λ | ∏ 1/(1+λ_i) |
+| Pillai V | Σ λ_i/(1+λ_i) |
+| Hotelling T | Σ λ_i |
+| Roy Θ | max(λ_i)/(1+max(λ_i)) |
+
+F approximations provided for Wilks (Rao 1951) and Pillai (Pillai and
+Jayachandran 1967). Groups supplied via integer label channel, same mechanism
+as LDA.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `manova.enabled` | `false` | Enable MANOVA. |
+| `manova.groups_column` | `"group"` | Channel name or 1-based index with group labels. |
+| `manova.significance_level` | `0.05` | Significance level for all four tests. |
+
+**Plots:** eigenvalues of E⁻¹·H (bar chart), summary table of all four test
+statistics with p-values.
+
+---
+
+## 23.15 Plot flags
+
+All plot flags live in `plots.enabled`. Default values:
+
+```json
+"plots": {
+    "output_format": "png",
+    "time_format": "mjd",
+    "enabled": {
+        "correlation_matrix":   true,
+        "ccf_heatmap":          true,
+        "pca_scree":            true,
+        "pca_biplot":           true,
+        "pca_scores":           true,
+        "mssa_eigenvalues":     true,
+        "mssa_components":      true,
+        "var_coefficients":     true,
+        "var_residuals":        true,
+        "granger_heatmap":      true,
+        "factor_heatmap":       true,
+        "factor_scores":        false,
+        "cca_correlations":     true,
+        "cca_scatter_pairs":    false,
+        "lda_projection":       true,
+        "lda_confusion":        true,
+        "mahalanobis_dist":     true,
+        "mahalanobis_qq":       false,
+        "manova_eigenvalues":   true,
+        "manova_summary":       true
+    }
+}
+```
+
+---
+
+## 23.16 Output files
+
+| File | Location | Description |
+|------|----------|-------------|
+| `multivariate_<stem>_correlation_matrix.png` | `IMG/` | Pearson correlation heatmap (p × p). |
+| `multivariate_<stem>_ccf_heatmap.png` | `IMG/` | CCF peak correlation heatmap. |
+| `multivariate_<stem>_pca_scree.png` | `IMG/` | PCA scree plot. |
+| `multivariate_<stem>_pca_biplot.png` | `IMG/` | PCA biplot (PC1 vs PC2). |
+| `multivariate_<stem>_pca_scores.png` | `IMG/` | PCA scores vs time. |
+| `multivariate_<stem>_mssa_eigenvalues.png` | `IMG/` | MSSA eigenvalue spectrum. |
+| `multivariate_<stem>_mssa_components.png` | `IMG/` | MSSA reconstructed components. |
+| `multivariate_<stem>_var_coeff_lag<N>.png` | `IMG/` | VAR coefficient heatmap per lag. |
+| `multivariate_<stem>_var_residuals.png` | `IMG/` | VAR residuals vs time. |
+| `multivariate_<stem>_granger_heatmap.png` | `IMG/` | Granger causality heatmap. |
+| `multivariate_<stem>_factor_loadings.png` | `IMG/` | Factor loading heatmap. |
+| `multivariate_<stem>_cca_correlations.png` | `IMG/` | Canonical correlations bar chart. |
+| `multivariate_<stem>_lda_projection.png` | `IMG/` | LDA 2-D projection scatter. |
+| `multivariate_<stem>_lda_confusion.png` | `IMG/` | LDA confusion matrix. |
+| `multivariate_<stem>_mahalanobis_dist.png` | `IMG/` | D² plot with chi² threshold. |
+| `multivariate_<stem>_manova_eigenvalues.png` | `IMG/` | MANOVA E⁻¹H eigenvalues. |
+
+---
+
+## 23.17 Use case configurations
+
+### 23.17.1 Klimatológia — ZHD, ZWD, IWV korelácia a PCA
+
+**Dáta:** `SYNT_A_GPST_ZHD_ZWD.txt` (GPST, ZHD, ZWD, 6h, ~167 dní) a
+`SYNT_B_UTC_IWV.txt` (UTC, IWV, 6h, rovnaký rozsah).
+
+**Cieľ:** Overiť silnú koreláciu ZWD↔IWV (lineárna transformácia IWV = ZWD/0.163),
+slabú anti-koreláciu ZHD↔ZWD (meteorologická inverzia), a zachytiť dennú
+periódu pomocou MSSA.
+
+**Očakávané výsledky:**
+- CCF ZWD↔IWV: peak corr ≈ 0.95, lag = 0.
+- CCF ZHD↔ZWD: peak corr ≈ −0.15 až −0.25, lag = 0.
+- PCA PC1: ~75–85% variancie, zodpovedá vlhkostnému módu (ZWD + IWV).
+- PCA PC2: ~10–15% variancie, zodpovedá hydrostatickému módu (ZHD).
+- MSSA RC1+RC2: zachytí dennú periódu L=4 (24h pri 6h rozlíšení).
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path":         "SYNT_A_GPST_ZHD_ZWD.txt",
+                    "columns":      [2, 3],
+                    "time_format":  "gps_total_seconds",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path":         "SYNT_B_UTC_IWV.txt",
+                    "columns":      [3],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy":          "inner",
+            "sync_tolerance_seconds": 3.0
+        },
+
+        "preprocessing": {
+            "standardize":       true,
+            "apply_gap_filling": true,
+            "gap_filling": {
+                "strategy":        "linear",
+                "max_fill_length": 4
+            }
+        },
+
+        "ccf": {
+            "enabled":            true,
+            "max_lag":            16,
+            "significance_level": 0.05
+        },
+
+        "pca": {
+            "enabled":            true,
+            "n_components":       0,
+            "variance_threshold": 0.95
+        },
+
+        "mssa": {
+            "enabled":      true,
+            "window":       4,
+            "n_components": 4
+        },
+
+        "var": {
+            "enabled":                    true,
+            "max_order":                  8,
+            "order_criterion":            "bic",
+            "granger":                    true,
+            "granger_significance_level": 0.05
+        },
+
+        "factor": { "enabled": false },
+        "cca":    { "enabled": false },
+        "lda":    { "enabled": false },
+        "mahalanobis": { "enabled": false },
+        "manova":      { "enabled": false }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "time_format":   "mjd",
+        "enabled": {
+            "correlation_matrix": true,
+            "ccf_heatmap":        true,
+            "pca_scree":          true,
+            "pca_biplot":         true,
+            "pca_scores":         true,
+            "mssa_eigenvalues":   true,
+            "mssa_components":    true,
+            "var_coefficients":   true,
+            "var_residuals":      true,
+            "granger_heatmap":    true
+        }
+    },
+
+    "output": { "log_level": "info" }
+}
+```
+
+**Komentár k nastaveniu:**
+- `sync_tolerance_seconds: 3.0` — ZHD/ZWD sú v GPST a IWV v UTC. Po konverzii
+  na MJD môže byť rozdiel až 18s (leap seconds). Tolerancia 3s je konzervatívna
+  ale postačujúca keďže oba súbory majú identické epochy, len iný formát.
+- `ccf.max_lag: 16` — pri 6h rozlíšení pokryje ±4 dni. Korelácia ZWD↔IWV
+  by mala byť najvyššia pri lag=0 a rýchlo klesať.
+- `mssa.window: 4` — L=4 epochy = 24h. Zachytí dennú periódu ako dominantný
+  mód. RC1+RC2 budú sin+cos pár denného cyklu.
+- `var.order_criterion: "bic"` — BIC je konzervatívnejší ako AIC, pri 1000
+  epochách a 3 kanáloch dáva typicky p=1 alebo p=2.
+
+---
+
+### 23.17.2 Klimatológia — faktorová analýza atmosferických oneskorení
+
+**Dáta:** Rovnaké ako 23.17.1 — ZHD, ZWD, IWV.
+
+**Cieľ:** Overiť či faktorová analýza odhalí 2 latentné faktory:
+F1 = vlhkostný (ZWD+IWV), F2 = hydrostatický (ZHD). Validácia Varimax rotácie.
+
+**Očakávané výsledky:**
+- F1 loadings: ZWD ≈ 0.9, IWV ≈ 0.9, ZHD ≈ −0.2.
+- F2 loadings: ZHD ≈ 0.9, ZWD ≈ −0.1, IWV ≈ 0.0.
+- Komunality: ZWD a IWV > 0.85, ZHD > 0.80.
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path":         "SYNT_A_GPST_ZHD_ZWD.txt",
+                    "columns":      [2, 3],
+                    "time_format":  "gps_total_seconds",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path":         "SYNT_B_UTC_IWV.txt",
+                    "columns":      [3],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy":          "inner",
+            "sync_tolerance_seconds": 3.0
+        },
+
+        "preprocessing": {
+            "standardize": true,
+            "apply_gap_filling": true,
+            "gap_filling": { "strategy": "linear", "max_fill_length": 4 }
+        },
+
+        "ccf":    { "enabled": false },
+        "pca":    { "enabled": false },
+        "mssa":   { "enabled": false },
+        "var":    { "enabled": false },
+
+        "factor": {
+            "enabled":   true,
+            "n_factors":  2,
+            "rotation":  "varimax",
+            "max_iter":   500,
+            "tolerance":  1e-6
+        },
+
+        "cca":         { "enabled": false },
+        "lda":         { "enabled": false },
+        "mahalanobis": { "enabled": false },
+        "manova":      { "enabled": false }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "factor_heatmap": true,
+            "factor_scores":  true
+        }
+    },
+
+    "output": { "log_level": "info" }
+}
+```
+
+---
+
+### 23.17.3 Vlaková dynamika — korelácia rýchlostných senzorov
+
+**Dáta:** `SYNT_TRAIN_SPEED.txt` (UTC, WIG_SPEED, RADAR_SPEED, GNSS_SPEED, 1s, 3600s).
+
+**Cieľ:** Kvantifikovať koreláciu medzi troma rýchlostnými senzormi, overiť
+Granger kauzalitu (odometria → radar alebo naopak?), a identifikovať anomáliu
+pri t=1800s (wheel slip) pomocou Mahalanobis detekcie.
+
+**Upozornenie na dáta:** RADAR_SPEED obsahuje −999 pri t=2700–2730s (výpadok
+signálu). Tieto hodnoty musia byť ošetrené pred analýzou — nastavte `GapFiller`
+s `strategy: "linear"` aby ich nahradila interpoláciou. LOKI považuje −999 za
+bežnú numerickú hodnotu, nie NaN. Pred spustením preto odporúčame predspracovať
+dáta skriptom alebo nahradiť −999 prázdnymi riadkami.
+
+**Očakávané výsledky:**
+- CCF WIG↔RADAR: peak corr > 0.98, lag = 0 (synchronizované senzory).
+- CCF WIG↔GNSS: peak corr > 0.97, lag ≈ 1s (GNSS je trochu vyhladená).
+- PCA PC1: > 98% variancie (spoločná rýchlosť všetkých troch senzorov).
+- PCA PC2: < 2% variancie (rozdiely medzi senzormi — tu sa prejaví slip).
+- Granger: VAR pravdepodobne neidentifikuje kauzalitu (silná súčasná
+  korelácia dominuje, Granger testuje časové vedenie).
+- Mahalanobis: D² spike pri t=1800–1810s výrazne nad chi²(3, 0.05) = 7.81.
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path":         "SYNT_TRAIN_SPEED.txt",
+                    "columns":      [3, 4, 5],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy":          "inner",
+            "sync_tolerance_seconds": 0.5
+        },
+
+        "preprocessing": {
+            "standardize":       false,
+            "apply_gap_filling": true,
+            "gap_filling": {
+                "strategy":        "linear",
+                "max_fill_length": 0
+            }
+        },
+
+        "ccf": {
+            "enabled":            true,
+            "max_lag":            10,
+            "significance_level": 0.05
+        },
+
+        "pca": {
+            "enabled":            true,
+            "n_components":       3,
+            "variance_threshold": 0.99
+        },
+
+        "mssa": { "enabled": false },
+
+        "var": {
+            "enabled":                    true,
+            "max_order":                  5,
+            "order_criterion":            "aic",
+            "granger":                    true,
+            "granger_significance_level": 0.01
+        },
+
+        "factor": { "enabled": false },
+        "cca":    { "enabled": false },
+        "lda":    { "enabled": false },
+
+        "mahalanobis": {
+            "enabled":            true,
+            "robust":             true,
+            "significance_level": 0.001
+        },
+
+        "manova": { "enabled": false }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "correlation_matrix":  true,
+            "ccf_heatmap":         true,
+            "pca_scree":           true,
+            "pca_biplot":          true,
+            "pca_scores":          true,
+            "var_coefficients":    true,
+            "granger_heatmap":     true,
+            "mahalanobis_dist":    true,
+            "mahalanobis_qq":      true
+        }
+    },
+
+    "output": { "log_level": "info" }
+}
+```
+
+**Komentár k nastaveniu:**
+- `standardize: false` — rýchlosti sú v rovnakých jednotkách (m/s) a podobnej
+  škále. Štandardizácia by potlačila fyzikálne rozdiely medzi senzormi.
+- `ccf.max_lag: 10` — pri 1s rozlíšení hľadáme oneskorenie do ±10s.
+- `mahalanobis.significance_level: 0.001` — prísnejší prah (chi²(3, 0.001) ≈ 16.3)
+  znižuje falošne pozitívne pri veľkom n=3600. Wheel slip vytvorí D² >> 50.
+- `var.granger_significance_level: 0.01` — pri n=3600 je F-test veľmi citlivý,
+  prísnejší prah zabraňuje zachyteniu štatisticky ale fyzikálne nevýznamných väzieb.
+
+---
+
+### 23.17.4 Vlaková dynamika — MANOVA fáz jazdy
+
+**Dáta:** `SYNT_TRAIN_SPEED.txt` + externý kanál fáz.
+
+**Cieľ:** Overiť pomocou MANOVA či sa štatistiky rýchlostných vektorov štatisticky
+líšia medzi tromi jazdnými fázami (zastavenie, zrýchlenie/spomalenie, konštantná
+rýchlosť). LDA premietne trojrozmerné meranie do 2D priestoru maximálne separujúceho
+fázy.
+
+**Príprava labelu:** Pre túto analýzu treba priradiť ku každej sekunde fázový label:
+- 0 = zastavenie (t < 30, t ∈ [600,700], t ∈ [1900,2100], t > 3500)
+- 1 = zrýchlenie/spomalenie (prechodové úseky)
+- 2 = konštantná rýchlosť (t ∈ [180,480], t ∈ [900,1700], t ∈ [2300,3200])
+
+Label kanál treba vložiť ako štvrtý stĺpec do vstupného súboru, alebo načítať
+ako samostatný súbor. V JSON sa nastaví `lda.groups_column` na názov tohto kanála.
+
+**Očakávané výsledky:**
+- MANOVA Wilks Λ << 0.01, p << 0.001 (silná separácia fáz).
+- LDA LD1: separuje zastavenie vs. pohyb (rýchlosť bude dominantný prediktor).
+- LDA LD2: separuje zrýchlenie vs. konštantnú rýchlosť.
+- Klasifikačná presnosť > 95%.
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path":         "SYNT_TRAIN_SPEED_WITH_PHASE.txt",
+                    "columns":      [3, 4, 5, 6],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy": "inner"
+        },
+
+        "preprocessing": {
+            "standardize": true,
+            "apply_gap_filling": false
+        },
+
+        "ccf":    { "enabled": false },
+        "pca":    { "enabled": false },
+        "mssa":   { "enabled": false },
+        "var":    { "enabled": false },
+        "factor": { "enabled": false },
+        "cca":    { "enabled": false },
+
+        "lda": {
+            "enabled":       true,
+            "groups_column": "PHASE",
+            "use_qda":       false
+        },
+
+        "mahalanobis": { "enabled": false },
+
+        "manova": {
+            "enabled":             true,
+            "groups_column":       "PHASE",
+            "significance_level":  0.05
+        }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "lda_projection":     true,
+            "lda_confusion":      true,
+            "manova_eigenvalues": true,
+            "manova_summary":     true
+        }
+    },
+
+    "output": { "log_level": "info" }
+}
+```
+
+---
+
+### 23.17.5 CCA medzi ECEF súradnicami a rýchlosťami
+
+**Dáta:** `SYNT_TRAIN_XYZ.txt` (GPST, X, Y, Z) + `SYNT_TRAIN_SPEED.txt`
+(UTC, WIG, RADAR, GNSS).
+
+**Cieľ:** Zistiť či existuje lineárna väzba medzi polohovými súradnicami
+(priestorová poloha na trati) a rýchlostnými meraniami (profil rýchlosti).
+Fyzikálna hypotéza: trat má úseky s rôznou typickou rýchlosťou, teda poloha
+predikuje rýchlosť.
+
+**Očakávané výsledky:**
+- ρ₁ (prvá kanonická korelácia) ≈ 0.7–0.9 (poloha silne koreluje s rýchlosťou
+  cez profil trate).
+- Kanónická premenná U₁ (z XYZ) ≈ projekcia pozdĺž osi pohybu.
+- Kanónická premenná V₁ (z rýchlostí) ≈ priemerná rýchlosť.
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "multivariate": {
+        "input": {
+            "files": [
+                {
+                    "path":         "SYNT_TRAIN_XYZ.txt",
+                    "columns":      [2, 3, 4],
+                    "time_format":  "gps_total_seconds",
+                    "time_columns": [0],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                },
+                {
+                    "path":         "SYNT_TRAIN_SPEED.txt",
+                    "columns":      [3, 4, 5],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
+                    "delimiter":    " ",
+                    "comment_char": "%"
+                }
+            ],
+            "sync_strategy":          "inner",
+            "sync_tolerance_seconds": 0.5
+        },
+
+        "preprocessing": {
+            "standardize":       true,
+            "apply_gap_filling": true,
+            "gap_filling": { "strategy": "linear", "max_fill_length": 60 }
+        },
+
+        "ccf":    { "enabled": false },
+        "pca":    { "enabled": false },
+        "mssa":   { "enabled": false },
+        "var":    { "enabled": false },
+        "factor": { "enabled": false },
+
+        "cca": {
+            "enabled":      true,
+            "group_x":      [0, 1, 2],
+            "group_y":      [3, 4, 5],
+            "n_components": 2
+        },
+
+        "lda":         { "enabled": false },
+        "mahalanobis": { "enabled": false },
+        "manova":      { "enabled": false }
+    },
+
+    "plots": {
+        "output_format": "png",
+        "enabled": {
+            "cca_correlations":  true,
+            "cca_scatter_pairs": true
+        }
+    },
+
+    "output": { "log_level": "info" }
+}
+```
+
+**Komentár k nastaveniu:**
+- `group_x: [0, 1, 2]` — indexy kanálov X, Y, Z (prvé tri načítané).
+- `group_y: [3, 4, 5]` — indexy WIG, RADAR, GNSS (ďalšie tri).
+- `gap_fill_length: 60` — radar dropout trvá 30s, s rezervou 60s.
+- `sync_tolerance_seconds: 0.5` — oba súbory majú 1s rozlíšenie, UTC vs GPST
+  rozdiel je 18s (leap). LOKI to konvertuje na MJD, takže timestamps po
+  konverzii sa líšia o zlomky MJD dňa — tolerancia 0.5s je správna.
+
+---
+
+## 23.18 Technical notes
+
+### SVD backend selection
+
+`SvdDecomposition` (BDCSVD wrapper) is intentionally not used in any
+`loki_multivariate` `.cpp` file due to the known BDCSVD linking bug in
+static libraries on Windows/GCC 13. All SVD-based methods use either
+`Eigen::JacobiSVD` (exact, safe) or `loki::math::randomizedSvd` (Halko 2011).
+
+### Granger causality and stationarity
+
+VAR Granger F-tests assume stationarity. For non-stationary series
+(e.g. position coordinates X, Y, Z in use case 23.17.5), difference the
+data first using `loki_stationarity` or apply `loki_regression` to remove
+trend before passing to `loki_multivariate`. Alternatively use `loki_arima`
+to identify the integration order.
+
+### MCD robust estimation
+
+The approximate MCD in `Mahalanobis` uses 10 C-steps with h = 0.75·n.
+This is not the full FastMCD algorithm (Rousseeuw and Van Driessen 1999)
+but is adequate for n > 100 and fraction of outliers < 20%. For smaller
+datasets or higher contamination fractions, reduce `significance_level` to
+compensate for the estimator's higher variance.
+
+### Varimax convergence
+
+Varimax rotation may not converge within `max_iter` for highly correlated
+factor structures. If the warning `FactorAnalysis: converged in N iterations`
+shows N = max_iter, increase `max_iter` or switch to `rotation: "none"` as
+a diagnostic step.
+
+### MANOVA with few observations per group
+
+MANOVA requires n ≥ p + g (observations ≥ channels + groups). For use case
+23.17.4 with p=3, g=3, n=3600 this is trivially satisfied. For smaller
+datasets, reduce `n_factors` or merge small groups before running.
+
+---
+
+## 23.19 Best practices
+
+- Always run CCF first to understand pairwise relationships before fitting
+  VAR or CCA. Strong instantaneous correlation (lag=0) with no lead-lag
+  structure means VAR order p=0 is appropriate and Granger will show nothing.
+- For climate data with seasonal cycles, deseasonalise using `loki_homogeneity`
+  or `loki_decomposition` before running VAR and Granger. A shared seasonal
+  cycle creates spurious Granger causality.
+- Use `standardize: true` for PCA, Factor, CCA, LDA and MANOVA. Use
+  `standardize: false` for CCF and VAR when physical units are meaningful
+  and scale differences carry information.
+- For large channel counts (p > 20), prefer `use_randomized_svd: true` in
+  PCA and MSSA. JacobiSVD is O(n·p²) which becomes slow for p > 100.
+- When mixing GPS and UTC time formats across files, set
+  `sync_tolerance_seconds` to at least 2·leap_seconds (36s for 2023 data)
+  plus half the sampling interval. For 6h data: 36 + 10800 = 10836s. In
+  practice LOKI converts all timestamps to MJD, so the actual tolerance
+  needed is smaller — 3–10s is typically sufficient.
+- For MANOVA and LDA, ensure group labels are integers 0, 1, 2, ... in a
+  dedicated channel. Float values are rounded to the nearest integer — label
+  0.9 becomes 1, not 0. Verify label distribution in the protocol before
+  interpreting classification accuracy.

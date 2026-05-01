@@ -480,6 +480,31 @@ struct PlotConfig {
     bool splineKnots       {true};   ///< Knot positions overlaid on original series.
     bool splineCv          {true};   ///< CV curve: RMSE vs nCtrl with optimum marked.
     bool splineDiagnostics {false};  ///< 4-panel residual diagnostics via Plot::residualDiagnostics().
+
+    // -- Multivariate pipeline plots ------------------------------------------
+    bool mvCorrelationMatrix {true};   ///< Pearson correlation matrix heatmap.
+    bool mvCcfHeatmap        {true};   ///< Pairwise CCF peak heatmap (max abs corr per pair).
+    bool mvPcaScree          {true};   ///< PCA scree plot: eigenvalues + cumulative variance.
+    bool mvPcaBiplot         {true};   ///< PCA biplot: scores + loadings in PC1/PC2 space.
+    bool mvPcaScores         {true};   ///< PCA scores vs time for retained components.
+    bool mvMssaEigenvalues   {true};   ///< MSSA eigenvalue spectrum.
+    bool mvMssaComponents    {true};   ///< MSSA reconstructed components vs time.
+    bool mvVarCoefficients   {true};   ///< VAR coefficient matrix heatmap per lag.
+    bool mvVarResiduals      {true};   ///< VAR residuals vs time (one panel per channel).
+    bool mvGrangerHeatmap    {true};   ///< Granger causality F-stat heatmap (channel x channel).
+    bool mvFactorLoadings    {false};  ///< Factor loadings heatmap after rotation.
+    bool mvCcaScores         {false};  ///< CCA canonical scores scatter (first pair).
+    bool mvLdaBoundaries     {false};  ///< LDA/QDA decision boundaries (2-D projection).
+    bool mvFactorHeatmap     {true};   ///< Factor loading heatmap (p x k).
+    bool mvFactorScores      {false};  ///< Factor scores vs time.
+    bool mvCcaCorrelations   {true};   ///< Canonical correlations bar chart.
+    bool mvCcaScatterPairs   {false};  ///< Canonical variate scatter per pair.
+    bool mvLdaProjection     {true};   ///< LDA 2-D projection scatter.
+    bool mvLdaConfusion      {true};   ///< Confusion matrix heatmap.
+    bool mvMahalanobisDist   {true};   ///< D^2 vs index with chi^2 threshold.
+    bool mvMahalanobisQq     {false};  ///< Chi^2 QQ plot of D^2 values.
+    bool mvManovaEigenvalues {true};   ///< Eigenvalues of E^{-1}H.
+    bool mvManovaSummary     {true};   ///< Summary table of all four statistics.
 };
 
 // -----------------------------------------------------------------------------
@@ -1350,6 +1375,207 @@ struct GeodesyConfig {
 };
 
 // -----------------------------------------------------------------------------
+//  MultivariateConfig  (sub-configs defined outside to avoid GCC 13 aggregate-init bug)
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief Per-file input specification for the multivariate pipeline.
+ *
+ * Each file entry describes one source file with its own format, delimiter,
+ * comment character, time format, and selected value columns.
+ * The Loader is called once per entry using a per-file InputConfig derived
+ * from these fields.
+ */
+struct MultivariateFileConfig {
+    std::string      path        {};          ///< Path relative to INPUT/.
+    std::vector<int> columns     {};          ///< 1-based value column indices to load.
+    std::string      timeFormat  {"mjd"};     ///< "mjd"|"utc"|"gps_total_seconds"|"gps_week_sow"|"unix"|"index"
+    std::vector<int> timeColumns {0};         ///< Field indices forming the time token.
+    std::string      delimiter   {" "};       ///< Single character or "\t" for tab.
+    char             commentChar {'%'};       ///< Lines starting with this char are skipped.
+};
+
+/**
+ * @brief Synchronisation settings for assembling multiple time series.
+ *
+ * sync_strategy:
+ *   "inner" -- keep only timestamps present in ALL channels (default).
+ *   "outer" -- keep all timestamps; missing entries filled by GapFiller.
+ *
+ * sync_tolerance_seconds: two timestamps within this window are treated
+ * as identical. Useful when files store time at slightly different precision.
+ */
+struct MultivariateInputConfig {
+    std::vector<MultivariateFileConfig> files;
+    std::string syncStrategy          {"inner"}; ///< "inner" | "outer"
+    double      syncToleranceSeconds  {1.0};     ///< Tolerance in seconds for timestamp matching.
+};
+
+/**
+ * @brief Preprocessing settings applied by MultivariateAssembler.
+ *
+ * standardize: subtract mean and divide by std dev per channel before
+ * any analysis. Recommended for PCA and methods sensitive to scale.
+ *
+ * Gap filling is applied per-channel after synchronisation. Uses
+ * GapFiller::Strategy::LINEAR by default. SPLINE is not recommended
+ * (Runge phenomenon for multivariate outlier replacement).
+ */
+struct MultivariatePreprocessingConfig {
+    bool        standardize     {true};     ///< Zero-mean unit-variance scaling per channel.
+    bool        applyGapFilling {true};     ///< Apply GapFiller before assembling matrix.
+    std::string gapStrategy     {"linear"}; ///< GapFiller strategy: "linear"|"forward_fill"|"mean"|"none"
+    std::size_t maxFillLength   {0};        ///< Max gap length to fill (0 = unlimited).
+};
+
+/**
+ * @brief Configuration for the cross-correlation function (CCF) matrix.
+ *
+ * Computes the pairwise CCF for all channel pairs at lags [-max_lag, +max_lag].
+ * Outputs a heatmap image and a CSV with peak lag and peak correlation per pair.
+ */
+struct MultivariateCcfConfig {
+    bool   enabled           {true};  ///< Enable CCF matrix analysis.
+    int    maxLag            {100};   ///< Maximum lag in samples.
+    double significanceLevel {0.05};  ///< Threshold for marking significant correlations.
+};
+
+/**
+ * @brief Configuration for Principal Component Analysis.
+ *
+ * Uses SVD-based PCA (never normal equations). Operates on the
+ * (optionally standardized) data matrix X (n x p).
+ *
+ * n_components = 0: auto-select components that explain variance_threshold
+ * of total variance (e.g. 0.95 keeps components up to 95% cumulative variance).
+ *
+ * n_components > 0: manual override; variance_threshold is ignored.
+ *
+ * use_randomized_svd: activates Halko et al. (2011) randomized SVD for large
+ * matrices (p >> 100 or n >> 10000). Uses existing loki_core randomizedSvd.
+ */
+struct MultivariatePcaConfig {
+    bool   enabled                   {true};   ///< Enable PCA.
+    int    nComponents               {0};      ///< 0 = auto via variance_threshold.
+    double varianceThreshold         {0.95};   ///< Cumulative variance target (auto mode).
+    bool   useRandomizedSvd          {false};  ///< Use randomized SVD for large matrices.
+    int    randomizedSvdOversampling {10};     ///< Extra columns for randomized SVD accuracy.
+};
+
+/**
+ * @brief Configuration for Multivariate SSA (MSSA).
+ *
+ * MSSA extends SSA to N simultaneous channels. The trajectory matrix
+ * has shape (n - L + 1) x (L * p) where L = window and p = channels.
+ * Reuses loki_core embedMatrix and randomizedSvd primitives.
+ *
+ * window: embedding window length in samples (not days/seconds).
+ * n_components: number of leading eigentriples to reconstruct.
+ */
+struct MultivariateMssaConfig {
+    bool   enabled          {false};  ///< Enable MSSA.
+    int    window           {1461};   ///< Embedding window in samples.
+    int    nComponents      {6};      ///< Number of components to reconstruct.
+    bool   useRandomizedSvd {false};  ///< Use randomized SVD for large trajectory matrices.
+};
+
+/**
+ * @brief Configuration for Vector Autoregression (VAR) and Granger causality.
+ *
+ * order_criterion: information criterion for automatic lag order selection.
+ *   "aic"  -- Akaike Information Criterion (default, less conservative).
+ *   "bic"  -- Bayesian Information Criterion (more conservative).
+ *   "hqc"  -- Hannan-Quinn Criterion.
+ *
+ * granger: if true, performs pairwise Granger F-tests for all channel pairs.
+ * granger_significance_level: threshold for reporting significant causal links.
+ */
+struct MultivariateVarConfig {
+    bool        enabled                  {true};   ///< Enable VAR model fitting.
+    int         maxOrder                 {10};     ///< Maximum lag order for search.
+    std::string orderCriterion           {"aic"};  ///< "aic" | "bic" | "hqc"
+    bool        granger                  {true};   ///< Run pairwise Granger F-tests.
+    double      grangerSignificanceLevel {0.05};   ///< Significance level for Granger tests.
+};
+
+/**
+ * @brief Configuration for Factor Analysis with optional rotation.
+ *
+ * rotation: "varimax" (default) or "none".
+ * Varimax maximises variance of squared loadings per factor,
+ * producing a simpler, more interpretable structure.
+ */
+struct MultivariateFactorConfig {
+    bool        enabled   {false};      ///< Enable Factor Analysis.
+    int         nFactors  {3};          ///< Number of latent factors to extract.
+    std::string rotation  {"varimax"};  ///< Rotation method: "varimax" | "none"
+    int         maxIter   {1000};       ///< Maximum iterations for rotation algorithm.
+    double      tolerance {1.0e-6};     ///< Convergence tolerance.
+};
+
+/**
+ * @brief Configuration for Canonical Correlation Analysis (CCA).
+ *
+ * group_x / group_y: 0-based channel indices forming the two variable sets.
+ * n_components = 0: all canonical pairs (min(|X|, |Y|)).
+ * n_components > 0: keep only the first n pairs.
+ */
+struct MultivariateCcaConfig {
+    bool             enabled     {false};  ///< Enable CCA.
+    std::vector<int> groupX      {};       ///< Channel indices for variable set X.
+    std::vector<int> groupY      {};       ///< Channel indices for variable set Y.
+    int              nComponents {0};      ///< 0 = all pairs; > 0 = first n pairs.
+};
+
+/**
+ * @brief Configuration for Linear / Quadratic Discriminant Analysis.
+ *
+ * Requires a group label column in the input data. The groups_column
+ * specifies the name (or 1-based index) of this column.
+ * use_qda: false = LDA (pooled covariance), true = QDA (per-class covariance).
+ */
+struct MultivariateLdaConfig {
+    bool        enabled      {false};    ///< Enable LDA/QDA.
+    std::string groupsColumn {"group"};  ///< Column name or 1-based index carrying group labels.
+    bool        useQda       {false};    ///< false = LDA, true = QDA.
+};
+
+/**
+ * @brief Configuration for Mahalanobis multivariate outlier detection.
+ */
+struct MultivariateMahalanobisConfig {
+    bool   enabled          {false}; ///< Enable Mahalanobis outlier detection.
+    bool   robust           {true};  ///< Use MCD robust estimator (recommended).
+    double significanceLevel{0.05};  ///< Chi^2 threshold significance level.
+};
+
+/**
+ * @brief Configuration for one-way MANOVA.
+ */
+struct MultivariateManovaConfig {
+    bool        enabled         {false};   ///< Enable MANOVA.
+    std::string groupsColumn    {"group"}; ///< Channel name carrying group labels.
+    double      significanceLevel{0.05};  ///< Significance level for all tests.
+};
+
+/**
+ * @brief Top-level configuration for the loki_multivariate pipeline.
+ */
+struct MultivariateConfig {
+    MultivariateInputConfig          input          {};
+    MultivariatePreprocessingConfig  preprocessing  {};
+    MultivariateCcfConfig            ccf            {};
+    MultivariatePcaConfig            pca            {};
+    MultivariateMssaConfig           mssa           {};
+    MultivariateVarConfig            var_           {};  ///< Named var_ to avoid clash with C++ keyword.
+    MultivariateFactorConfig         factor         {};
+    MultivariateCcaConfig            cca            {};
+    MultivariateLdaConfig            lda            {};
+    MultivariateMahalanobisConfig    mahalanobis    {};
+    MultivariateManovaConfig         manova         {};
+};
+
+// -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
 
@@ -1378,6 +1604,7 @@ struct AppConfig {
     SplineConfig        spline;
     SpatialConfig       spatial;
     GeodesyConfig       geodesy;
+    MultivariateConfig  multivariate;
     
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

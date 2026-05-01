@@ -227,7 +227,7 @@ All plot output files follow this naming convention:
 LOKI is no longer limited to time series. The framework covers:
 - 1D time series analysis (complete)
 - 2D spatial analysis (loki_spatial -- complete)
-- Multivariate analysis (loki_multivariate -- planned)
+- Multivariate analysis (loki_multivariate -- next)
 - Geodetic computations (loki_geodesy -- complete)
 
 ### Architecture principle -- math primitives in loki_core
@@ -599,6 +599,98 @@ multiple files merged). Uses existing DataManager merge functionality.
   at station A predict IWV at station B?).
 - PCA/ICA can serve as a pre-processing step before loki_spatial (reduce
   multivariate field to dominant spatial modes).
+
+### loki_multivariate -- DESIGN COMPLETE, IMPLEMENTATION NEXT
+
+**Purpose:** Multivariate time series analysis. One program, task-based
+pipeline controlled by JSON config. Each method has `enabled` flag +
+method-specific parameters.
+
+**Planned methods:**
+- PCA (SVD-based, nie normal equations)
+- MSSA (multivariate SSA -- rozšírenie loki_ssa na N kanalov)
+- Factor analysis (ML alebo PCA-based, Varimax rotácia)
+- CCA (Canonical Correlation Analysis)
+- LDA/QDA (Linear/Quadratic Discriminant Analysis)
+- VAR + Granger causality (Vector Autoregression, AIC/BIC rad)
+- MANOVA/ANCOVA
+- CCF matrix (cross-correlation function medzi všetkými pármi)
+- Mahalanobis outlier detection (wrapper -- jednoduchý)
+- Multivariate clustering (wrapper nad loki_clustering s Mahalanobis metrikou)
+
+**Use cases:**
+- UFG (Unaccounted For Gas): VAR model na [vstup, výstup, ťažba,
+  zásobníky, distribúcia, teplota] -- UFG = rezíduum modelu.
+  PCA na redukciu korelovaných vstupov.
+- GNSS sieť: PCA/MSSA na koordinátové reziduá viacerých staníc --
+  odhalí spoločné módy (atmosferický loading, tektonický pohyb).
+- Klimatológia IWV: CCA medzi skupinami staníc, Granger kauzalita.
+
+**JSON config pattern:**
+```json
+{
+    "workspace": "C:/data/project",
+    "multivariate": {
+        "input": {
+            "files": ["station_A.csv", "station_B.csv"],
+            "time_format": "mjd",
+            "delimiter": ";"
+        },
+        "pca": { "enabled": true, "n_components": 0, "standardize": true },
+        "mssa": { "enabled": true, "window": 365, "n_components": 6 },
+        "var": { "enabled": true, "max_order": 10, "granger": true },
+        "manova": { "enabled": false, "groups_column": "group" },
+        "factor": { "enabled": false, "n_factors": 3, "rotation": "varimax" },
+        "cca": { "enabled": false, "group_x": [0,1,2], "group_y": [3,4] },
+        "lda": { "enabled": false, "groups_column": "group" },
+        "ccf": { "enabled": true, "max_lag": 100 }
+    }
+}
+```
+
+**Loader:** aktuálny Loader + DataManager zvláda multivariate už teraz
+(LoadResult.series je vector<TimeSeries>). Treba pridať:
+- `MultivariateSeries` wrapper: Eigen::MatrixXd (riadky=čas, stĺpce=kanály)
+  + timestamps + názvy kanálov. Konverzia z vector<LoadResult>.
+- Dva input režimy: (1) jeden súbor s N stĺpcami, (2) N súborov,
+  každý jedna stanica/kanál -- oboje cez JSON.
+
+**Do loki_core/math/ (nové):**
+- `multivariateSeries.hpp` -- MultivariateSeries wrapper
+- `covMatrix.hpp/.cpp` -- odhad kovariančnej matice (sample, Ledoit-Wolf shrinkage)
+- `pca.hpp/.cpp` -- SVD-based PCA, loadings, scores, explained variance, scree
+- `factorAnalysis.hpp/.cpp` -- komunality, Varimax rotácia
+- `cca.hpp/.cpp` -- kanonická korelácia
+- `lda.hpp/.cpp` -- LDA/QDA
+- `var.hpp/.cpp` -- VAR(p), AIC/BIC výber rádu, Granger F-test
+- `mssa.hpp/.cpp` -- multivariate SSA trajectory matrix pre N kanálov
+
+**Do libs/loki_multivariate:**
+- `multivariateAnalyzer.hpp/.cpp` -- orchestrátor, task prepínač
+- `multivariateResult.hpp` -- výsledky všetkých metód
+- `plotMultivariate.hpp/.cpp` -- scree plot, biplot, score scatter,
+  CCF heatmap, korelačná matica, VAR impulse response
+- `main.cpp` -- rovnaký pattern ako loki_homogeneity main.cpp
+
+**Output:** CSV, IMG, PROTOCOLS, LOG -- štandardné LOKI output adresáre.
+
+**Thread startup:** priložiť CLAUDE.md + config.hpp + configLoader.hpp
+  + loader.hpp + gnuplot.hpp + main.cpp z loki_homogeneity ako vzor.
+A do Module Roadmap tabuľky zmeň:
+| planned | loki_multivariate   | new app | DESIGN COMPLETE, IMPL NEXT |You said: treba sa zmienit, ze pracujem bud s casovym radom s rozlisenim 6h alebo radom s rozlisenim 1ms.homogenization.json110 linesjsontreba sa zmienit, ze pracujem bud s casovym radom s rozlisenim 6h alebo radom s rozlisenim 1ms. A posielam aj json pre predstavu15:14Claude responded: Pridaj do CLAUDE.Pridaj do CLAUDE.md patchu pre ### loki_multivariate sekciu — za riadok o use cases:
+markdown**Input data characteristics:**
+- Klimatologické IWV: 6h rozlíšenie, 25+ rokov, ~36 000 pozorovaní.
+  Formát: UTC čas v dvoch stĺpcoch (time_columns: [0,1]), delimiter " ",
+  comment_char "%". Vzor: homogenization.json.
+- GNSS geodetické súradnice: GPS čas (week/SOW alebo total seconds),
+  stĺpce X,Y,Z [m]. Drackonitická perióda ~351.4 dní.
+- Senzorové/železničné dáta: 1 Hz až 1 ms rozlíšenie, SIL 4 kontext.
+- Typický vstup pre multivariate: viac súborov rovnakého formátu
+  (jedna stanica = jeden súbor) ALEBO jeden súbor s N hodnotovými stĺpcami.
+A do thread startup riadku pridaj:
+markdown**Thread startup:** priložiť CLAUDE.md + config.hpp + configLoader.hpp
+  + loader.hpp + gnuplot.hpp + main.cpp z loki_homogeneity
+  + homogenization.json ako vzor JSON konfigurácie.
 
 ---
 

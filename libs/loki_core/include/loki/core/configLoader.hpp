@@ -70,6 +70,8 @@ private:
     static SplineConfig          _parseSpline           (const nlohmann::json& j);
     static SpatialConfig         _parseSpatial          (const nlohmann::json& j);
     static GeodesyConfig         _parseGeodesy          (const nlohmann::json& j);
+    static MultivariateConfig    _parseMultivariate     (const nlohmann::json& j, 
+                                                         const std::filesystem::path& inputDir);
 
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
