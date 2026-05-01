@@ -6,6 +6,7 @@
 #include "loki/multivariate/multivariateAssembler.hpp"
 #include "loki/multivariate/multivariateAnalyzer.hpp"
 #include "loki/multivariate/plotMultivariate.hpp"
+#include "loki/multivariate/multivariateProtocol.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -179,6 +180,14 @@ int main(int argc, char* argv[])
     } catch (const loki::LOKIException& ex) {
         LOKI_ERROR(std::string("Plotting failed: ") + ex.what());
         // Non-fatal -- continue to finish.
+    }
+
+    // -- Protocol -------------------------------------------------------------
+    try {
+        loki::multivariate::MultivariateProtocol protocol(cfg);
+        protocol.write(mvSeries, result, stem);
+    } catch (const loki::LOKIException& ex) {
+        LOKI_ERROR(std::string("Protocol writing failed: ") + ex.what());
     }
 
     LOKI_INFO("loki_multivariate finished successfully.");

@@ -2,6 +2,11 @@
 #include "loki/multivariate/pca.hpp"
 #include "loki/multivariate/mssa.hpp"
 #include "loki/multivariate/var.hpp"
+#include "loki/multivariate/factorAnalysis.hpp"
+#include "loki/multivariate/cca.hpp"
+#include "loki/multivariate/lda.hpp"
+#include "loki/multivariate/mahalanobis.hpp"
+#include "loki/multivariate/manova.hpp"
 
 #include "loki/core/exceptions.hpp"
 #include "loki/core/logger.hpp"
@@ -88,6 +93,79 @@ MultivariateResult MultivariateAnalyzer::run(const MultivariateSeries& data,
         }
     }
 
+    // -- Factor Analysis ------------------------------------------------------
+    if (mcfg.factor.enabled) {
+        LOKI_INFO("MultivariateAnalyzer: running Factor Analysis (k="
+                  + std::to_string(mcfg.factor.nFactors) + ").");
+        try {
+            FactorAnalysis fa(mcfg.factor);
+            result.factor = fa.compute(data);
+            LOKI_INFO("MultivariateAnalyzer: Factor Analysis done.");
+        } catch (const LOKIException& ex) {
+            LOKI_ERROR(std::string("MultivariateAnalyzer: Factor Analysis failed: ")
+                       + ex.what());
+        }
+    }
+
+    // -- CCA ------------------------------------------------------------------
+    if (mcfg.cca.enabled) {
+        LOKI_INFO("MultivariateAnalyzer: running CCA.");
+        try {
+            Cca cca(mcfg.cca);
+            result.cca = cca.compute(data);
+            LOKI_INFO("MultivariateAnalyzer: CCA done, rho_1="
+                      + std::to_string(result.cca->canonicalCorrelations(0)) + ".");
+        } catch (const LOKIException& ex) {
+            LOKI_ERROR(std::string("MultivariateAnalyzer: CCA failed: ") + ex.what());
+        }
+    }
+
+    // -- LDA ------------------------------------------------------------------
+    if (mcfg.lda.enabled) {
+        LOKI_INFO("MultivariateAnalyzer: running LDA (useQda="
+                  + std::string(mcfg.lda.useQda ? "true" : "false") + ").");
+        try {
+            const std::vector<int> labels = _extractLabels(data, mcfg.lda.groupsColumn);
+            Lda lda(mcfg.lda);
+            result.lda = lda.compute(data, labels);
+            LOKI_INFO("MultivariateAnalyzer: LDA done, accuracy="
+                      + std::to_string(result.lda->accuracy) + ".");
+        } catch (const LOKIException& ex) {
+            LOKI_ERROR(std::string("MultivariateAnalyzer: LDA failed: ") + ex.what());
+        }
+    }
+
+    // -- Mahalanobis ----------------------------------------------------------
+    if (mcfg.mahalanobis.enabled) {
+        LOKI_INFO("MultivariateAnalyzer: running Mahalanobis outlier detection.");
+        try {
+            Mahalanobis mah(mcfg.mahalanobis);
+            result.mahalanobis = mah.compute(data);
+            LOKI_INFO("MultivariateAnalyzer: Mahalanobis done, outliers="
+                      + std::to_string(result.mahalanobis->nOutliers) + ".");
+        } catch (const LOKIException& ex) {
+            LOKI_ERROR(std::string("MultivariateAnalyzer: Mahalanobis failed: ")
+                       + ex.what());
+        }
+    }
+
+    // -- MANOVA ---------------------------------------------------------------
+    if (mcfg.manova.enabled) {
+        LOKI_INFO("MultivariateAnalyzer: running MANOVA.");
+        try {
+            const std::vector<int> labels =
+                _extractLabels(data, mcfg.manova.groupsColumn);
+            Manova manova(mcfg.manova);
+            result.manova = manova.compute(data, labels);
+            LOKI_INFO("MultivariateAnalyzer: MANOVA done, Wilks="
+                      + std::to_string(result.manova->wilksLambda)
+                      + " p=" + std::to_string(result.manova->wilksPvalue) + ".");
+        } catch (const LOKIException& ex) {
+            LOKI_ERROR(std::string("MultivariateAnalyzer: MANOVA failed: ")
+                       + ex.what());
+        }
+    }
+
     return result;
 }
 
@@ -103,8 +181,6 @@ MultivariateAnalyzer::_computeCcf(const MultivariateSeries& data) const
     const int maxLag = m_cfg.multivariate.ccf.maxLag;
     const double sigLevel = m_cfg.multivariate.ccf.significanceLevel;
 
-    // Significance threshold for white noise: z_{alpha/2} / sqrt(n).
-    // For alpha = 0.05: z = 1.96.
     const double z = (sigLevel <= 0.01) ? 2.576
                    : (sigLevel <= 0.05) ? 1.960
                    :                      1.645;
@@ -113,7 +189,6 @@ MultivariateAnalyzer::_computeCcf(const MultivariateSeries& data) const
     std::vector<CcfPairResult> results;
     results.reserve(static_cast<std::size_t>(p * (p - 1) / 2));
 
-    // Pre-compute means and std devs.
     std::vector<double> means(static_cast<std::size_t>(p));
     std::vector<double> stds (static_cast<std::size_t>(p));
     for (int j = 0; j < p; ++j) {
@@ -141,7 +216,6 @@ MultivariateAnalyzer::_computeCcf(const MultivariateSeries& data) const
                 (data.data().col(b).array() - means[static_cast<std::size_t>(b)])
                 / stds[static_cast<std::size_t>(b)];
 
-            // Compute CCF at lags [-maxLag .. +maxLag].
             const int nLags = 2 * maxLag + 1;
             pr.ccf.resize(static_cast<std::size_t>(nLags));
 
@@ -178,11 +252,8 @@ double MultivariateAnalyzer::_ccfAtLag(const Eigen::VectorXd& x,
                                         const Eigen::VectorXd& y,
                                         int lag, int n)
 {
-    // For lag >= 0: correlate x[t] with y[t + lag], t = 0..n-lag-1.
-    // For lag <  0: correlate x[t - lag] with y[t], t = 0..n+lag-1.
     int tStart = 0;
     int tEnd   = n - 1;
-
     double sum = 0.0;
     int    cnt = 0;
 
@@ -201,4 +272,49 @@ double MultivariateAnalyzer::_ccfAtLag(const Eigen::VectorXd& x,
     }
 
     return (cnt > 0) ? sum / static_cast<double>(n) : 0.0;
+}
+
+// -----------------------------------------------------------------------------
+//  _extractLabels
+// -----------------------------------------------------------------------------
+
+std::vector<int> MultivariateAnalyzer::_extractLabels(
+    const MultivariateSeries& data,
+    const std::string& groupsColumn) const
+{
+    // Find channel by name.
+    int colIdx = -1;
+    for (int j = 0; j < static_cast<int>(data.nChannels()); ++j) {
+        if (data.channelName(j) == groupsColumn) {
+            colIdx = j;
+            break;
+        }
+    }
+
+    // Try numeric interpretation (1-based column index as string).
+    if (colIdx < 0) {
+        try {
+            const int idx = std::stoi(groupsColumn) - 1;
+            if (idx >= 0 && idx < static_cast<int>(data.nChannels())) {
+                colIdx = idx;
+            }
+        } catch (...) {}
+    }
+
+    if (colIdx < 0) {
+        throw DataException(
+            "MultivariateAnalyzer: groups_column '" + groupsColumn
+            + "' not found in channel names.");
+    }
+
+    const Eigen::VectorXd col = data.data().col(colIdx);
+    const int n = static_cast<int>(col.size());
+
+    std::vector<int> labels(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        labels[static_cast<std::size_t>(i)] =
+            static_cast<int>(std::round(col(i)));
+    }
+
+    return labels;
 }

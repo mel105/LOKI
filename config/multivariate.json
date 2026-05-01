@@ -16,29 +16,29 @@
         "output_format": "png",
         "time_format": "mjd",
         "enabled": {
-            "correlation_matrix":   true,
-            "ccf_heatmap":          true,
-            "pca_scree":            true,
-            "pca_biplot":           true,
-            "pca_scores":           true,
-            "mssa_eigenvalues":     true,
-            "mssa_components":      true,
-            "var_coefficients":     true,
-            "var_residuals":        true,
-            "granger_heatmap":      true,
+            "correlation_matrix":   false,
+            "ccf_heatmap":          false,
+            "pca_scree":            false,
+            "pca_biplot":           false,
+            "pca_scores":           false,
+            "mssa_eigenvalues":     false,
+            "mssa_components":      false,
+            "var_coefficients":     false,
+            "var_residuals":        false,
+            "granger_heatmap":      false,
             "factor_loadings":      false,
             "cca_scores":           false,
             "lda_boundaries":       false,
-            "factor_heatmap":       true,
+            "factor_heatmap":       false,
             "factor_scores":        false,
             "cca_correlations":     true,
-            "cca_scatter_pairs":    false,
-            "lda_projection":       true,
-            "lda_confusion":        true,
-            "mahalanobis_dist":     true,
+            "cca_scatter_pairs":    true,
+            "lda_projection":       false,
+            "lda_confusion":        false,
+            "mahalanobis_dist":     false,
             "mahalanobis_qq":       false,
-            "manova_eigenvalues":   true,
-            "manova_summary":       true
+            "manova_eigenvalues":   false,
+            "manova_summary":       false
         }
     },
 
@@ -52,33 +52,25 @@
 
         "input": {
             "files": [
-                {
-                    "path":         "station_A.txt",
-                    "columns":      [2],
-                    "time_format":  "mjd",
+                 {
+                    "path":         "SYNT_TRAIN_XYZ.txt",
+                    "columns":      [2, 3, 4],
+                    "time_format":  "gps_total_seconds",
                     "time_columns": [0],
                     "delimiter":    " ",
                     "comment_char": "%"
                 },
                 {
-                    "path":         "station_B.txt",
-                    "columns":      [4],
-                    "time_format":  "mjd",
-                    "time_columns": [0],
-                    "delimiter":    " ",
-                    "comment_char": "%"
-                },
-                {
-                    "path":         "station_C.txt",
-                    "columns":      [1, 2, 3],
-                    "time_format":  "mjd",
-                    "time_columns": [0],
+                    "path":         "SYNT_TRAIN_SPEED.txt",
+                    "columns":      [3, 4, 5],
+                    "time_format":  "utc",
+                    "time_columns": [0, 1],
                     "delimiter":    " ",
                     "comment_char": "%"
                 }
             ],
             "sync_strategy":         "inner",
-            "sync_tolerance_seconds": 1.0
+            "sync_tolerance_seconds": 0.50
         },
 
         "preprocessing": {
@@ -86,69 +78,69 @@
             "apply_gap_filling": true,
             "gap_filling": {
                 "strategy":        "linear",
-                "max_fill_length": 0
+                "max_fill_length": 40
             }
         },
 
         "ccf": {
-            "enabled":            true,
-            "max_lag":            100,
+            "enabled":            false,
+            "max_lag":            10,
             "significance_level": 0.05
         },
 
         "pca": {
-            "enabled":                     true,
-            "n_components":                0,
-            "variance_threshold":          0.95,
+            "enabled":                     false,
+            "n_components":                3,
+            "variance_threshold":          0.99,
             "use_randomized_svd":          false,
             "randomized_svd_oversampling": 10
         },
 
         "mssa": {
             "enabled":            false,
-            "window":             1461,
-            "n_components":       6,
+            "window":             4,
+            "n_components":       4,
             "use_randomized_svd": false
         },
 
         "var": {
-            "enabled":                    true,
-            "max_order":                  10,
+            "enabled":                    false,
+            "max_order":                  5,
             "order_criterion":            "aic",
             "granger":                    true,
-            "granger_significance_level": 0.05
+            "granger_significance_level": 0.01
         },
 
         "factor": {
             "enabled":   false,
-            "n_factors":  3,
+            "n_factors":  2,
             "rotation":  "varimax",
-            "max_iter":   1000,
+            "max_iter":   500,
             "tolerance":  1e-6
         },
 
         "cca": {
-            "enabled":      false,
+            "enabled":      true,
             "group_x":      [0, 1, 2],
-            "group_y":      [3, 4],
-            "n_components": 0
+            "group_y":      [3, 4, 5],
+            "n_components": 2
         },
 
         "lda": {
             "enabled":       false,
-            "groups_column": "group",
+            "groups_column": "phase",
             "use_qda":       false
         },
 
         "mahalanobis": {
             "enabled":            false,
             "robust":             true,
-            "significance_level": 0.05
+            "significance_level": 0.001
         },
 
         "manova": {
             "enabled":            false,
-            "groups_column":      "group",
+            "groups_column":      "phase",
             "significance_level": 0.05
         }
     }

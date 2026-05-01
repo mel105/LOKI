@@ -1379,6 +1379,24 @@ struct GeodesyConfig {
 // -----------------------------------------------------------------------------
 
 /**
+ * @brief Configuration for Mahalanobis multivariate outlier detection.
+ */
+struct MultivariateMahalanobisConfig {
+    bool   enabled          {false}; ///< Enable Mahalanobis outlier detection.
+    bool   robust           {true};  ///< Use MCD robust estimator (recommended).
+    double significanceLevel{0.05};  ///< Chi^2 threshold significance level.
+};
+
+/**
+ * @brief Configuration for one-way MANOVA.
+ */
+struct MultivariateManovaConfig {
+    bool        enabled          {false};   ///< Enable MANOVA.
+    std::string groupsColumn     {"group"}; ///< Channel name carrying group labels.
+    double      significanceLevel{0.05};    ///< Significance level for all tests.
+};
+
+/**
  * @brief Per-file input specification for the multivariate pipeline.
  *
  * Each file entry describes one source file with its own format, delimiter,
@@ -1540,23 +1558,6 @@ struct MultivariateLdaConfig {
     bool        useQda       {false};    ///< false = LDA, true = QDA.
 };
 
-/**
- * @brief Configuration for Mahalanobis multivariate outlier detection.
- */
-struct MultivariateMahalanobisConfig {
-    bool   enabled          {false}; ///< Enable Mahalanobis outlier detection.
-    bool   robust           {true};  ///< Use MCD robust estimator (recommended).
-    double significanceLevel{0.05};  ///< Chi^2 threshold significance level.
-};
-
-/**
- * @brief Configuration for one-way MANOVA.
- */
-struct MultivariateManovaConfig {
-    bool        enabled         {false};   ///< Enable MANOVA.
-    std::string groupsColumn    {"group"}; ///< Channel name carrying group labels.
-    double      significanceLevel{0.05};  ///< Significance level for all tests.
-};
 
 /**
  * @brief Top-level configuration for the loki_multivariate pipeline.

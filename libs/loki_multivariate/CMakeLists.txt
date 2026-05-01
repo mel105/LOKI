@@ -16,6 +16,7 @@ target_sources(loki_multivariate
         src/lda.cpp
         src/mahalanobis.cpp
         src/manova.cpp
+        src/multivariateProtocol.cpp
 )
 
 target_include_directories(loki_multivariate

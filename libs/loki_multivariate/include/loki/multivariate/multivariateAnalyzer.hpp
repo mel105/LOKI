@@ -82,6 +82,18 @@ private:
     static double _ccfAtLag(const Eigen::VectorXd& x,
                              const Eigen::VectorXd& y,
                              int lag, int n);
+
+    /**
+     * @brief Extracts integer group labels from a named channel.
+     *
+     * Finds the channel named groupsColumn in data.channelNames().
+     * Values are rounded to nearest integer and returned as 0-based class indices.
+     * If the channel is not found, tries 1-based numeric index.
+     * If still not found, throws DataException.
+     */
+    [[nodiscard]]
+    std::vector<int> _extractLabels(const MultivariateSeries& data,
+                                    const std::string& groupsColumn) const;
 };
 
 } // namespace loki::multivariate

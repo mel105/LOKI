@@ -308,7 +308,7 @@ void PlotMultivariate::plotCorrelationMatrix(const MultivariateSeries& data,
     dataStr += "EOD";
     gp(dataStr);
 
-    gp("plot $mat matrix rowheaders columnheaders using 1:2:3 with image");
+    gp("plot $mat matrix using 1:2:3 with image");
 
     LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
 }
@@ -360,7 +360,7 @@ void PlotMultivariate::plotCcfHeatmap(const MultivariateSeries& data,
     }
     dataStr += "EOD";
     gp(dataStr);
-    gp("plot $ccf matrix rowheaders columnheaders using 1:2:3 with image");
+    gp("plot $ccf matrix using 1:2:3 with image");
 
     LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
 }
@@ -627,7 +627,7 @@ void PlotMultivariate::plotVarCoefficients(const VarResult& var,
         }
         db += "EOD";
         gp(db);
-        gp("plot $coeff matrix rowheaders columnheaders using 1:2:3 with image");
+        gp("plot $coeff matrix using 1:2:3 with image");
 
         LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
     }
@@ -725,7 +725,7 @@ void PlotMultivariate::plotGrangerHeatmap(const VarResult& var,
     }
     db += "EOD";
     gp(db);
-    gp("plot $gr matrix rowheaders columnheaders using 1:2:3 with image");
+    gp("plot $gr matrix using 1:2:3 with image");
 
     LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
 }
@@ -776,7 +776,7 @@ void PlotMultivariate::plotFactorLoadings(const FactorAnalysisResult& fa,
     }
     db += "EOD";
     gp(db);
-    gp("plot $fl matrix rowheaders columnheaders using 1:2:3 with image");
+    gp("plot $fl matrix using 1:2:3 with image");
 
     LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
 }
@@ -968,7 +968,7 @@ void PlotMultivariate::plotLdaConfusion(const LdaResult& lda,
     }
     db += "EOD";
     gp(db);
-    gp("plot $conf matrix rowheaders columnheaders using 1:2:3 with image");
+    gp("plot $conf matrix using 1:2:3 with image");
 
     LOKI_INFO("PlotMultivariate: wrote " + outFile.filename().string());
 }
