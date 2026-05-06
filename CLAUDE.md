@@ -12,7 +12,8 @@ LOKI is a modular C++20 scientific data analysis framework.
 The name originates from the Norse god of mischief -- the project began as a
 toolkit for detecting false (inhomogeneous) events in climatological time series.
 It has since grown into a general-purpose framework covering time series analysis,
-spatial interpolation, multivariate statistics, and geodetic computation.
+spatial interpolation, multivariate statistics, geodetic computation, and GNSS
+processing.
 
 *LOKI: originally a detector of false events in observational data; now a
 general-purpose toolkit for quantitative analysis of scientific datasets.*
@@ -20,8 +21,15 @@ general-purpose toolkit for quantitative analysis of scientific datasets.*
 Current domains:
 - Time series analysis (1D): complete, see module inventory below.
 - Spatial analysis (2D): complete.
-- Multivariate analysis: planned -- loki_multivariate.
-- Geodetic computations: is next -- loki_geodesy.
+- Multivariate analysis: complete -- loki_multivariate.
+- Geodetic computations: complete -- loki_geodesy.
+
+Planned domains (see Long-Term Roadmap section):
+- GNSS processing: loki_gnss, loki_gnss_rail
+- Climatological GNSS analysis: loki_climatology
+- Physical geodesy and gravity: loki_gravity
+- Earth observation: loki_eo
+- Seismology: loki_seismology
 
 ---
 
@@ -34,42 +42,6 @@ Current domains:
 
 ---
 
-## Publication Workflow
-
-### Two-document structure
-LOKI documentation is published as two separate PDF documents written in LaTeX:
-- **Part A (Theory)** -- Slovak. Mathematical foundations and algorithmic description
-  of all modules. Target audience: researchers and developers.
-- **Part B (Manual)** -- Slovak. User guide, configuration reference, worked examples.
-  Target audience: users of LOKI applications.
-
-### LaTeX conventions
-- One chapter per `.tex` file. Main document uses `\include{kapitola}`.
-- Chapter structure starts at `\chapter{}` level.
-- Equations numbered per chapter: `(3.1)`, `(3.2)`, ...
-- Mathematical level: university technical textbook (definitions yes,
-  formal proofs no). Rigorous but readable.
-- Examples in Part A only where strictly necessary. Part B carries
-  all practical examples.
-- Bibliography: BibTeX, style to be confirmed per template.
-
-### Part A -- chapter scope (Part I: Time Series)
-Each chapter covers one module or one coherent group of methods.
-Target length: ~10 pages per chapter. Not a hard limit -- let content
-dictate length naturally.
-
-### Thread startup for publication work
-Start thread with: "Working on LOKI -- publikacia, see CLAUDE.md"
-Attach: CLAUDE.md + LaTeX template + chapter(s) to write.
-Claude reads the template first, confirms it is suitable, then begins writing.
-
-### Key references (Part I, Chapter 3 -- Homogeneity)
-- Csörgő, M. & Horváth, L. -- theoretical foundation (book)
-- Jarušková, D. (1996) -- methodological framework
-- Elias, M. & Jarušková, D. -- application/extension (joint paper)
-Full BibTeX entries to be supplied at thread start.
-
-
 ## Workflow Rules
 
 ### One task per conversation thread
@@ -80,6 +52,13 @@ Full BibTeX entries to be supplied at thread start.
 - Discuss the approach first. Do not jump into implementation without agreeing on design.
 - If the task is ambiguous, ask clarifying questions (as plain text) before starting.
 - Propose the function/class signatures and overall structure first, then wait for approval.
+
+### CRITICAL -- always request current files
+- Before diagnosing any bug or writing any patch, always ask for the current version
+  of the relevant file from the user's repository.
+- Never rely on memory of previously delivered code -- it may have been partially applied,
+  modified, or contain already-fixed bugs.
+- This rule prevents duplicate struct definitions, wrong patch targets, and wasted cycles.
 
 ---
 
@@ -191,7 +170,8 @@ All plot output files follow this naming convention:
 - **program** : `core` | `homogeneity` | `outlier` | `filter` | `regression` |
                 `stationarity` | `arima` | `ssa` | `decomposition` | `spectral` |
                 `kalman` | `qc` | `clustering` | `simulate` | `evt` | `kriging` |
-                `spline` | `spatial`
+                `spline` | `spatial` | `multivariate` | `geodesy` | `gnss` |
+                `climatology` | `gnss_rail` | `gravity` | `eo` | `seismology`
 - **dataset** : input filename stem without extension
 - **parameter** : series `componentName` from metadata
 - **plottype** : descriptive short name
@@ -210,9 +190,14 @@ All plot output files follow this naming convention:
 - **CRITICAL -- gnuplot pipe and tmp files**: Use gnuplot inline data (`plot '-'`) for
   single-dataset plots. Only use tmp files for formats that cannot be sent inline
   (e.g. `nonuniform matrix` for spectrograms) -- call `ofs.flush(); ofs.close()` explicitly.
-- **gnuplot `-persist` flag is REMOVED** from `gnuplot.cpp`. Do not add it back.
+- **Gnuplot `-persist` flag is REMOVED** from `gnuplot.cpp`. Do not add it back.
 - **CRITICAL -- multiplot and inline data**: `plot '-'` inside `set multiplot` is NOT
   supported. Always use datablocks (`$name << EOD`) defined before `set multiplot`.
+- **CRITICAL -- gnuplot heatmaps**: Never use `matrix rowheaders columnheaders` in
+  `plot $data matrix using 1:2:3 with image` commands. Use `matrix using 1:2:3 with image`
+  only, with axis labels set via `set xtics` / `set ytics` explicitly. Using rowheaders
+  causes gnuplot to consume the first row/column as labels, shifting all data indices
+  and displaying numeric values instead of channel names on axes.
 - **CRITICAL -- gnuplot user-defined functions via pipe**: Do NOT define gnuplot
   variables and then reference them in a function definition via separate `gp()` calls.
   Each `gp()` call is a separate `fputs` -- variables are not committed before the
@@ -227,62 +212,54 @@ All plot output files follow this naming convention:
 LOKI is no longer limited to time series. The framework covers:
 - 1D time series analysis (complete)
 - 2D spatial analysis (loki_spatial -- complete)
-- Multivariate analysis (loki_multivariate -- next)
+- Multivariate analysis (loki_multivariate -- complete)
 - Geodetic computations (loki_geodesy -- complete)
+- GNSS processing, climatology, gravity, EO, seismology (planned)
 
 ### Architecture principle -- math primitives in loki_core
 All reusable math primitives go into `loki_core/math/` (flat, no sub-directories).
 Module libraries are thin orchestrators: pipeline, protocol, CSV, plots.
-This enables all future modules (spatial, multivariate) to reuse the same math
-without cross-module dependencies.
+This enables all future modules to reuse the same math without cross-module dependencies.
 
-### Dependency graph
+### Dependency graph (complete + planned)
 ```
 loki_core
     ^
     |
-loki_outlier          (depends on loki_core only)
+loki_outlier          (depends on loki_core only)                   <- COMPLETE
     ^
     |
-loki_homogeneity      (depends on loki_core + loki_outlier)        <- COMPLETE
-
+loki_homogeneity      (depends on loki_core + loki_outlier)         <- COMPLETE
 loki_filter           (depends on loki_core only)                   <- COMPLETE
-
 loki_regression       (depends on loki_core only)                   <- COMPLETE
-
 loki_stationarity     (depends on loki_core only)                   <- COMPLETE
-
-loki_arima            (depends on loki_core + loki_stationarity)   <- COMPLETE
-
+loki_arima            (depends on loki_core + loki_stationarity)    <- COMPLETE
 loki_ssa              (depends on loki_core only)                   <- COMPLETE
-
 loki_decomposition    (depends on loki_core only)                   <- COMPLETE
-
 loki_spectral         (depends on loki_core only)                   <- COMPLETE
-
 loki_kalman           (depends on loki_core only)                   <- COMPLETE
-
-loki_qc               (depends on loki_core + loki_outlier)        <- COMPLETE
-
+loki_qc               (depends on loki_core + loki_outlier)         <- COMPLETE
 loki_clustering       (depends on loki_core only)                   <- COMPLETE
-
 loki_simulate         (depends on loki_core + loki_arima +
                         loki_kalman)                                <- COMPLETE
-
 loki_evt              (depends on loki_core only)                   <- COMPLETE
-
 loki_kriging          (depends on loki_core only)                   <- COMPLETE
-
 loki_spline           (depends on loki_core only)                   <- COMPLETE
-
 loki_spatial          (depends on loki_core only)                   <- COMPLETE
-
 loki_geodesy          (depends on loki_core only)                   <- COMPLETE
+loki_multivariate     (depends on loki_core only)                   <- COMPLETE
 
-loki_multivariate     (depends on loki_core only)                   <- NEXT
-
-loki_gnss
-
+loki_gnss             (depends on loki_core + loki_geodesy)        <- PLANNED
+loki_climatology      (depends on loki_core + loki_gnss +
+                        loki_spatial + existing analysis modules)  <- PLANNED
+loki_gnss_rail        (depends on loki_core + loki_gnss +
+                        loki_kalman + loki_clustering)             <- PLANNED
+loki_gravity          (depends on loki_core + loki_geodesy +
+                        loki_spatial)                              <- PLANNED
+loki_eo               (depends on loki_core + loki_spatial +
+                        loki_homogeneity)                          <- PLANNED
+loki_seismology       (depends on loki_core + loki_gnss +
+                        loki_spectral + loki_kalman)               <- PLANNED
 ```
 
 ### Rules
@@ -316,12 +293,18 @@ loki/
 |   +-- loki_qc/
 |   +-- loki_clustering/
 |   +-- loki_simulate/
-|   +-- loki_evt/                    <- COMPLETE
-|   +-- loki_kriging/                <- COMPLETE
-|   +-- loki_spline/                 <- COMPLETE
-|   +-- loki_spatial/                <- COMPLETE
-|   +-- loki_geodesy/                <- COMPLETE
-|   +-- loki_multivariate            <- NEXT
+|   +-- loki_evt/
+|   +-- loki_kriging/
+|   +-- loki_spline/
+|   +-- loki_spatial/
+|   +-- loki_geodesy/
+|   +-- loki_multivariate/           <- COMPLETE
+|   +-- loki_gnss/                   <- PLANNED
+|   +-- loki_climatology/            <- PLANNED
+|   +-- loki_gnss_rail/              <- PLANNED
+|   +-- loki_gravity/                <- PLANNED
+|   +-- loki_eo/                     <- PLANNED
+|   +-- loki_seismology/             <- PLANNED
 +-- libs/
 |   +-- loki_core/
 |   |   +-- include/loki/
@@ -330,13 +313,20 @@ loki/
 |   |       |                  medianYearSeries)
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
 |   |       |                  wCorrelation, sampling, bootstrap, permutation)
-|   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader, geodesyLoader)
+|   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader,
+|   |       |                  geodesyLoader,
+|   |       |                  gnssLoader, sp3Loader, ionexLoader, antexLoader,
+|   |       |                  sinexLoader, vmf3Loader, netcdfLoader, geotiffLoader,
+|   |       |                  dbManager, dbWriter, dbReader, dbSchema)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
 |   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead,
 |   |                          krigingTypes, krigingVariogram, krigingBase,
 |   |                          simpleKriging, ordinaryKriging, universalKriging,
 |   |                          krigingFactory, bspline, bsplineFit,
-|   |                          spatialTypes, spatialVariogram, rbf, naturalNeighbor)
+|   |                          spatialTypes, spatialVariogram, rbf, naturalNeighbor,
+|   |                          ellipsoid, interpolation,
+|   |                          keplerOrbit, sphericalHarmonics, legendrePolynomials,
+|   |                          stokesIntegral)
 |   +-- loki_outlier/
 |   +-- loki_homogeneity/
 |   +-- loki_filter/
@@ -350,27 +340,31 @@ loki/
 |   +-- loki_qc/
 |   +-- loki_clustering/
 |   +-- loki_simulate/
-|   +-- loki_evt/                    <- COMPLETE
-|   +-- loki_kriging/                <- COMPLETE
-|   +-- loki_spline/                 <- COMPLETE
-|   +-- loki_spatial/                <- COMPLETE
-|   +-- loki_geodesy/                <- COMPLETE
-|   +-- loki_multivariate/           <- NEXT
+|   +-- loki_evt/
+|   +-- loki_kriging/
+|   +-- loki_spline/
+|   +-- loki_spatial/
+|   +-- loki_geodesy/
+|   +-- loki_multivariate/           <- COMPLETE
+|   +-- loki_gnss/                   <- PLANNED
+|   +-- loki_climatology/            <- PLANNED
+|   +-- loki_gnss_rail/              <- PLANNED
+|   +-- loki_gravity/                <- PLANNED
+|   +-- loki_eo/                     <- PLANNED
+|   +-- loki_seismology/             <- PLANNED
 +-- tests/
-|   +-- CMakeLists.txt
-|   +-- demo/
-|   |   +-- CMakeLists.txt
-|   |   +-- demo_sampling.cpp
-|   |   +-- demo_bootstrap.cpp
-|   |   +-- demo_permutation.cpp
-|   |   +-- input/
-|   |   +-- png/
-|   |   +-- protocol/
-|   +-- unit/
 +-- config/
 +-- scripts/
 |   +-- loki.sh
++-- data/
+|   +-- gnss/                        -- downloaded GNSS products (gitignored)
+|   +-- era5/                        -- ERA5/NWM NetCDF files (gitignored)
+|   +-- geotiff/                     -- SAR/optical raster data (gitignored)
++-- db/
+|   +-- loki.db                      -- SQLite database (gitignored)
 +-- docs/
++-- tools/
+    +-- gnss_download/               -- shell scripts for GNSS product download
 ```
 
 ---
@@ -382,358 +376,7 @@ loki/
 | `Eigen3` | 3.4.0 | Linear algebra, LSQ, SVD, Kalman |
 | `nlohmann_json` | 3.11.3 | Configuration files |
 | `Catch2` | 3.5.2 | Unit and integration tests |
-
----
-
-## Build Instructions
-
-### Platform: Windows MINGW64 shell, UCRT64 toolchain (GCC 13.2)
-
-```bash
-./scripts/loki.sh build spline --copy-dlls
-./scripts/loki.sh run spline
-./scripts/loki.sh test --rebuild
-```
-
-### CMake target name collision
-Executable: `loki_spline_app` with `OUTPUT_NAME "loki_spline"`.
-Same pattern for all apps: library target != executable target name.
-
-### Runtime DLLs (Windows)
-`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`
-`--copy-dlls` flag in `loki.sh` handles this automatically.
-
-### Eigen3 -- SYSTEM includes (critical)
-```cmake
-target_include_directories(loki_core SYSTEM PUBLIC
-    $<TARGET_PROPERTY:Eigen3::Eigen,INTERFACE_INCLUDE_DIRECTORIES>)
-```
-
-### loki.sh registration (all apps)
-```
-["homogeneity"]="loki_homogeneity_app"
-["outlier"]="loki_outlier_app"
-["filter"]="loki_filter_app"
-["regression"]="loki_regression_app"
-["stationarity"]="loki_stationarity_app"
-["arima"]="loki_arima_app"
-["ssa"]="loki_ssa_app"
-["decomposition"]="loki_decomposition_app"
-["spectral"]="loki_spectral_app"
-["kalman"]="loki_kalman_app"
-["qc"]="loki_qc_app"
-["clustering"]="loki_clustering_app"
-["simulate"]="loki_simulate_app"
-["evt"]="loki_evt_app"              <- COMPLETE
-["kriging"]="loki_kriging_app"      <- COMPLETE
-["spline"]="loki_spline_app"        <- COMPLETE
-["spatial"]="loki_spatial_app"      <- COMPLETE
-["geodesy"]="loki_geodesy_app"      <- COMPLETE
-["multivariate"]="loki_multivariate_app" <- NEXT
-```
-
----
-
-## Implemented Modules
-
-### loki_core -- complete
-- `exceptions.hpp` -- full hierarchy
-- `version.hpp` -- `0.1.0`
-- `nanPolicy.hpp` -- `NanPolicy { THROW, SKIP, PROPAGATE }`
-- `logger.hpp / .cpp`
-- `config.hpp` -- all config structs including `PlotConfig`, `NonlinearConfig`,
-                  `OutlierConfig`, `StationarityConfig`, `ArimaConfig`, `SsaConfig`,
-                  `DecompositionConfig`, `SpectralConfig`, `KalmanConfig`, `QcConfig`,
-                  `ClusteringConfig`, `SplineFilterConfig`, `EvtConfig`,
-                  `KrigingConfig`, `SplineConfig` (with `BSplineConfig`, `NurbsConfig`),
-                  `SpatialConfig` (with `SpatialInputConfig`, `SpatialGridConfig`,
-                  `SpatialKrigingSubConfig`, `SpatialIdwConfig`, `SpatialRbfConfig`,
-                  `SpatialBSplineSurfaceConfig`)
-- `configLoader.hpp / .cpp` -- all parse methods including `_parseKriging`,
-                               `_parseSpline`, `_parseSpatial`
-- `timeStamp.hpp / .cpp`
-- `timeSeries.hpp / .cpp`
-- `gapFiller.hpp / .cpp` -- Strategy::SPLINE added
-- `deseasonalizer.hpp / .cpp`
-- `medianYearSeries.hpp / .cpp`
-- `descriptive.hpp / .cpp`
-- `filter.hpp / .cpp`
-- `distributions.hpp / .cpp`
-- `hypothesis.hpp / .cpp`
-- `metrics.hpp / .cpp`
-- `wCorrelation.hpp / .cpp`
-- `sampling.hpp / .cpp`
-- `bootstrap.hpp / .cpp`
-- `permutation.hpp / .cpp`
-- `loader.hpp / .cpp`, `dataManager.hpp / .cpp`
-- `gnuplot.hpp / .cpp` -- `-persist` flag REMOVED
-- `plot.hpp / .cpp`
-- `spatialLoader.hpp / .cpp` -- namespace `loki::io`; loads scatter data;
-                                auto-detects GSLIB format (2nd comment line = integer N);
-                                filters no-data values per column independently
-
-### loki_core/math -- complete
-- `lsqResult.hpp`
-- `lsq.hpp / .cpp`
-- `designMatrix.hpp / .cpp`
-- `hatMatrix.hpp / .cpp`
-- `svd.hpp` -- header-only (BDCSVD linking bug workaround)
-- `lm.hpp / .cpp`
-- `lagMatrix.hpp / .cpp`
-- `embedMatrix.hpp / .cpp`
-- `randomizedSvd.hpp / .cpp`
-- `spline.hpp / .cpp`              -- CubicSpline (natural/not-a-knot/clamped)
-- `nelderMead.hpp / .cpp`
-- `krigingTypes.hpp`               -- VariogramPoint, VariogramFitResult,
-                                      KrigingPrediction, CrossValidationResult
-- `krigingVariogram.hpp / .cpp`    -- empirical variogram + theoretical models + WLS fit
-- `krigingBase.hpp / .cpp`         -- KrigingBase + predictGrid + O(n^2) LOO crossValidate
-- `simpleKriging.hpp / .cpp`       -- SimpleKriging
-- `ordinaryKriging.hpp / .cpp`     -- OrdinaryKriging
-- `universalKriging.hpp / .cpp`    -- UniversalKriging
-- `krigingFactory.hpp`             -- createKriging() header-only factory
-- `bspline.hpp / .cpp`             -- B-spline basis (de Boor), knot vectors,
-                                      normaliseParams, evalBSpline
-- `bsplineFit.hpp / .cpp`          -- BSplineFitResult, CvPoint, fitBSpline,
-                                      crossValidateBSpline, selectOptimalNCtrl
-- `spatialTypes.hpp`               -- SpatialPoint, GridExtent, SpatialGrid,
-                                      SpatialPrediction, SpatialCrossValidationResult
-- `spatialVariogram.hpp / .cpp`    -- empirical variogram via Euclidean lag;
-                                      delegates fitting to fitVariogram()
-- `rbf.hpp / .cpp`                 -- RBF kernels (TPS, cubic, multiquadric, IM, Gaussian);
-                                      saddle-point system; coordinate normalisation to [0,1]
-                                      (critical for metre-scale data -- without it
-                                      TPS phi ~ 1e7, cond ~ 1e20, rank-deficient);
-                                      Tikhonov regularisation lambda=1e-6*max(Phi);
-                                      normX/normY/xMin/yMin/scale stored in RbfFitResult
-- `naturalNeighbor.hpp / .cpp`     -- Bowyer-Watson Delaunay triangulation;
-                                      Sibson weights via circumcentre stolen-area;
-                                      nearest-point fallback outside convex hull
-
-### loki_outlier -- complete (O1-O4)
-### loki_homogeneity -- complete
-### loki_stationarity -- complete
-### loki_filter -- complete (vrátane SplineFilter + FilterAnalyzer)
-### loki_regression -- complete (R1-R8)
-### loki_arima -- complete
-### loki_ssa -- complete (S1-S5)
-### loki_decomposition -- complete
-### loki_spectral -- complete
-### loki_kalman -- complete
-### loki_qc -- complete
-### loki_clustering -- complete
-### loki_simulate -- complete
-### loki_evt -- complete
-### loki_kriging -- complete (temporal only; spatial/space_time = placeholder)
-### loki_spline -- COMPLETE
-### loki_spatial -- COMPLETE
-
-**loki_spatial key implementation notes:**
-- Methods: kriging (simple/ordinary/universal), idw, rbf, natural_neighbor,
-  bspline_surface, nurbs (placeholder -- always throws AlgorithmException)
-- LOO cross-validation: n explicit refits for all Kriging variants.
-  The Dubrule shortcut e_i = alpha_i / K^{-1}_{ii} is only exact for
-  Simple Kriging. For OK/UK the upper-left block of the extended matrix
-  inverse is NOT the inverse of K -- explicit refits are mandatory.
-- SpatialAnalyzer::run() returns SpatialResult (not void) -- plotter
-  receives the result from main, not called inside analyzer.
-- _parseSpatial() must be registered in configLoader.cpp:
-  cfg.spatial = _parseSpatial(j.value("spatial", json::object()));
-  Without this, spatial.input is never read from JSON and all loader
-  defaults are used (wrong value_columns, wrong no_data_value, etc.).
-- bilinear interpolation (interpBilinear) exists in spatialInterp.hpp/.cpp
-  as an internal utility (resampling regular grid to another regular grid),
-  NOT exposed as a method= option in the pipeline.
-- NURBS: placeholder only. Decision pending on whether to implement as
-  part of loki_spatial or as separate loki_nurbs module.
-
----
-
-## GapFiller::Strategy::SPLINE -- Deployment Status
-
-| App | Status |
-|---|---|
-| `loki_filter` | DONE |
-| `loki_homogeneity` | DONE |
-| `loki_regression` | DONE |
-| `loki_arima` | DONE |
-| `loki_ssa` | DONE |
-| `loki_decomposition` | DONE |
-| `loki_spectral` | DONE |
-| `loki_kalman` | DONE |
-| `loki_stationarity` | DONE |
-| `loki_qc` | N/A |
-| `loki_clustering` | DONE |
-| `loki_simulate` | DONE |
-| `loki_evt` | DONE |
-| `loki_kriging` | DONE |
-| `loki_spline` | N/A (spline is the output, not preprocessing) |
-
----
-
-## Planned Modules
-
-### loki_multivariate -- PLANNED
-
-**Purpose:** Analysis of multiple simultaneous time series or multivariate
-observation vectors.
-
-**Planned functionality:**
-- PCA (Principal Component Analysis) on multivariate time series
-- ICA (Independent Component Analysis)
-- MSSA (Multivariate SSA) -- extension of existing loki_ssa
-- VAR model (Vector Autoregression)
-- Cross-correlation matrix and lag analysis
-- Granger causality testing
-- Hungarian algorithm (optimal assignment between station sets / segments)
-- Mahalanobis distance (extension of loki_outlier)
-- Covariance/correlation matrix visualisation
-
-**Input:** multiple time series loaded simultaneously (multi-column CSV or
-multiple files merged). Uses existing DataManager merge functionality.
-
-**Notes:**
-- Hungarian algorithm is relevant for matching clustered phases across
-  multiple sensor channels, or for station-to-station assignment problems.
-- Granger causality connects to the multi-station GNSS use case (does IWV
-  at station A predict IWV at station B?).
-- PCA/ICA can serve as a pre-processing step before loki_spatial (reduce
-  multivariate field to dominant spatial modes).
-
-### loki_multivariate -- DESIGN COMPLETE, IMPLEMENTATION NEXT
-
-**Purpose:** Multivariate time series analysis. One program, task-based
-pipeline controlled by JSON config. Each method has `enabled` flag +
-method-specific parameters.
-
-**Planned methods:**
-- PCA (SVD-based, nie normal equations)
-- MSSA (multivariate SSA -- rozšírenie loki_ssa na N kanalov)
-- Factor analysis (ML alebo PCA-based, Varimax rotácia)
-- CCA (Canonical Correlation Analysis)
-- LDA/QDA (Linear/Quadratic Discriminant Analysis)
-- VAR + Granger causality (Vector Autoregression, AIC/BIC rad)
-- MANOVA/ANCOVA
-- CCF matrix (cross-correlation function medzi všetkými pármi)
-- Mahalanobis outlier detection (wrapper -- jednoduchý)
-- Multivariate clustering (wrapper nad loki_clustering s Mahalanobis metrikou)
-
-**Use cases:**
-- UFG (Unaccounted For Gas): VAR model na [vstup, výstup, ťažba,
-  zásobníky, distribúcia, teplota] -- UFG = rezíduum modelu.
-  PCA na redukciu korelovaných vstupov.
-- GNSS sieť: PCA/MSSA na koordinátové reziduá viacerých staníc --
-  odhalí spoločné módy (atmosferický loading, tektonický pohyb).
-- Klimatológia IWV: CCA medzi skupinami staníc, Granger kauzalita.
-
-**JSON config pattern:**
-```json
-{
-    "workspace": "C:/data/project",
-    "multivariate": {
-        "input": {
-            "files": ["station_A.csv", "station_B.csv"],
-            "time_format": "mjd",
-            "delimiter": ";"
-        },
-        "pca": { "enabled": true, "n_components": 0, "standardize": true },
-        "mssa": { "enabled": true, "window": 365, "n_components": 6 },
-        "var": { "enabled": true, "max_order": 10, "granger": true },
-        "manova": { "enabled": false, "groups_column": "group" },
-        "factor": { "enabled": false, "n_factors": 3, "rotation": "varimax" },
-        "cca": { "enabled": false, "group_x": [0,1,2], "group_y": [3,4] },
-        "lda": { "enabled": false, "groups_column": "group" },
-        "ccf": { "enabled": true, "max_lag": 100 }
-    }
-}
-```
-
-**Loader:** aktuálny Loader + DataManager zvláda multivariate už teraz
-(LoadResult.series je vector<TimeSeries>). Treba pridať:
-- `MultivariateSeries` wrapper: Eigen::MatrixXd (riadky=čas, stĺpce=kanály)
-  + timestamps + názvy kanálov. Konverzia z vector<LoadResult>.
-- Dva input režimy: (1) jeden súbor s N stĺpcami, (2) N súborov,
-  každý jedna stanica/kanál -- oboje cez JSON.
-
-**Do loki_core/math/ (nové):**
-- `multivariateSeries.hpp` -- MultivariateSeries wrapper
-- `covMatrix.hpp/.cpp` -- odhad kovariančnej matice (sample, Ledoit-Wolf shrinkage)
-- `pca.hpp/.cpp` -- SVD-based PCA, loadings, scores, explained variance, scree
-- `factorAnalysis.hpp/.cpp` -- komunality, Varimax rotácia
-- `cca.hpp/.cpp` -- kanonická korelácia
-- `lda.hpp/.cpp` -- LDA/QDA
-- `var.hpp/.cpp` -- VAR(p), AIC/BIC výber rádu, Granger F-test
-- `mssa.hpp/.cpp` -- multivariate SSA trajectory matrix pre N kanálov
-
-**Do libs/loki_multivariate:**
-- `multivariateAnalyzer.hpp/.cpp` -- orchestrátor, task prepínač
-- `multivariateResult.hpp` -- výsledky všetkých metód
-- `plotMultivariate.hpp/.cpp` -- scree plot, biplot, score scatter,
-  CCF heatmap, korelačná matica, VAR impulse response
-- `main.cpp` -- rovnaký pattern ako loki_homogeneity main.cpp
-
-**Output:** CSV, IMG, PROTOCOLS, LOG -- štandardné LOKI output adresáre.
-
-**Thread startup:** priložiť CLAUDE.md + config.hpp + configLoader.hpp
-  + loader.hpp + gnuplot.hpp + main.cpp z loki_homogeneity ako vzor.
-A do Module Roadmap tabuľky zmeň:
-| planned | loki_multivariate   | new app | DESIGN COMPLETE, IMPL NEXT |You said: treba sa zmienit, ze pracujem bud s casovym radom s rozlisenim 6h alebo radom s rozlisenim 1ms.homogenization.json110 linesjsontreba sa zmienit, ze pracujem bud s casovym radom s rozlisenim 6h alebo radom s rozlisenim 1ms. A posielam aj json pre predstavu15:14Claude responded: Pridaj do CLAUDE.Pridaj do CLAUDE.md patchu pre ### loki_multivariate sekciu — za riadok o use cases:
-markdown**Input data characteristics:**
-- Klimatologické IWV: 6h rozlíšenie, 25+ rokov, ~36 000 pozorovaní.
-  Formát: UTC čas v dvoch stĺpcoch (time_columns: [0,1]), delimiter " ",
-  comment_char "%". Vzor: homogenization.json.
-- GNSS geodetické súradnice: GPS čas (week/SOW alebo total seconds),
-  stĺpce X,Y,Z [m]. Drackonitická perióda ~351.4 dní.
-- Senzorové/železničné dáta: 1 Hz až 1 ms rozlíšenie, SIL 4 kontext.
-- Typický vstup pre multivariate: viac súborov rovnakého formátu
-  (jedna stanica = jeden súbor) ALEBO jeden súbor s N hodnotovými stĺpcami.
-A do thread startup riadku pridaj:
-markdown**Thread startup:** priložiť CLAUDE.md + config.hpp + configLoader.hpp
-  + loader.hpp + gnuplot.hpp + main.cpp z loki_homogeneity
-  + homogenization.json ako vzor JSON konfigurácie.
-
----
-
-### loki_geodesy -- IS COMPLETE
-
-Tasks: transform, monte_carlo, distance.
-Coordinate systems: ECEF, GEOD, ENU, SPHERE -- vsetky kombinacie.
-Ellipsoids: WGS84, GRS80, Bessel, Krasovsky, Clarke1866.
-Covariance propagation: analyticky Jacobian (LU solve, nie inverse()).
-MC validation: bezi pre kazdy vstupny bod, ulozi samples do TransformResult.
-Protocol: per-bod input/output sigma a plna kovariancna matica.
-Plots: NxN covariance panel (empirical + analytical) per bod.
-  Diagonal: horizontalny histogram + normalna PDF.
-  Lower triangle: scatter + elipsa chyb + Helmertova krivka.
-  Upper triangle: scatter + regresia + R[p-value].
-GeodesyConfig: explicitny konstruktor (GCC 13 fix); inputSystem/outputSystem
-  ako std::string; enuOriginLat/Lon/H ako separate doubles; protocolDir/imgDir/csvDir.
-InputCoordSystem enum: definovany v coordTransform.hpp, nie v geodesyLoader.
-inputCoordSystemFromString(): definovana v coordTransform.cpp.
-_parseSpatial(): vracia default config (nie haze) ked spatial.input chyba.
-
----
-
-### loki_realtime -- FUTURE (long-term)
-
-**Purpose:** Online/streaming change point and anomaly detection for
-real-time sensor data. Complement to the offline batch processing in
-existing modules.
-
-**Note:** LOKI is primarily a post-processing toolkit. loki_realtime is a
-long-term future goal, not near-term.
-
----
-
-### loki_ml -- FUTURE (long-term)
-
-**Purpose:** Machine learning based anomaly detection and pattern recognition.
-
-**Planned:** Isolation Forest, Local Outlier Factor (LOF), autoencoder-based
-anomaly detection. Separate from statistical methods in loki_outlier.
-
-**Note:** May require an external ML dependency (e.g. a header-only neural
-network library). Design deferred until concrete use case is identified.
+| `SQLite3` | system | Persistent data storage (planned, loki_core/db) |
 
 ---
 
@@ -746,28 +389,15 @@ All `XxxConfig` structs in `config.hpp` follow this pattern.
 
 ### Eigen BDCSVD linking bug -- CRITICAL
 `Eigen::BDCSVD` causes `undefined reference` errors when used in `.cpp` files compiled
-into static libraries on Windows/GCC. Workarounds in place:
+into static libraries on Windows/GCC. Workarounds:
 1. `SvdDecomposition` (`svd.hpp`) is **header-only**.
 2. `CalibrationRegressor` uses `Eigen::JacobiSVD` directly.
-3. `SsaAnalyzer` uses randomized SVD (small internal matrices only).
-4. `loki_kalman` uses `Eigen::LLT` for covariance updates -- safe in static libs.
+3. `loki_multivariate` uses `Eigen::JacobiSVD` for PCA/MSSA/CCA/LDA/Factor.
 Do NOT use `BDCSVD` in any `.cpp` compiled into a static library.
 
 ### Free functions in sub-namespaces -- CRITICAL
 `using namespace loki::stats` in `.cpp` is NOT sufficient for defining free functions.
-Functions end up in global namespace and linker cannot find them.
-Solution: wrap all definitions in explicit `namespace loki::stats { }` block.
-Same applies to `namespace loki::math { }`, `namespace loki::spline { }`, etc.
-
-### MedianYearSeries API
-Constructor: `MedianYearSeries(const TimeSeries& series, Config cfg = Config{})`
-Config field: `cfg.minYears` (NOT `minYearsPerSlot`).
-
-### nelderMead -- must be in loki_core CMakeLists
-`nelderMead.cpp` must be listed in `add_library(loki_core STATIC ...)`.
-Same applies to all new math .cpp files: `bspline.cpp`, `bsplineFit.cpp`,
-`spatialVariogram.cpp`, `rbf.cpp`, `naturalNeighbor.cpp`,
-and future spatial math files.
+Functions end up in global namespace. Wrap all definitions in explicit namespace block.
 
 ### `TimeSeries` API
 - No `observations()` method -- use direct indexing: `ts[i].value`, `ts[i].time`
@@ -784,25 +414,23 @@ and future spatial math files.
 - `-persist` flag REMOVED from gnuplot.cpp -- do not add it back
 - Use `plot '-'` (inline data) instead of tmp files wherever possible
 - `plot '-'` inside `set multiplot` NOT supported -- use datablocks (`$name << EOD`)
-- Do NOT use gnuplot user-defined functions via pipe -- compute curves in C++
-  and send as datablocks (variables are not committed between separate gp() calls)
+- Do NOT use gnuplot user-defined functions via pipe -- compute curves in C++ as datablocks
+- Heatmaps: NEVER use `matrix rowheaders columnheaders`
 
-### loki_spline -- implementation notes
-- `_isNonUniform()` uses `gpsTotalSeconds()` for timestep CV detection.
-  For MJD data, use `ts[i].time.mjd()` instead -- adapt when implementing
-  spatial module which may use MJD or GPS timestamps.
-- CV in `bsplineFit.cpp`: nCtrlMax is clamped to `nObs / folds` to ensure
-  enough training data per fold. For very small series this may reduce the
-  effective search range -- logged as WARNING.
-- `bsplineBasisRow()`: t=1.0 edge case handled explicitly (last basis function = 1).
+### MedianYearSeries API
+Constructor: `MedianYearSeries(const TimeSeries& series, Config cfg = Config{})`
+Config field: `cfg.minYears` (NOT `minYearsPerSlot`).
+
+### nelderMead -- must be in loki_core CMakeLists
+`nelderMead.cpp` must be listed in `add_library(loki_core STATIC ...)`.
+Same applies to all new math `.cpp` files.
 
 ---
 
 ## Statistical / Domain Key Learnings
 
 - SSA window L should be a multiple of the dominant period for clean separation.
-- Classical decomposition: residual variance > 40% is normal for sub-daily
-  climatological data.
+- Classical decomposition: residual variance > 40% is normal for sub-daily climatological data.
 - STL outer loop (n_outer >= 1) needed when seasonal amplitude changes over time.
 - Period in decomposition is always in samples -- 1461 for 6h data (1 year).
 - Draconitic period for GNSS: 351.4 days (not 365.25).
@@ -810,44 +438,453 @@ and future spatial math files.
 - Kalman local_level K = Q/(Q+R); GPS IWV: Q~1e-4, R~4e-6 gives K~0.97.
 - EVT/SIL 4: GPD/POT preferred over GEV/block-maxima for small datasets.
   Profile likelihood CI mandatory for SIL 4 return periods (1e8 hours).
-- Bootstrap: iid bootstrap INVALID for autocorrelated time series.
-  Block bootstrap required.
+- Bootstrap: iid bootstrap INVALID for autocorrelated time series. Block bootstrap required.
 - Kriging: variogram fitting is the most sensitive step.
-  LOO O(n^2) shortcut: e_i = alpha_i / K^{-1}_{ii}.
-- B-spline approximation: nCtrl controls smoothing. CV (one-SE elbow) selects
-  optimal nCtrl automatically. Chord-length knots preferred for non-uniform sampling.
-- Spatial Kriging: lag = Euclidean distance, not time difference.
-  Variogram fitting same procedure as temporal, but isotropy assumption
-  should be verified (directional variograms for anisotropic fields).
-- Spatial RBF: coordinate normalisation to [0,1] is mandatory for CPD kernels
-  (TPS, cubic, multiquadric) on metre-scale data. Without normalisation:
-  phi(r) ~ 1e7, condition number ~ 1e20, system rank-deficient.
-- Spatial LOO CV: explicit n refits required for OK and UK. Dubrule shortcut
-  only valid for SK where K_ext == K (no Lagrange multiplier rows/cols).
-- GSLIB format auto-detection: 2nd comment line = integer N -> N column name
-  lines follow. Without correct GSLIB parsing, colName() mapping is offset
-  by the number of non-name comment lines (e.g. "# Zone A Data" counts as
-  a name line in generic mode, shifting all subsequent column names by 1).
+- B-spline: nCtrl controls smoothing. CV (one-SE elbow) selects optimal nCtrl automatically.
+- Spatial RBF: coordinate normalisation to [0,1] mandatory for CPD kernels.
+- Multivariate GPST+UTC sync: tolerance >= 40s for 2023 data (36s leap offset).
+- Multivariate RADAR -999: not treated as NaN by GapFiller -- dominates PCA/VAR.
+- VAR Granger: assumes stationarity. Non-stationary series must be differenced first.
+- MCD Mahalanobis: approximate (10 C-steps, h=0.75n). Adequate for n>100, contamination<20%.
+- Factor Analysis Varimax: may not converge if max_iter too low. Increase to 1000.
+- GNSS multipath has sidereal periodicity (~23h 56min) -- visible in loki_spectral.
+- BOCPD: prior_beta must be tuned close to actual series variance (default 1.0 fails for
+  climatological variance ~0.001).
+- SNHT recursive mode: min_segment_points >= 3-4 years.
+- PELT mbic is most conservative penalty -- recommended default.
+
+---
+
+## Long-Term Roadmap
+
+This section describes planned modules not yet implemented.
+Implementation order follows the dependency graph.
+
+### Infrastructure (Faza 0) -- prerequisite for all planned modules
+
+#### 0.1 GNSS Data Downloader (`tools/gnss_download/`)
+
+Shell scripts (consistent with C++ project, no Python dependency) for downloading
+GNSS products from public archives. Manual download is acceptable for first tests.
+Key sources:
+- PECNY / GOP: `ftp.pecny.cz/pub/obs/` -- anonymous FTP, no auth required.
+  Station GOPE (Geodetic Observatory Pecny) -- primary test station.
+- CODE Bern: `ftp.aiub.unibe.ch/CODE/YYYY/` -- SP3, CLK, DCB, IONEX, no auth.
+- CDDIS: `cddis.nasa.gov` -- requires NASA Earthdata account (OAuth).
+  Use Earthdata Download CLI (`pip install earthdata`) or browser download.
+- IGS: `files.igs.org/pub/station/general/` -- ANTEX, no auth.
+- TU Wien: `vmf.geo.tuwien.ac.at` -- VMF3, GPT3, no auth.
+- IERS: `iers.org` -- leap-seconds.list, EOP, no auth.
+- EUREF: `epncb.oma.be` -- EUREF EPN siet, ETRS89
+
+Products needed per processing mode:
+```
+SPP (minimal test):
+  RINEX obs (.rnx)          -- GOPE, 1 day
+  RINEX nav mixed (.rnx)    -- broadcast ephemeris, same day
+  igs20.atx                 -- antenna calibration, one-time download
+
+PPP (adds):
+  SP3c (.sp3)               -- precise ephemeris, IGS final (~13d delay)
+  RINEX CLK (.clk)          -- precise clocks, IGS or CODE
+  IONEX (.ionex)            -- TEC maps, CODE or IGS
+  DCB / SINEX BIAS (.dcb / .bia) -- code biases, CODE
+
+ZTD validation (adds):
+  IGS ZTD products (SINEX TRO .tro)
+  VMF3 grid (.H00/.H06/.H12/.H18)
+  RINEX MET (.met)          -- meteorological observations
+
+One-time manual steps:
+  Ocean loading BLQ         -- holt.oso.chalmers.se/loading/
+  leap-seconds.list         -- iers.org
+```
+
+#### 0.2 New loki_core/io/ loaders (C++)
+
+```
+gnssLoader.hpp/.cpp       -- RINEX obs 2.x/3.x, nav, MET parser
+sp3Loader.hpp/.cpp        -- SP3a/SP3c precise ephemeris
+ionexLoader.hpp/.cpp      -- IONEX TEC maps
+antexLoader.hpp/.cpp      -- ANTEX antenna calibrations (PCO/PCV)
+sinexLoader.hpp/.cpp      -- SINEX station coordinates, ZTD products
+vmf3Loader.hpp/.cpp       -- VMF3 gridded mapping function data
+netcdfLoader.hpp/.cpp     -- ERA5/GRACE NetCDF (for loki_eo, loki_gravity)
+geotiffLoader.hpp/.cpp    -- GeoTIFF raster data (for loki_eo)
+```
+
+All loaders return standard LOKI types (TimeSeries, spatial datasets).
+
+#### 0.3 SQLite database layer (loki_core/io/)
+
+Central persistent store for multi-session and multi-station data. Enables building
+long time series (e.g. GOPE ZTD archive) across multiple download sessions and
+feeding them into analysis modules without re-parsing raw files.
+
+```
+dbSchema.hpp              -- CREATE TABLE definitions
+dbManager.hpp/.cpp        -- open/close connection, transaction management
+dbWriter.hpp/.cpp         -- INSERT: positions, ztd_series, era5_grid, qc_log, ...
+dbReader.hpp/.cpp         -- SELECT -> TimeSeries, SpatialDataset
+```
+
+Schema (key tables):
+```sql
+stations      (id, name, lat, lon, h, itrf_x, itrf_y, itrf_z, network)
+obs_summary   (station_id, epoch, n_gps, n_glo, n_gal, n_bds,
+               pdop, hdop, mean_snr, cycle_slip_count, mp1_rms, mp2_rms)
+positions     (station_id, epoch, method, x, y, z, lat, lon, h,
+               sigma_x, sigma_y, sigma_z, n_sat, raim_ok, hpl, vpl)
+ztd_series    (station_id, epoch, source, ztd, zhd, zwd, sigma_ztd)
+iwv_series    (station_id, epoch, source, iwv, sigma_iwv)
+era5_grid     (lat, lon, epoch, t2m, sp, tcwv, source)
+integrity_log (station_id, epoch, pdop, hpl, vpl, raim_status,
+               n_excluded_sats, alert_flag)
+track_positions (session_id, epoch, s_along_track, lat, lon, h,
+                 v, sigma_pos, sigma_v, integrity_flag)
+qc_log        (station_id, date, obs_completeness, mean_snr,
+               cycle_slip_rate, mp1_rms, qc_grade)
+```
+
+ERA5/NWM data stored in `era5_grid` allows selection of time series at any
+(lat, lon) point for blind model analysis, homogeneity testing, and validation.
+
+#### 0.4 New loki_core/math/ primitives
+
+```
+interpolation.hpp/.cpp    -- Lagrange order 1-10 (SP3 standard: order 9)
+                             cubic spline interpolation (alternative)
+keplerOrbit.hpp/.cpp      -- Kepler equations -> ECEF satellite position
+                             (broadcast ephemeris -> satellite position)
+sphericalHarmonics.hpp/.cpp -- associated Legendre functions,
+                               synthesis/analysis of spherical harmonics
+                               (for loki_gravity)
+legendrePolynomials.hpp/.cpp -- normalized associated Legendre functions
+stokesIntegral.hpp/.cpp   -- gravity anomaly -> geoid undulation
+```
+
+Note: `ellipsoid.hpp` already exists in `loki_core/math/` (from loki_geodesy).
+`interpolation.hpp` is generic and reusable across all future modules.
+
+---
+
+### loki_gnss -- GNSS Processing Engine
+
+**Philosophy:** Not a replacement for RTKLIB. An analytical layer over GNSS data
+integrated with the LOKI ecosystem. Every output (ZTD, residuals, position,
+integrity) is a TimeSeries or spatial dataset directly consumable by other modules.
+
+**Prerequisite:** loki_geodesy COMPLETE. loki_core/math/interpolation COMPLETE.
+
+**Internal structure:**
+```
+libs/loki_gnss/include/loki/gnss/
+  io/
+    gnssTypes.hpp           -- GnssObs, ObsEpoch, ObsFile,
+                               BroadcastEph (GPS/GLO/GAL/BDS),
+                               SP3Epoch, ClockCorrection,
+                               TecMap, AntennaCalib, DcbBias
+    rinexObsParser.hpp/.cpp -- RINEX 2.x + 3.x obs (GPS-only first)
+    rinexNavParser.hpp/.cpp -- RINEX 2.x + 3.x nav (multi-GNSS)
+    sp3Parser.hpp/.cpp      -- SP3a/SP3c
+    clkParser.hpp/.cpp      -- RINEX CLK
+    ionexParser.hpp/.cpp    -- IONEX TEC maps
+    antexParser.hpp/.cpp    -- ANTEX PCO/PCV
+    dcbParser.hpp/.cpp      -- CODE DCB / SINEX BIAS OSB
+    leapSeconds.hpp/.cpp    -- GPS<->UTC conversion (IERS table)
+    sbasParser.hpp/.cpp     -- SBAS L1 messages (RINEX B / raw binary stream)
+                               EGNOS v2 message types 0-28
+                               EGNOS v3 DFMC message types 31-40
+                               GEO satellite almanac (type 17)
+                               supported GEO: PRN 120, 123, 126, 136 (EGNOS)
+  geometry/
+    satPosition.hpp/.cpp    -- satellite position from broadcast (Kepler->ECEF)
+                               position from SP3 (Lagrange interpolation order 9)
+                               clock correction (broadcast / CLK RINEX)
+    satVisibility.hpp/.cpp  -- elevation, azimuth
+                               (calls loki_geodesy::CoordTransform)
+                               elevation mask (configurable, default 5 deg)
+    dopCalc.hpp/.cpp        -- GDOP, PDOP, HDOP, VDOP, TDOP per epoch
+                               design matrix H assembly
+    skyplot.hpp/.cpp        -- gnuplot polar diagram (elevation vs azimut)
+                               coloring by SNR / system / RAIM status
+  corrections/
+    ionosphere.hpp/.cpp     -- Klobuchar blind model (broadcast coefficients)
+                               IF combination L1/L2 (dual-freq elimination)
+                               IONEX bilinear interpolation
+                               NeQuick (Galileo, v2)
+    troposphere.hpp/.cpp    -- Saastamoinen blind model
+                               GPT3 (no met. measurement needed)
+                               VMF3 mapping function
+                               ZTD from external source
+                               (calls loki_spatial for regional ZTD grid)
+    relativity.hpp/.cpp     -- clock relativistic correction, Sagnac effect
+    antenna.hpp/.cpp        -- PCO + PCV from ANTEX, ARP correction
+    tides.hpp/.cpp          -- solid Earth tides (IERS 2010), ocean loading (BLQ)
+    windup.hpp/.cpp         -- phase windup effect for PPP
+  positioning/
+    sppSolver.hpp/.cpp      -- SPP: weighted LSQ (calls loki_core/math/lsq)
+                               weights: sin2(el), SNR model
+                               iterative solution (pseudorange nonlinearity)
+                               output: ECEF + covariance matrix
+    pppSolver.hpp/.cpp      -- PPP: IF combination L1/L2
+                               SP3 + CLK + DCB/BIAS
+                               ZTD as estimated float parameter
+                               float ambiguity resolution
+                               output: position + ZTD + covariance
+    kalmanTracker.hpp/.cpp  -- Kalman filter tracking
+                               calls loki_kalman primitives
+                               state: [X,Y,Z,cdt,ZTD] or [X,Y,Z,Vx,Vy,Vz,cdt]
+                               Q/R estimation via EM (already in loki_kalman)
+  quality/
+    residuals.hpp/.cpp      -- post-fit residuals per satellite per epoch
+                               pseudorange + phase residuals
+                               normalized residuals (w-test)
+    snrAnalysis.hpp/.cpp    -- SNR vs elevation model fitting
+                               anomaly detection (multipath indicator)
+                               MP1/MP2 combinations
+    cycleSlip.hpp/.cpp      -- geometry-free L4 = L1 - L2
+                               Melbourne-Wubbena combination
+                               calls loki_homogeneity (change point)
+    multipath.hpp/.cpp      -- MP1/MP2 combinations
+                               spectral analysis (sidereal period ~23h56min)
+                               calls loki_spectral, loki_ssa
+    raim.hpp/.cpp           -- classical RAIM: chi2 test on residual vector
+                               FDE: iterative satellite exclusion
+                               Protection Levels HPL, VPL
+                               ARAIM multi-constellation (v2)
+                               robust RAIM heavy-tail noise (research)
+    integrityMonitor.hpp/.cpp -- integrity status per epoch
+                                 RAIM available / not available
+                                 Alert limit comparison (HAL, VAL)
+                                 continuous integrity time series
+    sbasQc.hpp/.cpp           -- EGNOS signal quality monitoring:
+                                 integrity availability (% time HPL < HAL)
+                                 UDRE distribution per satellite -> loki_outlier
+                                 GIVE map -> loki_spatial (IGP grid visualization)
+                                 SBAS-derived vs. PPP-derived position comparison
+                                 SBAS HPL vs. own RAIM HPL comparison
+                                 Service Level assessment: PA / NPA / oceanic
+                                 availability time series -> loki_homogeneity
+                                 (EGNOS degradation during ionospheric storm)
+  output/
+    plotGnss.hpp/.cpp       -- skyplot, DOP vs time, SNR vs elevation,
+                               residuals vs time/elevation,
+                               RAIM test statistic with threshold,
+                               ZTD/IWV time series,
+                               integrity heatmap (epoch x satellite)
+    mapExport.hpp/.cpp      -- trajectory -> GeoJSON
+                               HTML + Leaflet.js + OSM background
+                               (tile download, Mercator -> pixel,
+                                calls loki_geodesy for projection)
+    gnssProtocol.hpp/.cpp   -- positioning summary, satellite statistics,
+                               RAIM report, atmosphere summary
+  gnssAnalyzer.hpp/.cpp     -- main orchestrator, config-driven pipeline
+```
+
+**Input data QC** (integrated into gnssAnalyzer before processing):
+- Observational: epoch completeness, cycle slip rate, SNR distribution,
+  MP1/MP2 indicators, LLI flags, constellation coverage
+- Ephemeris/SP3: broadcast vs. SP3 orbit difference, clock jumps
+- Ionosphere (IONEX): ROTI, scintillation indicator
+- Output: QC protocol + flagged epochs + recommendations
+
+**DB integration:** positions, integrity_log, obs_summary -> SQLite
+
+---
+
+### loki_climatology -- GNSS Climatology
+
+**Philosophy:** Pure analytical layer over loki_gnss outputs. Requires loki_gnss
+ZTD time series as input. Connects GNSS atmosphere to the existing LOKI analysis
+ecosystem.
+
+**Single station analysis:**
+- ZTD -> ZWD -> IWV/PWV (Tm factor, Bevis 1992 or GPT3)
+- Validation: ZTD_GNSS vs. IGS ZTD products, NWM (ERA5), radiosonde
+  (residual time series -> loki_homogeneity for drift detection)
+- Long-term trends: loki_regression, loki_homogeneity
+- Seasonal decomposition: loki_decomposition
+- Draconitic period 351.4d in ZTD residuals: loki_spectral
+- Extreme events: loki_evt
+- Stationarity: loki_stationarity
+
+**Network analysis (CZEPOS/SKPOS network, not a single station):**
+- ZTD per station -> loki_spatial (kriging interpolation -> PWV map)
+- Spatial trends -> loki_spatial + loki_regression
+- Front / storm system detection
+
+**Blind model research (publishable):**
+- Saastamoinen/GPT3 vs. PPP ZTD -> residual time series
+- loki_spectral: when does blind model fail (season, time of day)
+- loki_spatial: where does it fail (geographic distribution)
+- Local model calibration for Central Europe from GOPE archive
+
+**NWM comparison:**
+- ERA5 grid from db (era5_grid table) -> time series at station (lat, lon)
+- ZTD_GNSS vs. ZTD_ERA5: bias, RMSE, correlation
+- Residual -> loki_homogeneity, loki_decomposition
+
+**DB integration:** ztd_series, iwv_series -> SQLite
+
+---
+
+### loki_gnss_rail -- Railway GNSS Navigation
+
+**Philosophy:** SIL 4 context. GNSS alone does not achieve SIL 4 -- serves as
+support for odometers and radars. Key value: integrity quantification, signal
+quality monitoring, sensor fusion, degraded section mapping.
+
+**Prerequisite:** loki_gnss fully COMPLETE.
+
+**Internal structure:**
+```
+libs/loki_gnss_rail/include/loki/gnss_rail/
+  railNetwork.hpp/.cpp      -- GeoJSON / OSM railway network loading
+                               (OpenRailwayMap via Overpass API export)
+                               R-tree indexing of segments
+                               segment parametrization (chainage along track)
+  mapMatcher.hpp/.cpp       -- project GNSS position onto nearest segment
+                               1D parametrization: position = chainage s [m]
+                               covariance reduction: 2D/3D -> 1D
+                               Kalman update with rail geometry constraint
+  sensorFusion.hpp/.cpp     -- tightly-coupled GNSS + odometer
+                               state vector: [s, v, a, cdt]
+                               odometric constraint: delta_s = v * dt
+                               GNSS pseudorange constraint
+                               calls loki_kalman (RTS smoother, EM Q/R)
+                               loosely-coupled variant for comparison
+  integrityRail.hpp/.cpp    -- SIL 4 relevant computations
+                               positioning error bound per epoch
+                               integrity flag (OK / WARNING / FAIL)
+                               degraded mode: odometer only (no GNSS)
+                               Alert limit comparison (HAL, VAL)
+  degradationMapper.hpp/.cpp -- SNR degradation detection: bridges, tunnels,
+                                 stations, reflective structures
+                                 GNSS RAIM failures georeference onto track
+                                 calls loki_clustering (clustered problem zones)
+                                 output: GeoJSON degradation map
+```
+
+**Research contribution:**
+Tropospheric correction for kinematic rail GNSS using interpolated ZTD field
+from regional GNSS network (CZEPOS) via loki_spatial. Connects loki_climatology
+(static network ZTD) with loki_gnss_rail (dynamic vehicle). Not standard practice
+in railway GNSS applications -- publishable.
+
+**Robust RAIM for railway:**
+Classical RAIM assumes Gaussian noise. Railway multipath is strongly non-Gaussian
+(hard reflections from structures). Robust RAIM with heavy-tail noise model is
+a research contribution.
+
+**DB integration:** track_positions, integrity_log -> SQLite
+
+---
+
+### loki_gravity -- Physical Geodesy
+
+**Philosophy:** Gravitational field of the Earth, geoid, height systems, and
+temporal gravity changes. Closely connected to loki_geodesy (height systems)
+and loki_spatial (anomaly interpolation).
+
+**Prerequisite:** loki_geodesy COMPLETE. loki_core/math/sphericalHarmonics COMPLETE.
+
+**What it computes:**
+- Normal gravity field (GRS80 -- Somigliana formula)
+- Gravitational acceleration on ellipsoid and at height
+- Spherical harmonic functions: EGM2008, EIGEN, GOCO coefficients
+- Geoid undulation N (ellipsoidal - orthometric height)
+- Stokes integral: gravity anomalies -> geoid undulation
+- Vening-Meinesz integral: anomalies -> vertical deflections
+- Height system connection: h_ellip = H_orthom + N (calls loki_geodesy)
+- Free-air anomaly (Faye), Bouguer anomaly, isostatic anomaly
+- Gravimetry interpolation -> loki_spatial (kriging on gravity grid)
+
+**GRACE/GRACE-FO temporal changes (climatological connection):**
+- Monthly solutions -> time series of spherical harmonic coefficients
+- Terrestrial water storage anomalies (TWSA)
+- Ice sheet melting, groundwater depletion
+- calls loki_homogeneity, loki_spectral, loki_decomposition
+- Connects to loki_climatology (climate signal in gravity field)
+
+**New math in loki_core/math/:**
+- `sphericalHarmonics.hpp/.cpp` -- synthesis and analysis
+- `legendrePolynomials.hpp/.cpp` -- associated Legendre functions (normalized)
+- `stokesIntegral.hpp/.cpp`
+
+---
+
+### loki_eo -- Earth Observation
+
+**Philosophy:** Time series analysis of satellite-derived geophysical products.
+v1 focuses on ready-made products (PSInSAR/SBAS outputs, Sentinel-2 indices)
+not on raw SAR processing. New loaders needed in loki_core/io/.
+
+**What it computes:**
+- InSAR deformation time series (input: PSInSAR/SBAS outputs, not raw SAR):
+  surface deformation [mm] per point per epoch
+  calls loki_homogeneity (abrupt changes: landslide, subsidence onset)
+  calls loki_decomposition (seasonal vs. linear deformation)
+  calls loki_spectral (periodic movements, e.g. moisture-driven)
+- Sentinel-2 optical products:
+  NDVI time series per pixel / area
+  land cover change: loki_clustering, loki_homogeneity
+  methane index (SWIR combination) -- landfill monitoring
+  vegetation cycle vs. anomalies: loki_decomposition
+- Infrastructure monitoring:
+  bridge, dam, building: InSAR deformation monitoring
+  combination with GNSS reference station
+- Landfill / contaminated site monitoring:
+  InSAR surface subsidence + Sentinel-2 vegetation anomaly -> risk map
+
+**New loaders in loki_core/io/:**
+- `netcdfLoader.hpp/.cpp` -- ERA5, GRACE NetCDF
+- `geotiffLoader.hpp/.cpp` -- GeoTIFF raster data
+
+---
+
+### loki_seismology -- GNSS Seismology
+
+**Philosophy:** Detection of seismic signals in high-frequency GNSS coordinate
+time series. Input: 1Hz or higher PPP / RTK positions from loki_gnss.
+
+**What it computes:**
+- Transient signal detection -> loki_kalman, loki_homogeneity
+- loki_wavelet (planned): time-frequency analysis of seismic waves
+- loki_spectral: Rayleigh/Love wave frequency content
+- Earthquake detection:
+  P/S wave arrival in GNSS series (position change ~cm)
+  arrival time -> epicenter localization (calls loki_spatial)
+  magnitude estimate from permanent displacement
+- Post-seismic relaxation:
+  logarithmic / exponential model -> loki_regression
+- Inter-seismic:
+  draconitic period 351.4d separation
+  loki_spectral: geophysical signal vs. artefacts
+  loki_ssa: signal from noise separation
+- Slow slip events, aseismic deformation
 
 ---
 
 ## Module Roadmap (full picture)
 
-| Priority | Module / Extension | Type | Status |
-|---|---|---|---|
-| done | all time series modules | apps | COMPLETE |
-| done | `loki_core/math/bspline` | core extension | COMPLETE |
-| done | `loki_core/math/bsplineFit` | core extension | COMPLETE |
-| done | `loki_spline` | new app | COMPLETE |
-| done | `loki_spatial` | new app | COMPLETE |
-| next | `loki_geodesy` | new app | COMPLETE |
-| planned | `loki_multivariate` | new app | NEXT |
-| planned | `loki_wavelet` | new app | FUTURE |
-| future | `loki_realtime` | new app | FUTURE |
-| future | `loki_ml` | new app | FUTURE |
-| future | `loki_gnss` | new app | PLANED |
-| in progress | Publication Part A (Theory, SK) | docs | IN PROGRESS |
-| in progress | Publication Part B (Manual, EN) | docs | IN PROGRESS |
+| Priority | Module | Status |
+|---|---|---|
+| COMPLETE | all time series modules | COMPLETE |
+| COMPLETE | loki_spatial, loki_geodesy, loki_multivariate | COMPLETE |
+| Faza 0 | GNSS downloader scripts | PLANNED |
+| Faza 0 | loki_core loaders (RINEX, SP3, IONEX, ...) | PLANNED |
+| Faza 0 | loki_core db layer (SQLite) | PLANNED |
+| Faza 0 | loki_core/math interpolation, keplerOrbit | PLANNED |
+| Faza 1 | loki_gnss | PLANNED |
+| Faza 2 | loki_climatology | PLANNED |
+| Faza 3 | loki_gnss_rail | PLANNED |
+| Faza 4 | loki_gravity | PLANNED |
+| Faza 5 | loki_eo | PLANNED |
+| Faza 6 | loki_seismology | PLANNED |
+| future | loki_wavelet | FUTURE |
+| future | loki_realtime | FUTURE |
+| future | loki_ml | FUTURE |
 
 ---
 
@@ -864,31 +901,47 @@ and future spatial math files.
 - Data files and plot outputs are **not** committed to the repository.
 - Third-party dependencies via CMake `FetchContent` only -- no vendored source.
 - Build directory `build/` is gitignored.
+- SQLite database `db/loki.db` is gitignored.
+- Downloaded GNSS products in `data/` are gitignored.
 - Do NOT add license/copyright blocks at the top of source files.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `spatialLoader.hpp` is in `loki_core/io/`, namespace `loki::io`.
-- `hatMatrix.hpp`, `svd.hpp`, `lm.hpp`, `lagMatrix.hpp`, `embedMatrix.hpp`,
-  `randomizedSvd.hpp`, `spline.hpp`, `nelderMead.hpp`, `bspline.hpp`,
-  `bsplineFit.hpp` are in `loki_core/math/`.
-- Spatial math files also in `loki_core/math/`: `spatialTypes.hpp`,
-  `spatialVariogram.hpp/.cpp`, `rbf.hpp/.cpp`, `naturalNeighbor.hpp/.cpp`.
-- Kriging math files also in `loki_core/math/`.
+- `geodesyLoader.hpp` is in `loki_core/io/`, namespace `loki::io`.
+- `ellipsoid.hpp` is in `loki_core/math/` (placed there during loki_geodesy).
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
-- `krigingFactory.hpp` is header-only (inline factory function).
+- `krigingFactory.hpp` is header-only.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
 - TimeStamp: `.mjd()` | `.utcString()` | `.gpsTotalSeconds()`
-- SNHT v rekurzivnom mode: min_segment_points >= 3-4 roky.
-- PELT mbic je najkonzervativnejsi penalty typ -- odporucany default.
-- BOCPD vyzaduje kalibraciu prior_beta blizko skutocnemu sigma^2 serie.
-- loki_spline: NURBS = placeholder, hodi AlgorithmException ak je requested.
-  Spatial/trajectory NURBS rezervovane pre loki_spatial / loki_multivariate.
-- loki_geodesy: sucast LOKI (nie samostatny projekt). Rovnaky argument ako
-  loki_spatial -- kvantitativna analyza vedeckych dat patri do LOKI.
-- CRITICAL: snhtDetector.hpp a snhtDetector.cpp existuju v repozitari ako PRAZDNE
-  subory -- ide o systemovu vec. NIKDY sa nepytaj ci su prilozene alebo nie.
-  Jednoducho ich naplnit podla dizajnu. TOTO PRAVIDLO NEMAZES.
-- Publikacia Part A: slovensky, LaTeX, teoria, ~10 stran/kapitola.
-- Publikacia Part B: slovensky, LaTeX, manual a prakticke priklady.
-- Obsah Part I (Time Series): kapitoly 1-18 podla hrubej osnovy v docs/.
-- Kapitola 3 obsahuje: nas algoritmus (t-statistika, Csorgo-Horvath,
-  Jaruskova 1996, Elias-Jaruskova), SNHT, PELT, BOCPD.
+- SNHT recursive mode: min_segment_points >= 3-4 years.
+- CRITICAL: snhtDetector.hpp and snhtDetector.cpp exist in the repository as
+  EMPTY FILES -- this is intentional. NEVER ask whether they are attached.
+  Simply implement them according to the design. DO NOT DELETE THIS NOTE.
+  (Poznamka: snht v ramci homogenizacie casoveho radu mame implementovany. 
+  Ale z nejakeho divneho dovodu, si vzdy na zaciatku vlakna pytas snhtDetector - 
+  co mi nedava zmysel a je to sakra otravne. Ak to mas v pamati ako systemovu vec,
+  tak si to prosim vymaz!!!!!)
+- snhtDetector.hpp and snhtDetector.cpp: SNHT is fully implemented inside
+  loki_homogeneity. The files in the repository are EMPTY by design (system
+  artifact). Do NOT request them. Do NOT ask about their content. The SNHT
+  implementation lives in changePointDetector.hpp/.cpp and related files.
+- CZEPOS is a network/service (GNSS reference network in Czech Republic),
+  NOT a single station. SKPOS is the Slovak equivalent.
+- loki_gnss is NOT a replacement for RTKLIB -- it is an analytical layer
+  with deep integration into the LOKI ecosystem.
+- GNSS multipath has sidereal periodicity (~23h 56min, not 24h).
+- Draconitic period: 351.4 days (GPS orbital resonance with Sun).
+- SP3 interpolation: Lagrange polynomial order 9 (IGS standard).
+- CDDIS requires NASA Earthdata account for HTTPS access.
+  Use browser download or earthdata Python CLI for first tests.
+  CODE Bern and PECNY are freely accessible without authentication.
+- Ocean loading BLQ: manual generation at holt.oso.chalmers.se/loading/
+  (enter station name + coordinates -> download .blq file, one-time per station).
+- EGNOS v3 (DFMC): Dual Frequency Multi Constellation (L1/L5, GPS+Galileo).
+  HPL/VPL broadcast directly in SBAS messages -- no own RAIM computation needed.
+  For loki_gnss_rail: SBAS integrity directly usable in SIL context without
+  independent RAIM, which simplifies the integrity pipeline significantly.
+  SBAS message format: RINEX B (.rnb) or raw binary (receiver-dependent).
+  GEO satellites for EGNOS: PRN 120, 123, 126, 136.
+  EGNOS v2: L1 only, GPS only, ~1-3m. v3: DFMC, ~0.5-1m, LPV-200 capable.
+  Research: GIVE time series during geomagnetic storms -> loki_homogeneity +
+  loki_spectral (periodicity of ionospheric degradation events).
