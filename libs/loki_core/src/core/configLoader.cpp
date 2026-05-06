@@ -100,6 +100,7 @@ AppConfig ConfigLoader::load(const std::filesystem::path& jsonPath)
     cfg.spatial       = _parseSpatial      (j.value("spatial",      json::object()));
     cfg.geodesy       = _parseGeodesy      (j.value("geodesy",      json::object()));
     cfg.multivariate  = _parseMultivariate (j.value("multivariate", json::object()), inputDir);
+    cfg.gnss          = _parseGnss         (j.value("gnss",         json::object()), cfg.workspace);
 
     return cfg;
 }
@@ -2628,6 +2629,154 @@ MultivariateConfig ConfigLoader::_parseMultivariate(const nlohmann::json& j,
         }
     }
 
+    return cfg;
+}
+
+GnssConfig ConfigLoader::_parseGnss(const nlohmann::json& j,
+                                     const std::filesystem::path& workspaceDir)
+{
+    GnssConfig cfg;
+ 
+    // -- task -----------------------------------------------------------------
+    cfg.task = j.value("task", "parse");
+    if (cfg.task != "parse" && cfg.task != "spp" && cfg.task != "ppp") {
+        throw ConfigException(
+            "ConfigLoader: gnss.task must be 'parse', 'spp', or 'ppp', got '"
+            + cfg.task + "'.");
+    }
+ 
+    // -- station / date -------------------------------------------------------
+    cfg.station = j.value("station", "UNKN");
+    if (cfg.station.size() > 4) cfg.station = cfg.station.substr(0, 4);
+    cfg.year    = j.value("year", 0);
+    cfg.doy     = j.value("doy",  0);
+ 
+    // -- crx2rnx path ---------------------------------------------------------
+    // Resolved relative to LOKI directory (where the binary lives).
+    {
+        // crx2rnx_path is relative to the LOKI project root (CWD at runtime).
+        const std::string raw = j.value("crx2rnx_path", "tools/hatanaka/CRX2RNX");
+        const auto resolved = _resolvePath(raw, std::filesystem::current_path());
+        cfg.crx2rnxPath = resolved.string();
+    }
+ 
+    // -- nav_file / obs_file --------------------------------------------------
+    // Resolved relative to workspace (files live in INPUT/).
+    auto toFwd = [](std::filesystem::path p) {
+        std::string s = p.string();
+        for (char& c : s) { if (c == '\\') c = '/'; }
+        return s;
+    };
+    if (j.contains("nav_file"))
+        cfg.navFile = toFwd(_resolvePath(
+            j["nav_file"].get<std::string>(), workspaceDir));
+    if (j.contains("obs_file"))
+        cfg.obsFile = toFwd(_resolvePath(
+            j["obs_file"].get<std::string>(), workspaceDir));
+ 
+    // -- constellations -------------------------------------------------------
+    if (j.contains("constellations") && j["constellations"].is_array()) {
+        cfg.constellations = j["constellations"].get<std::vector<std::string>>();
+    }
+ 
+    // -- elevation mask -------------------------------------------------------
+    cfg.elevationMaskDeg = j.value("elevation_mask_deg", 10.0);
+    if (cfg.elevationMaskDeg < 0.0 || cfg.elevationMaskDeg > 90.0) {
+        throw ConfigException(
+            "ConfigLoader: gnss.elevation_mask_deg must be in [0, 90].");
+    }
+ 
+    // -- spp ------------------------------------------------------------------
+    if (j.contains("spp")) {
+        const auto& s        = j["spp"];
+        cfg.spp.enabled      = s.value("enabled",                false);
+        cfg.spp.maxIterations= s.value("max_iterations",         10);
+        cfg.spp.convergenceThresholdM
+                             = s.value("convergence_threshold_m", 0.001);
+        cfg.spp.weighting    = s.value("weighting",              "elevation");
+        if (cfg.spp.weighting != "elevation" && cfg.spp.weighting != "uniform") {
+            throw ConfigException(
+                "ConfigLoader: gnss.spp.weighting must be 'elevation' or "
+                "'uniform', got '" + cfg.spp.weighting + "'.");
+        }
+    }
+ 
+    // -- corrections ----------------------------------------------------------
+    if (j.contains("corrections")) {
+        const auto& c              = j["corrections"];
+        cfg.corrections.ionosphere = c.value("ionosphere",    "klobuchar");
+        cfg.corrections.troposphere= c.value("troposphere",   "saastamoinen");
+        cfg.corrections.relativistic = c.value("relativistic", true);
+        cfg.corrections.sagnac     = c.value("sagnac",        true);
+        cfg.corrections.solidTides = c.value("solid_tides",   false);
+        cfg.corrections.oceanLoading= c.value("ocean_loading", false);
+        cfg.corrections.phaseWindup= c.value("phase_windup",  false);
+        cfg.corrections.pcoPcv     = c.value("pco_pcv",       false);
+ 
+        const std::vector<std::string> validIono{"klobuchar", "ionex", "none"};
+        if (std::find(validIono.begin(), validIono.end(),
+                      cfg.corrections.ionosphere) == validIono.end()) {
+            throw ConfigException(
+                "ConfigLoader: gnss.corrections.ionosphere must be "
+                "'klobuchar', 'ionex', or 'none'.");
+        }
+        const std::vector<std::string> validTropo{"saastamoinen", "vmf3", "none"};
+        if (std::find(validTropo.begin(), validTropo.end(),
+                      cfg.corrections.troposphere) == validTropo.end()) {
+            throw ConfigException(
+                "ConfigLoader: gnss.corrections.troposphere must be "
+                "'saastamoinen', 'vmf3', or 'none'.");
+        }
+    }
+ 
+    // -- ppp ------------------------------------------------------------------
+    if (j.contains("ppp")) {
+        const auto& p            = j["ppp"];
+        cfg.ppp.enabled          = p.value("enabled",                 false);
+        cfg.ppp.ifCombination    = p.value("if_combination",          true);
+        cfg.ppp.maxIterations    = p.value("max_iterations",          20);
+        cfg.ppp.convergenceThresholdM
+                                 = p.value("convergence_threshold_m", 0.01);
+ 
+        // Resolve product file paths relative to workspace
+        auto pppPath = [&](const std::string& key) -> std::string {
+            if (!p.contains(key) || p[key].get<std::string>().empty()) return {};
+            return toFwd(_resolvePath(p[key].get<std::string>(), workspaceDir));
+        };
+        cfg.ppp.sp3File         = pppPath("sp3_file");
+        cfg.ppp.clkFile         = pppPath("clk_file");
+        cfg.ppp.antexFile       = pppPath("antex_file");
+        cfg.ppp.vmf3File        = pppPath("vmf3_file");
+        cfg.ppp.oceanLoadingBlq = pppPath("ocean_loading_blq");
+ 
+        if (cfg.ppp.enabled) {
+            if (cfg.ppp.sp3File.empty())
+                throw ConfigException(
+                    "ConfigLoader: gnss.ppp.sp3_file is required when ppp.enabled.");
+            if (cfg.ppp.clkFile.empty())
+                throw ConfigException(
+                    "ConfigLoader: gnss.ppp.clk_file is required when ppp.enabled.");
+        }
+    }
+ 
+    // -- quality --------------------------------------------------------------
+    if (j.contains("quality")) {
+        const auto& q   = j["quality"];
+        cfg.quality.raim      = q.value("raim",      false);
+        cfg.quality.residuals = q.value("residuals", false);
+        cfg.quality.dop       = q.value("dop",       false);
+    }
+ 
+    // -- reference_position ---------------------------------------------------
+    if (j.contains("reference_position")) {
+        const auto& r            = j["reference_position"];
+        cfg.referencePosition.enabled = r.value("enabled", false);
+        cfg.referencePosition.x       = r.value("x",       0.0);
+        cfg.referencePosition.y       = r.value("y",       0.0);
+        cfg.referencePosition.z       = r.value("z",       0.0);
+        cfg.referencePosition.source  = r.value("source",  "");
+    }
+ 
     return cfg;
 }
 

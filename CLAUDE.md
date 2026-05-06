@@ -364,7 +364,9 @@ loki/
 |   +-- loki.db                      -- SQLite database (gitignored)
 +-- docs/
 +-- tools/
-    +-- gnss_download/               -- shell scripts for GNSS product download
+    +-- gnss_download/               -- shell script for GNSS product download
+        +-- download.sh              -- COMPLETE, see README.md in same directory
+        +-- README.md                -- usage, product status, known issues
 ```
 
 ---
@@ -462,109 +464,85 @@ Implementation order follows the dependency graph.
 
 ### Infrastructure (Faza 0) -- prerequisite for all planned modules
 
-#### 0.1 GNSS Data Downloader (`tools/gnss_download/`)
+#### 0.1 GNSS Data Downloader (`tools/gnss_download/`) -- COMPLETE
 
-Shell scripts (consistent with C++ project, no Python dependency) for downloading
-GNSS products from public archives. Manual download is acceptable for first tests.
-Key sources:
-- PECNY / GOP: `ftp.pecny.cz/pub/obs/` -- anonymous FTP, no auth required.
-  Station GOPE (Geodetic Observatory Pecny) -- primary test station.
-- CODE Bern: `ftp.aiub.unibe.ch/CODE/YYYY/` -- SP3, CLK, DCB, IONEX, no auth.
-- CDDIS: `cddis.nasa.gov` -- requires NASA Earthdata account (OAuth).
-  Use Earthdata Download CLI (`pip install earthdata`) or browser download.
-- IGS: `files.igs.org/pub/station/general/` -- ANTEX, no auth.
-- TU Wien: `vmf.geo.tuwien.ac.at` -- VMF3, GPT3, no auth.
-- IERS: `iers.org` -- leap-seconds.list, EOP, no auth.
-- EUREF: `epncb.oma.be` -- EUREF EPN siet, ETRS89
+`tools/gnss_download/download.sh` is a bash script for downloading GNSS products
+from verified institutional sources. See `tools/gnss_download/README.md` for full
+usage documentation.
 
-Products needed per processing mode:
+Working products and sources:
 ```
-SPP (minimal test):
-  RINEX obs (.rnx)          -- GOPE, 1 day
-  RINEX nav mixed (.rnx)    -- broadcast ephemeris, same day
-  igs20.atx                 -- antenna calibration, one-time download
-
-PPP (adds):
-  SP3c (.sp3)               -- precise ephemeris, IGS final (~13d delay)
-  RINEX CLK (.clk)          -- precise clocks, IGS or CODE
-  IONEX (.ionex)            -- TEC maps, CODE or IGS
-  DCB / SINEX BIAS (.dcb / .bia) -- code biases, CODE
-
-ZTD validation (adds):
-  IGS ZTD products (SINEX TRO .tro)
-  VMF3 grid (.H00/.H06/.H12/.H18)
-  RINEX MET (.met)          -- meteorological observations
-
-One-time manual steps:
-  Ocean loading BLQ         -- holt.oso.chalmers.se/loading/
-  leap-seconds.list         -- iers.org
+antex    -- files.igs.org (HTTPS, anon)
+nav      -- cddis.nasa.gov (HTTPS, NASA Earthdata ~/.netrc)
+obs      -- epncb.oma.be EUREF/EPN (FTP anon), format: .crx.gz (Hatanaka)
+sp3      -- ftp.aiub.unibe.ch CODE_MGEX/CODE/YYYY/ (FTP anon)
+clk      -- ftp.aiub.unibe.ch CODE_MGEX/CODE/YYYY/ (FTP anon)
+ionex    -- ftp.aiub.unibe.ch CODE/YYYY/ (FTP anon)
+bias     -- ftp.aiub.unibe.ch CODE_MGEX/CODE/YYYY/ (FTP anon)
+dcb      -- ftp.aiub.unibe.ch CODE/YYYY/ (FTP anon), P1C1 + P1P2 only
+vmf3     -- vmf.geo.tuwien.ac.at VMF3_OP/YYYY/ (HTTPS anon), format: YYYYMMDD
+misc     -- datacenter.iers.org + hpiers.obspm.fr (HTTPS anon)
 ```
 
-#### 0.2 New loki_core/io/ loaders (C++)
-
+Known issues with downloader (pending fix):
 ```
-gnssLoader.hpp/.cpp       -- RINEX obs 2.x/3.x, nav, MET parser
-sp3Loader.hpp/.cpp        -- SP3a/SP3c precise ephemeris
-ionexLoader.hpp/.cpp      -- IONEX TEC maps
-antexLoader.hpp/.cpp      -- ANTEX antenna calibrations (PCO/PCV)
+sinex    -- CDDIS OAuth cookie not handled in curl (404 in script, works in browser)
+tropo    -- Same CDDIS OAuth issue
+met      -- PECNY FTP denies access; EUREF has no MET files for GOPE
+egnos    -- ESA GSSC SFTP port 2200 refused; no working public source found
+era5     -- Not yet tested; requires ~/.cdsapirc
+```
+
+Key implementation notes:
+- OBS files are Hatanaka compressed (.crx.gz). Parsers must handle gunzip + crx2rnx.
+- VMF3 uses YYYYMMDD date format in filenames (NOT DOY format).
+- CODE Bern SP3/CLK/IONEX/BIAS: files live in CODE_MGEX/CODE/YYYY/ (with year subdir).
+- CODE Bern DCB: files live in CODE/YYYY/ (with year subdir).
+- CDDIS NAV requires cookie jar + ~/.netrc for OAuth redirect handling.
+- P2C2 DCB does not exist on CODE Bern -- do not attempt to download it.
+- GPS week calculation: epoch_unix - 315964800 (GPS epoch 1980-01-06) / 604800.
+- Data directory: INPUT/GNSS/gnss_data/ (sibling of LOKI/, not inside it).
+- Log file: INPUT/GNSS/download.log
+
+#### 0.2 New loki_core/io/ loaders (C++) -- PLANNED (next)
+
+Parsers to implement (in dependency order for SPP):
+```
+gnssTypes.hpp             -- data structures (no .cpp needed)
+rinexNavParser.hpp/.cpp   -- broadcast ephemeris (RINEX 2.x + 3.x nav)
+rinexObsParser.hpp/.cpp   -- observations (RINEX 2.x + 3.x obs, Hatanaka .crx)
+sp3Parser.hpp/.cpp        -- SP3a/SP3c precise ephemeris
+clkParser.hpp/.cpp        -- RINEX CLK precise clocks
+ionexParser.hpp/.cpp      -- IONEX TEC maps
+antexParser.hpp/.cpp      -- ANTEX PCO/PCV antenna calibrations
+dcbParser.hpp/.cpp        -- CODE DCB / SINEX BIAS OSB
+vmf3Parser.hpp/.cpp       -- VMF3 gridded mapping function
 sinexLoader.hpp/.cpp      -- SINEX station coordinates, ZTD products
-vmf3Loader.hpp/.cpp       -- VMF3 gridded mapping function data
-netcdfLoader.hpp/.cpp     -- ERA5/GRACE NetCDF (for loki_eo, loki_gravity)
-geotiffLoader.hpp/.cpp    -- GeoTIFF raster data (for loki_eo)
 ```
 
-All loaders return standard LOKI types (TimeSeries, spatial datasets).
+#### 0.3 SQLite database layer (loki_core/io/) -- PLANNED (after loki_gnss)
 
-#### 0.3 SQLite database layer (loki_core/io/)
-
-Central persistent store for multi-session and multi-station data. Enables building
-long time series (e.g. GOPE ZTD archive) across multiple download sessions and
-feeding them into analysis modules without re-parsing raw files.
-
+DB is populated by loki_gnss computed outputs, NOT raw files.
+Raw files remain in INPUT/GNSS/gnss_data/ as archive.
+DB contains only derived/computed quantities:
 ```
-dbSchema.hpp              -- CREATE TABLE definitions
-dbManager.hpp/.cpp        -- open/close connection, transaction management
-dbWriter.hpp/.cpp         -- INSERT: positions, ztd_series, era5_grid, qc_log, ...
-dbReader.hpp/.cpp         -- SELECT -> TimeSeries, SpatialDataset
-```
-
-Schema (key tables):
-```sql
-stations      (id, name, lat, lon, h, itrf_x, itrf_y, itrf_z, network)
-obs_summary   (station_id, epoch, n_gps, n_glo, n_gal, n_bds,
-               pdop, hdop, mean_snr, cycle_slip_count, mp1_rms, mp2_rms)
-positions     (station_id, epoch, method, x, y, z, lat, lon, h,
-               sigma_x, sigma_y, sigma_z, n_sat, raim_ok, hpl, vpl)
-ztd_series    (station_id, epoch, source, ztd, zhd, zwd, sigma_ztd)
-iwv_series    (station_id, epoch, source, iwv, sigma_iwv)
-era5_grid     (lat, lon, epoch, t2m, sp, tcwv, source)
-integrity_log (station_id, epoch, pdop, hpl, vpl, raim_status,
-               n_excluded_sats, alert_flag)
-track_positions (session_id, epoch, s_along_track, lat, lon, h,
-                 v, sigma_pos, sigma_v, integrity_flag)
-qc_log        (station_id, date, obs_completeness, mean_snr,
-               cycle_slip_rate, mp1_rms, qc_grade)
+positions     -- computed ECEF + geodetic coordinates per epoch
+ztd_series    -- ZTD/ZHD/ZWD time series from PPP
+obs_summary   -- SNR, PDOP, cycle slip statistics per epoch
+integrity_log -- RAIM status, HPL, VPL per epoch
+iwv_series    -- IWV/PWV derived from ZWD
+era5_grid     -- NWM grid values at selected nodes
 ```
 
-ERA5/NWM data stored in `era5_grid` allows selection of time series at any
-(lat, lon) point for blind model analysis, homogeneity testing, and validation.
-
-#### 0.4 New loki_core/math/ primitives
+#### 0.4 New loki_core/math/ primitives -- PLANNED
 
 ```
 interpolation.hpp/.cpp    -- Lagrange order 1-10 (SP3 standard: order 9)
-                             cubic spline interpolation (alternative)
 keplerOrbit.hpp/.cpp      -- Kepler equations -> ECEF satellite position
-                             (broadcast ephemeris -> satellite position)
-sphericalHarmonics.hpp/.cpp -- associated Legendre functions,
-                               synthesis/analysis of spherical harmonics
-                               (for loki_gravity)
+sphericalHarmonics.hpp/.cpp -- for loki_gravity
 legendrePolynomials.hpp/.cpp -- normalized associated Legendre functions
 stokesIntegral.hpp/.cpp   -- gravity anomaly -> geoid undulation
 ```
-
-Note: `ellipsoid.hpp` already exists in `loki_core/math/` (from loki_geodesy).
-`interpolation.hpp` is generic and reusable across all future modules.
 
 ---
 
@@ -575,6 +553,7 @@ integrated with the LOKI ecosystem. Every output (ZTD, residuals, position,
 integrity) is a TimeSeries or spatial dataset directly consumable by other modules.
 
 **Prerequisite:** loki_geodesy COMPLETE. loki_core/math/interpolation COMPLETE.
+loki_core/io/ GNSS parsers COMPLETE.
 
 **Internal structure:**
 ```
@@ -592,10 +571,9 @@ libs/loki_gnss/include/loki/gnss/
     antexParser.hpp/.cpp    -- ANTEX PCO/PCV
     dcbParser.hpp/.cpp      -- CODE DCB / SINEX BIAS OSB
     leapSeconds.hpp/.cpp    -- GPS<->UTC conversion (IERS table)
-    sbasParser.hpp/.cpp     -- SBAS L1 messages (RINEX B / raw binary stream)
+    sbasParser.hpp/.cpp     -- SBAS L1 messages (RINEX B)
                                EGNOS v2 message types 0-28
                                EGNOS v3 DFMC message types 31-40
-                               GEO satellite almanac (type 17)
                                supported GEO: PRN 120, 123, 126, 136 (EGNOS)
   geometry/
     satPosition.hpp/.cpp    -- satellite position from broadcast (Kepler->ECEF)
@@ -605,125 +583,53 @@ libs/loki_gnss/include/loki/gnss/
                                (calls loki_geodesy::CoordTransform)
                                elevation mask (configurable, default 5 deg)
     dopCalc.hpp/.cpp        -- GDOP, PDOP, HDOP, VDOP, TDOP per epoch
-                               design matrix H assembly
-    skyplot.hpp/.cpp        -- gnuplot polar diagram (elevation vs azimut)
-                               coloring by SNR / system / RAIM status
+    skyplot.hpp/.cpp        -- gnuplot polar diagram (elevation vs azimuth)
   corrections/
-    ionosphere.hpp/.cpp     -- Klobuchar blind model (broadcast coefficients)
-                               IF combination L1/L2 (dual-freq elimination)
-                               IONEX bilinear interpolation
-                               NeQuick (Galileo, v2)
-    troposphere.hpp/.cpp    -- Saastamoinen blind model
-                               GPT3 (no met. measurement needed)
-                               VMF3 mapping function
-                               ZTD from external source
-                               (calls loki_spatial for regional ZTD grid)
+    ionosphere.hpp/.cpp     -- Klobuchar, IF combination, IONEX interpolation
+    troposphere.hpp/.cpp    -- Saastamoinen, GPT3, VMF3 mapping function
     relativity.hpp/.cpp     -- clock relativistic correction, Sagnac effect
     antenna.hpp/.cpp        -- PCO + PCV from ANTEX, ARP correction
     tides.hpp/.cpp          -- solid Earth tides (IERS 2010), ocean loading (BLQ)
     windup.hpp/.cpp         -- phase windup effect for PPP
   positioning/
-    sppSolver.hpp/.cpp      -- SPP: weighted LSQ (calls loki_core/math/lsq)
-                               weights: sin2(el), SNR model
-                               iterative solution (pseudorange nonlinearity)
-                               output: ECEF + covariance matrix
-    pppSolver.hpp/.cpp      -- PPP: IF combination L1/L2
-                               SP3 + CLK + DCB/BIAS
-                               ZTD as estimated float parameter
-                               float ambiguity resolution
-                               output: position + ZTD + covariance
-    kalmanTracker.hpp/.cpp  -- Kalman filter tracking
-                               calls loki_kalman primitives
-                               state: [X,Y,Z,cdt,ZTD] or [X,Y,Z,Vx,Vy,Vz,cdt]
-                               Q/R estimation via EM (already in loki_kalman)
+    sppSolver.hpp/.cpp      -- SPP: weighted LSQ, iterative solution
+    pppSolver.hpp/.cpp      -- PPP: IF combination L1/L2, float ambiguity
+    kalmanTracker.hpp/.cpp  -- Kalman filter tracking (calls loki_kalman)
   quality/
-    residuals.hpp/.cpp      -- post-fit residuals per satellite per epoch
-                               pseudorange + phase residuals
-                               normalized residuals (w-test)
-    snrAnalysis.hpp/.cpp    -- SNR vs elevation model fitting
-                               anomaly detection (multipath indicator)
-                               MP1/MP2 combinations
-    cycleSlip.hpp/.cpp      -- geometry-free L4 = L1 - L2
-                               Melbourne-Wubbena combination
-                               calls loki_homogeneity (change point)
-    multipath.hpp/.cpp      -- MP1/MP2 combinations
-                               spectral analysis (sidereal period ~23h56min)
-                               calls loki_spectral, loki_ssa
-    raim.hpp/.cpp           -- classical RAIM: chi2 test on residual vector
-                               FDE: iterative satellite exclusion
-                               Protection Levels HPL, VPL
-                               ARAIM multi-constellation (v2)
-                               robust RAIM heavy-tail noise (research)
+    residuals.hpp/.cpp      -- post-fit residuals, w-test
+    snrAnalysis.hpp/.cpp    -- SNR vs elevation, MP1/MP2
+    cycleSlip.hpp/.cpp      -- geometry-free L4, Melbourne-Wubbena
+    multipath.hpp/.cpp      -- MP1/MP2, spectral analysis (sidereal ~23h56min)
+    raim.hpp/.cpp           -- classical RAIM, FDE, HPL/VPL, ARAIM
     integrityMonitor.hpp/.cpp -- integrity status per epoch
-                                 RAIM available / not available
-                                 Alert limit comparison (HAL, VAL)
-                                 continuous integrity time series
-    sbasQc.hpp/.cpp           -- EGNOS signal quality monitoring:
-                                 integrity availability (% time HPL < HAL)
-                                 UDRE distribution per satellite -> loki_outlier
-                                 GIVE map -> loki_spatial (IGP grid visualization)
-                                 SBAS-derived vs. PPP-derived position comparison
-                                 SBAS HPL vs. own RAIM HPL comparison
-                                 Service Level assessment: PA / NPA / oceanic
-                                 availability time series -> loki_homogeneity
-                                 (EGNOS degradation during ionospheric storm)
+    sbasQc.hpp/.cpp         -- EGNOS signal quality monitoring
   output/
-    plotGnss.hpp/.cpp       -- skyplot, DOP vs time, SNR vs elevation,
-                               residuals vs time/elevation,
-                               RAIM test statistic with threshold,
-                               ZTD/IWV time series,
-                               integrity heatmap (epoch x satellite)
-    mapExport.hpp/.cpp      -- trajectory -> GeoJSON
-                               HTML + Leaflet.js + OSM background
-                               (tile download, Mercator -> pixel,
-                                calls loki_geodesy for projection)
-    gnssProtocol.hpp/.cpp   -- positioning summary, satellite statistics,
-                               RAIM report, atmosphere summary
+    plotGnss.hpp/.cpp       -- skyplot, DOP, SNR, residuals, ZTD, integrity
+    mapExport.hpp/.cpp      -- trajectory -> GeoJSON + HTML/Leaflet
+    gnssProtocol.hpp/.cpp   -- positioning summary, RAIM report
   gnssAnalyzer.hpp/.cpp     -- main orchestrator, config-driven pipeline
 ```
 
-**Input data QC** (integrated into gnssAnalyzer before processing):
-- Observational: epoch completeness, cycle slip rate, SNR distribution,
-  MP1/MP2 indicators, LLI flags, constellation coverage
-- Ephemeris/SP3: broadcast vs. SP3 orbit difference, clock jumps
-- Ionosphere (IONEX): ROTI, scintillation indicator
-- Output: QC protocol + flagged epochs + recommendations
-
-**DB integration:** positions, integrity_log, obs_summary -> SQLite
+**DB integration:** positions, integrity_log, obs_summary -> SQLite (after loki_gnss)
 
 ---
 
 ### loki_climatology -- GNSS Climatology
 
 **Philosophy:** Pure analytical layer over loki_gnss outputs. Requires loki_gnss
-ZTD time series as input. Connects GNSS atmosphere to the existing LOKI analysis
-ecosystem.
+ZTD time series as input.
 
 **Single station analysis:**
 - ZTD -> ZWD -> IWV/PWV (Tm factor, Bevis 1992 or GPT3)
 - Validation: ZTD_GNSS vs. IGS ZTD products, NWM (ERA5), radiosonde
-  (residual time series -> loki_homogeneity for drift detection)
 - Long-term trends: loki_regression, loki_homogeneity
 - Seasonal decomposition: loki_decomposition
 - Draconitic period 351.4d in ZTD residuals: loki_spectral
 - Extreme events: loki_evt
-- Stationarity: loki_stationarity
 
-**Network analysis (CZEPOS/SKPOS network, not a single station):**
-- ZTD per station -> loki_spatial (kriging interpolation -> PWV map)
-- Spatial trends -> loki_spatial + loki_regression
+**Network analysis:**
+- ZTD per station -> loki_spatial (kriging -> PWV map)
 - Front / storm system detection
-
-**Blind model research (publishable):**
-- Saastamoinen/GPT3 vs. PPP ZTD -> residual time series
-- loki_spectral: when does blind model fail (season, time of day)
-- loki_spatial: where does it fail (geographic distribution)
-- Local model calibration for Central Europe from GOPE archive
-
-**NWM comparison:**
-- ERA5 grid from db (era5_grid table) -> time series at station (lat, lon)
-- ZTD_GNSS vs. ZTD_ERA5: bias, RMSE, correlation
-- Residual -> loki_homogeneity, loki_decomposition
 
 **DB integration:** ztd_series, iwv_series -> SQLite
 
@@ -731,51 +637,10 @@ ecosystem.
 
 ### loki_gnss_rail -- Railway GNSS Navigation
 
-**Philosophy:** SIL 4 context. GNSS alone does not achieve SIL 4 -- serves as
-support for odometers and radars. Key value: integrity quantification, signal
-quality monitoring, sensor fusion, degraded section mapping.
+**Philosophy:** SIL 4 context. GNSS serves as support for odometers and radars.
+Key value: integrity quantification, signal quality monitoring, sensor fusion.
 
 **Prerequisite:** loki_gnss fully COMPLETE.
-
-**Internal structure:**
-```
-libs/loki_gnss_rail/include/loki/gnss_rail/
-  railNetwork.hpp/.cpp      -- GeoJSON / OSM railway network loading
-                               (OpenRailwayMap via Overpass API export)
-                               R-tree indexing of segments
-                               segment parametrization (chainage along track)
-  mapMatcher.hpp/.cpp       -- project GNSS position onto nearest segment
-                               1D parametrization: position = chainage s [m]
-                               covariance reduction: 2D/3D -> 1D
-                               Kalman update with rail geometry constraint
-  sensorFusion.hpp/.cpp     -- tightly-coupled GNSS + odometer
-                               state vector: [s, v, a, cdt]
-                               odometric constraint: delta_s = v * dt
-                               GNSS pseudorange constraint
-                               calls loki_kalman (RTS smoother, EM Q/R)
-                               loosely-coupled variant for comparison
-  integrityRail.hpp/.cpp    -- SIL 4 relevant computations
-                               positioning error bound per epoch
-                               integrity flag (OK / WARNING / FAIL)
-                               degraded mode: odometer only (no GNSS)
-                               Alert limit comparison (HAL, VAL)
-  degradationMapper.hpp/.cpp -- SNR degradation detection: bridges, tunnels,
-                                 stations, reflective structures
-                                 GNSS RAIM failures georeference onto track
-                                 calls loki_clustering (clustered problem zones)
-                                 output: GeoJSON degradation map
-```
-
-**Research contribution:**
-Tropospheric correction for kinematic rail GNSS using interpolated ZTD field
-from regional GNSS network (CZEPOS) via loki_spatial. Connects loki_climatology
-(static network ZTD) with loki_gnss_rail (dynamic vehicle). Not standard practice
-in railway GNSS applications -- publishable.
-
-**Robust RAIM for railway:**
-Classical RAIM assumes Gaussian noise. Railway multipath is strongly non-Gaussian
-(hard reflections from structures). Robust RAIM with heavy-tail noise model is
-a research contribution.
 
 **DB integration:** track_positions, integrity_log -> SQLite
 
@@ -783,59 +648,11 @@ a research contribution.
 
 ### loki_gravity -- Physical Geodesy
 
-**Philosophy:** Gravitational field of the Earth, geoid, height systems, and
-temporal gravity changes. Closely connected to loki_geodesy (height systems)
-and loki_spatial (anomaly interpolation).
-
 **Prerequisite:** loki_geodesy COMPLETE. loki_core/math/sphericalHarmonics COMPLETE.
-
-**What it computes:**
-- Normal gravity field (GRS80 -- Somigliana formula)
-- Gravitational acceleration on ellipsoid and at height
-- Spherical harmonic functions: EGM2008, EIGEN, GOCO coefficients
-- Geoid undulation N (ellipsoidal - orthometric height)
-- Stokes integral: gravity anomalies -> geoid undulation
-- Vening-Meinesz integral: anomalies -> vertical deflections
-- Height system connection: h_ellip = H_orthom + N (calls loki_geodesy)
-- Free-air anomaly (Faye), Bouguer anomaly, isostatic anomaly
-- Gravimetry interpolation -> loki_spatial (kriging on gravity grid)
-
-**GRACE/GRACE-FO temporal changes (climatological connection):**
-- Monthly solutions -> time series of spherical harmonic coefficients
-- Terrestrial water storage anomalies (TWSA)
-- Ice sheet melting, groundwater depletion
-- calls loki_homogeneity, loki_spectral, loki_decomposition
-- Connects to loki_climatology (climate signal in gravity field)
-
-**New math in loki_core/math/:**
-- `sphericalHarmonics.hpp/.cpp` -- synthesis and analysis
-- `legendrePolynomials.hpp/.cpp` -- associated Legendre functions (normalized)
-- `stokesIntegral.hpp/.cpp`
 
 ---
 
 ### loki_eo -- Earth Observation
-
-**Philosophy:** Time series analysis of satellite-derived geophysical products.
-v1 focuses on ready-made products (PSInSAR/SBAS outputs, Sentinel-2 indices)
-not on raw SAR processing. New loaders needed in loki_core/io/.
-
-**What it computes:**
-- InSAR deformation time series (input: PSInSAR/SBAS outputs, not raw SAR):
-  surface deformation [mm] per point per epoch
-  calls loki_homogeneity (abrupt changes: landslide, subsidence onset)
-  calls loki_decomposition (seasonal vs. linear deformation)
-  calls loki_spectral (periodic movements, e.g. moisture-driven)
-- Sentinel-2 optical products:
-  NDVI time series per pixel / area
-  land cover change: loki_clustering, loki_homogeneity
-  methane index (SWIR combination) -- landfill monitoring
-  vegetation cycle vs. anomalies: loki_decomposition
-- Infrastructure monitoring:
-  bridge, dam, building: InSAR deformation monitoring
-  combination with GNSS reference station
-- Landfill / contaminated site monitoring:
-  InSAR surface subsidence + Sentinel-2 vegetation anomaly -> risk map
 
 **New loaders in loki_core/io/:**
 - `netcdfLoader.hpp/.cpp` -- ERA5, GRACE NetCDF
@@ -845,24 +662,7 @@ not on raw SAR processing. New loaders needed in loki_core/io/.
 
 ### loki_seismology -- GNSS Seismology
 
-**Philosophy:** Detection of seismic signals in high-frequency GNSS coordinate
-time series. Input: 1Hz or higher PPP / RTK positions from loki_gnss.
-
-**What it computes:**
-- Transient signal detection -> loki_kalman, loki_homogeneity
-- loki_wavelet (planned): time-frequency analysis of seismic waves
-- loki_spectral: Rayleigh/Love wave frequency content
-- Earthquake detection:
-  P/S wave arrival in GNSS series (position change ~cm)
-  arrival time -> epicenter localization (calls loki_spatial)
-  magnitude estimate from permanent displacement
-- Post-seismic relaxation:
-  logarithmic / exponential model -> loki_regression
-- Inter-seismic:
-  draconitic period 351.4d separation
-  loki_spectral: geophysical signal vs. artefacts
-  loki_ssa: signal from noise separation
-- Slow slip events, aseismic deformation
+Input: 1Hz or higher PPP / RTK positions from loki_gnss.
 
 ---
 
@@ -872,11 +672,11 @@ time series. Input: 1Hz or higher PPP / RTK positions from loki_gnss.
 |---|---|---|
 | COMPLETE | all time series modules | COMPLETE |
 | COMPLETE | loki_spatial, loki_geodesy, loki_multivariate | COMPLETE |
-| Faza 0 | GNSS downloader scripts | PLANNED |
-| Faza 0 | loki_core loaders (RINEX, SP3, IONEX, ...) | PLANNED |
-| Faza 0 | loki_core db layer (SQLite) | PLANNED |
-| Faza 0 | loki_core/math interpolation, keplerOrbit | PLANNED |
+| Faza 0 | GNSS downloader (`tools/gnss_download/download.sh`) | COMPLETE |
+| Faza 0 | loki_core/io/ GNSS parsers (gnssTypes, rinexNav, rinexObs, sp3, ...) | PLANNED |
+| Faza 0 | loki_core/math/ interpolation, keplerOrbit | PLANNED |
 | Faza 1 | loki_gnss | PLANNED |
+| Faza 0 | loki_core/io/ DB layer (SQLite) | PLANNED (after loki_gnss) |
 | Faza 2 | loki_climatology | PLANNED |
 | Faza 3 | loki_gnss_rail | PLANNED |
 | Faza 4 | loki_gravity | PLANNED |
@@ -913,13 +713,6 @@ time series. Input: 1Hz or higher PPP / RTK positions from loki_gnss.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
 - TimeStamp: `.mjd()` | `.utcString()` | `.gpsTotalSeconds()`
 - SNHT recursive mode: min_segment_points >= 3-4 years.
-- CRITICAL: snhtDetector.hpp and snhtDetector.cpp exist in the repository as
-  EMPTY FILES -- this is intentional. NEVER ask whether they are attached.
-  Simply implement them according to the design. DO NOT DELETE THIS NOTE.
-  (Poznamka: snht v ramci homogenizacie casoveho radu mame implementovany. 
-  Ale z nejakeho divneho dovodu, si vzdy na zaciatku vlakna pytas snhtDetector - 
-  co mi nedava zmysel a je to sakra otravne. Ak to mas v pamati ako systemovu vec,
-  tak si to prosim vymaz!!!!!)
 - snhtDetector.hpp and snhtDetector.cpp: SNHT is fully implemented inside
   loki_homogeneity. The files in the repository are EMPTY by design (system
   artifact). Do NOT request them. Do NOT ask about their content. The SNHT
@@ -931,17 +724,25 @@ time series. Input: 1Hz or higher PPP / RTK positions from loki_gnss.
 - GNSS multipath has sidereal periodicity (~23h 56min, not 24h).
 - Draconitic period: 351.4 days (GPS orbital resonance with Sun).
 - SP3 interpolation: Lagrange polynomial order 9 (IGS standard).
-- CDDIS requires NASA Earthdata account for HTTPS access.
-  Use browser download or earthdata Python CLI for first tests.
-  CODE Bern and PECNY are freely accessible without authentication.
+- CDDIS requires NASA Earthdata account for HTTPS access (~/.netrc).
+  CDDIS OAuth redirect requires cookie jar (--cookie-jar ~/.cddis_cookies).
+  CODE Bern and EUREF/EPN are freely accessible without authentication.
+- OBS RINEX from EUREF/EPN is Hatanaka compressed (.crx.gz).
+  Parsers must handle: gunzip -> crx2rnx -> standard RINEX 3.
+- VMF3 filenames use YYYYMMDD format (NOT DOY): VMF3_20240315.H00
+  VMF3_OP contains operational data (2008-present).
+  VMF3_FC contains forecast data (2018-present).
+  VMF3_EI (ERA5-based reanalysis) ends at 2019 -- do not use for 2020+.
+- CODE Bern directory structure:
+  SP3/CLK/BIAS: ftp.aiub.unibe.ch/CODE_MGEX/CODE/YYYY/
+  IONEX/DCB:    ftp.aiub.unibe.ch/CODE/YYYY/
+  P2C2 DCB does not exist -- only P1C1 and P1P2 are available.
+- GPS week = (unix_epoch - 315964800) / 604800
+- EGNOS v3 (DFMC): L1+L5, GPS+Galileo, ~0.5-1m, LPV-200 capable.
+  GEO satellites: PRN 120, 123, 126, 136.
+  No working public download source currently available (ESA GSSC SFTP down).
+- DB architecture decision: DB is populated AFTER loki_gnss computes results.
+  Raw RINEX/SP3/CLK files are NEVER stored in DB -- they stay in INPUT/GNSS/.
+  DB contains only computed outputs: positions, ZTD, integrity, obs_summary.
 - Ocean loading BLQ: manual generation at holt.oso.chalmers.se/loading/
   (enter station name + coordinates -> download .blq file, one-time per station).
-- EGNOS v3 (DFMC): Dual Frequency Multi Constellation (L1/L5, GPS+Galileo).
-  HPL/VPL broadcast directly in SBAS messages -- no own RAIM computation needed.
-  For loki_gnss_rail: SBAS integrity directly usable in SIL context without
-  independent RAIM, which simplifies the integrity pipeline significantly.
-  SBAS message format: RINEX B (.rnb) or raw binary (receiver-dependent).
-  GEO satellites for EGNOS: PRN 120, 123, 126, 136.
-  EGNOS v2: L1 only, GPS only, ~1-3m. v3: DFMC, ~0.5-1m, LPV-200 capable.
-  Research: GIVE time series during geomagnetic storms -> loki_homogeneity +
-  loki_spectral (periodicity of ionospheric degradation events).

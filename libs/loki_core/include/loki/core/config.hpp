@@ -1576,6 +1576,97 @@ struct MultivariateConfig {
     MultivariateManovaConfig         manova         {};
 };
 
+// -- GnssConfig sub-configs (outside struct -- GCC 13 aggregate-init rule) ----
+ 
+/**
+ * @brief SPP solver configuration.
+ */
+struct GnssSppConfig {
+    bool        enabled                {false};
+    int         maxIterations          {10};
+    double      convergenceThresholdM  {0.001};
+    std::string weighting              {"elevation"}; ///< "elevation" | "uniform"
+};
+ 
+/**
+ * @brief Atmospheric and physical correction switches.
+ */
+struct GnssCorrectionsConfig {
+    std::string ionosphere   {"klobuchar"};     ///< "klobuchar" | "ionex" | "none"
+    std::string troposphere  {"saastamoinen"};  ///< "saastamoinen" | "vmf3" | "none"
+    bool        relativistic {true};
+    bool        sagnac       {true};
+    bool        solidTides   {false};
+    bool        oceanLoading {false};
+    bool        phaseWindup  {false};
+    bool        pcoPcv       {false};
+};
+ 
+/**
+ * @brief PPP solver configuration.
+ */
+struct GnssPppConfig {
+    bool        enabled               {false};
+    std::string sp3File               {};  ///< Resolved absolute path.
+    std::string clkFile               {};  ///< Resolved absolute path.
+    std::string antexFile             {};  ///< Resolved absolute path.
+    std::string vmf3File              {};  ///< Resolved absolute path.
+    std::string oceanLoadingBlq       {};  ///< Resolved absolute path.
+    bool        ifCombination         {true};
+    int         maxIterations         {20};
+    double      convergenceThresholdM {0.01};
+};
+ 
+/**
+ * @brief Quality control and integrity configuration.
+ */
+struct GnssQualityConfig {
+    bool raim      {false};
+    bool residuals {false};
+    bool dop       {false};
+};
+ 
+/**
+ * @brief Known reference position for accuracy assessment.
+ */
+struct GnssReferencePositionConfig {
+    bool        enabled {false};
+    double      x       {0.0};   ///< ECEF X [m]
+    double      y       {0.0};   ///< ECEF Y [m]
+    double      z       {0.0};   ///< ECEF Z [m]
+    std::string source  {};      ///< e.g. "ITRF2020"
+};
+ 
+/**
+ * @brief Top-level configuration for the loki_gnss pipeline.
+ *
+ * task:
+ *   "parse"  -- parse NAV + OBS, produce summary and sat-count plot.
+ *   "spp"    -- Single Point Positioning (broadcast ephemeris, pseudorange).
+ *   "ppp"    -- Precise Point Positioning (SP3 + CLK, IF combination).
+ *
+ * Paths (nav_file, obs_file, ppp.*) are stored as absolute paths after
+ * resolution against workspace by ConfigLoader.
+ */
+struct GnssConfig {
+    std::string  task              {"parse"};  ///< "parse" | "spp" | "ppp"
+    std::string  station           {"UNKN"};   ///< 4-character station code
+    int          year              {0};
+    int          doy               {0};        ///< Day of year (1-366)
+    std::string  crx2rnxPath       {};         ///< Absolute path to CRX2RNX binary
+    std::string  navFile           {};         ///< Resolved absolute path
+    std::string  obsFile           {};         ///< Resolved absolute path
+    std::vector<std::string> constellations    ///< Active constellations
+        {"GPS", "GLONASS", "GALILEO", "BEIDOU"};
+    double       elevationMaskDeg  {10.0};
+ 
+    GnssSppConfig               spp        {};
+    GnssCorrectionsConfig       corrections{};
+    GnssPppConfig               ppp        {};
+    GnssQualityConfig           quality    {};
+    GnssReferencePositionConfig referencePosition{};
+};
+
 // -----------------------------------------------------------------------------
 //  AppConfig
 // -----------------------------------------------------------------------------
@@ -1606,6 +1697,7 @@ struct AppConfig {
     SpatialConfig       spatial;
     GeodesyConfig       geodesy;
     MultivariateConfig  multivariate;
+    GnssConfig          gnss;
     
     std::filesystem::path logDir;
     std::filesystem::path csvDir;

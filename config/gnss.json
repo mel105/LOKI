@@ -1,0 +1,71 @@
+{
+    "workspace": "C:/Users/eliasmichal/Documents/Osobne",
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "plots": {
+        "output_format": "png"
+    },
+
+    "gnss": {
+        "task": "parse",
+
+        "station": "GOPE",
+        "year": 2024,
+        "doy": 75,
+
+        "crx2rnx_path": "tools/hatanaka/CRX2RNX",
+
+        "nav_file": "INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
+        "obs_file": "INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
+
+        "constellations": ["GPS", "GLONASS", "GALILEO", "BEIDOU"],
+        "elevation_mask_deg": 10.0,
+
+        "spp": {
+            "enabled": false,
+            "max_iterations": 10,
+            "convergence_threshold_m": 0.001,
+            "weighting": "elevation"
+        },
+
+        "corrections": {
+            "ionosphere":    "klobuchar",
+            "troposphere":   "saastamoinen",
+            "relativistic":  true,
+            "sagnac":        true,
+            "solid_tides":   false,
+            "ocean_loading": false,
+            "phase_windup":  false,
+            "pco_pcv":       false
+        },
+
+        "ppp": {
+            "enabled":                 false,
+            "sp3_file":                "INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz",
+            "clk_file":                "INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz",
+            "antex_file":              "INPUT/GNSS/gnss_data/antex/igs20.atx",
+            "vmf3_file":               "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
+            "ocean_loading_blq":       "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
+            "if_combination":          true,
+            "max_iterations":          20,
+            "convergence_threshold_m": 0.01
+        },
+
+        "quality": {
+            "raim":      false,
+            "residuals": false,
+            "dop":       false
+        },
+
+        "reference_position": {
+            "enabled": true,
+            "x":       3979316.439,
+            "y":       1050312.253,
+            "z":       4857066.904,
+            "source":  "ITRF2020"
+        }
+    }
+}

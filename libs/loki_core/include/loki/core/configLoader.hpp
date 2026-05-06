@@ -72,6 +72,8 @@ private:
     static GeodesyConfig         _parseGeodesy          (const nlohmann::json& j);
     static MultivariateConfig    _parseMultivariate     (const nlohmann::json& j, 
                                                          const std::filesystem::path& inputDir);
+    static GnssConfig            _parseGnss             (const nlohmann::json& j,
+                                                         const std::filesystem::path& workspaceDir);
 
 
     /// Parses a shared OutlierFilterConfig block (used for pre/post outlier in homogeneity).
