@@ -10,7 +10,7 @@
     },
 
     "gnss": {
-        "task": "parse",
+        "task": "spp",
 
         "station": "GOPE",
         "year": 2024,
@@ -21,21 +21,21 @@
         "nav_file": "INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
         "obs_file": "INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
 
-        "constellations": ["GPS", "GLONASS", "GALILEO", "BEIDOU"],
+        "constellations": ["GPS"],
         "elevation_mask_deg": 10.0,
 
         "spp": {
-            "enabled": false,
-            "max_iterations": 10,
-            "convergence_threshold_m": 0.001,
+            "enabled": true,
+            "max_iterations": 20,
+            "convergence_threshold_m": 0.01,
             "weighting": "elevation"
         },
 
         "corrections": {
-            "ionosphere":    "klobuchar",
-            "troposphere":   "saastamoinen",
+            "ionosphere":    "none",
+            "troposphere":   "none",
             "relativistic":  true,
-            "sagnac":        true,
+            "sagnac":        false,
             "solid_tides":   false,
             "ocean_loading": false,
             "phase_windup":  false,
@@ -50,8 +50,8 @@
             "vmf3_file":               "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
             "ocean_loading_blq":       "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
             "if_combination":          true,
-            "max_iterations":          20,
-            "convergence_threshold_m": 0.01
+            "max_iterations":          10,
+            "convergence_threshold_m": 0.001
         },
 
         "quality": {

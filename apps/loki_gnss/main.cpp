@@ -1,12 +1,14 @@
 #include <loki/gnss/gnssTypes.hpp>
 #include <loki/gnss/rinexNavParser.hpp>
 #include <loki/gnss/rinexObsParser.hpp>
+#include <loki/gnss/keplerOrbit.hpp>
+#include <loki/gnss/satVisibility.hpp>
+#include <loki/gnss/sppSolver.hpp>
 #include <loki/core/config.hpp>
 #include <loki/core/configLoader.hpp>
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 #include <loki/core/version.hpp>
-#include <loki/io/gnuplot.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -22,6 +24,7 @@ namespace fs = std::filesystem;
 // =============================================================================
 //  CLI
 // =============================================================================
+
 static void printHelp() {
     std::cout
         << "loki_gnss " << loki::VERSION_STRING
@@ -32,9 +35,9 @@ static void printHelp() {
         << "  --help     Show this message and exit.\n"
         << "  --version  Show version string and exit.\n"
         << "\nTasks (gnss.task in config):\n"
-        << "  parse  -- Parse NAV + OBS files, produce summary and plots.\n"
+        << "  parse  -- Parse NAV + OBS, summary and sat-count plot.\n"
         << "  spp    -- Single Point Positioning (broadcast ephemeris).\n"
-        << "  ppp    -- Precise Point Positioning (SP3 + CLK).\n";
+        << "  ppp    -- Precise Point Positioning (SP3 + CLK). [planned]\n";
 }
 
 struct CliArgs {
@@ -50,10 +53,7 @@ static CliArgs parseArgs(int argc, char* argv[]) {
         if      (arg == "--help"    || arg == "-h") { args.showHelp    = true; }
         else if (arg == "--version" || arg == "-v") { args.showVersion = true; }
         else if (arg[0] != '-') { args.configPath = argv[i]; }
-        else {
-            std::cerr << "[loki_gnss] Unknown option: " << arg
-                      << "  (use --help)\n";
-        }
+        else std::cerr << "[loki_gnss] Unknown option: " << arg << "\n";
     }
     return args;
 }
@@ -108,16 +108,10 @@ void printNavSummary(const loki::gnss::NavFile& nav) {
                   << b[0] << "  " << b[1] << "  "
                   << b[2] << "  " << b[3] << "\n";
     }
-    if (nav.nequickAi[0] != 0.0) {
-        std::cout << "  NeQuick ai     : "
-                  << nav.nequickAi[0] << "  "
-                  << nav.nequickAi[1] << "  "
-                  << nav.nequickAi[2] << "\n";
-    }
 
     // Unique GPS PRNs
     if (!nav.gpsEph.empty()) {
-        std::map<int, bool> seen;
+        std::map<int,bool> seen;
         std::cout << "  GPS PRNs: ";
         for (const auto& e : nav.gpsEph) {
             if (!seen[e.prn]) {
@@ -154,8 +148,7 @@ void printObsSummary(const loki::gnss::ObsFile& obs) {
     const auto t0 = obs.epochs.front().time.toTimeStamp();
     const auto t1 = obs.epochs.back().time.toTimeStamp();
     std::cout << "  Time span     : "
-              << t0.utcString() << "  -->  "
-              << t1.utcString() << "\n";
+              << t0.utcString() << "  -->  " << t1.utcString() << "\n";
 
     std::size_t minSat = SIZE_MAX, maxSat = 0;
     double sumSat = 0.0;
@@ -174,112 +167,87 @@ void printObsSummary(const loki::gnss::ObsFile& obs) {
               << "  max=" << maxSat
               << "  mean=" << std::fixed << std::setprecision(1)
               << sumSat / static_cast<double>(obs.epochs.size()) << "\n";
-
-    std::cout << "  Observations per constellation:\n";
+    std::cout << "  Per constellation:\n";
     for (const auto& [sys, cnt] : sysCounts)
         std::cout << "    " << std::setw(8) << std::left
                   << gnssSystemName(sys) << ": " << cnt << "\n";
+}
 
-    // First epoch detail
+// =============================================================================
+//  SPP summary
+// =============================================================================
+void printSppSummary(const std::vector<loki::gnss::SppResult>& results,
+                     const loki::GnssConfig& gcfg) {
     separator();
-    std::cout << "FIRST EPOCH DETAIL\n";
+    std::cout << "SPP SUMMARY\n";
     separator();
-    const auto& ep0 = obs.epochs.front();
-    std::cout << "  Time  : " << ep0.time.toTimeStamp().utcString() << "\n";
-    std::cout << "  nSat  : " << ep0.satellites.size() << "\n";
-    for (const auto& sat : ep0.satellites) {
-        std::cout << "    " << gnssSystemName(sat.system)
-                  << std::setw(2) << std::setfill('0') << sat.prn
-                  << std::setfill(' ') << "  [";
-        bool first = true;
-        int shown = 0;
-        for (const auto& [code, ov] : sat.obs) {
-            if (!first) std::cout << ", ";
-            std::cout << code << "=" << std::fixed
-                      << std::setprecision(3) << ov.value;
-            first = false;
-            if (++shown >= 4) { std::cout << ", ..."; break; }
-        }
-        std::cout << "]\n";
+
+    int nValid = 0;
+    double sumX = 0, sumY = 0, sumZ = 0;
+
+    for (const auto& r : results) {
+        if (!r.valid) continue;
+        ++nValid;
+        sumX += r.x; sumY += r.y; sumZ += r.z;
+    }
+
+    std::cout << "  Valid epochs  : " << nValid << " / "
+              << results.size() << "\n";
+
+    if (nValid == 0) return;
+
+    // Also accumulate clock bias
+    double sumClk = 0.0;
+    for (const auto& r : results) {
+        if (!r.valid) continue;
+        sumClk += r.clkBiasM;
+    }
+    const double meanClk = sumClk / nValid;
+    std::cout << "  Mean clk bias : " << std::fixed << std::setprecision(3)
+              << meanClk << " [m]  = "
+              << meanClk / 299792458.0 * 1e6 << " [us]\n";
+
+    const double meanX = sumX / nValid;
+    const double meanY = sumY / nValid;
+    const double meanZ = sumZ / nValid;
+    std::cout << "  Mean ECEF X   : " << std::fixed << std::setprecision(3)
+              << meanX << " [m]\n";
+    std::cout << "  Mean ECEF Y   : " << meanY << " [m]\n";
+    std::cout << "  Mean ECEF Z   : " << meanZ << " [m]\n";
+
+    if (gcfg.referencePosition.enabled) {
+        const double dX = meanX - gcfg.referencePosition.x;
+        const double dY = meanY - gcfg.referencePosition.y;
+        const double dZ = meanZ - gcfg.referencePosition.z;
+        const double dR = std::sqrt(dX*dX + dY*dY + dZ*dZ);
+        std::cout << "  3D error (vs " << gcfg.referencePosition.source
+                  << "): " << std::setprecision(3) << dR << " [m]\n";
+        std::cout << "  dX=" << dX << "  dY=" << dY << "  dZ=" << dZ
+                  << " [m]\n";
     }
 }
 
 // =============================================================================
-//  Satellite count plot
+//  SPP CSV export
 // =============================================================================
-void plotSatCount(const loki::gnss::ObsFile& obs,
-                  const std::string& imgDir,
+void exportSppCsv(const std::vector<loki::gnss::SppResult>& results,
                   const std::string& csvDir,
                   const std::string& station) {
-    using G = loki::gnss::GnssSystem;
-
-    struct Row {
-        double mjd{0.0};
-        int nGps{0}, nGal{0}, nGlo{0}, nBds{0}, nTotal{0};
-    };
-    std::vector<Row> rows;
-    rows.reserve(obs.epochs.size());
-
-    for (const auto& ep : obs.epochs) {
-        Row r;
-        r.mjd = ep.time.toTimeStamp().mjd();
-        for (const auto& sat : ep.satellites) {
-            ++r.nTotal;
-            switch (sat.system) {
-                case G::GPS:     ++r.nGps; break;
-                case G::GALILEO: ++r.nGal; break;
-                case G::GLONASS: ++r.nGlo; break;
-                case G::BEIDOU:  ++r.nBds; break;
-                default: break;
-            }
-        }
-        rows.push_back(r);
+    const std::string path = csvDir + "/gnss_" + station + "_spp.csv";
+    std::ofstream ofs(path);
+    ofs << "mjd;x;y;z;clk_bias_m;pdop;n_sats;converged\n";
+    for (const auto& r : results) {
+        if (!r.valid) continue;
+        const double mjd = r.time.toTimeStamp().mjd();
+        ofs << std::fixed << std::setprecision(8) << mjd << ";"
+            << std::setprecision(4)
+            << r.x << ";" << r.y << ";" << r.z << ";"
+            << r.clkBiasM << ";"
+            << std::setprecision(2) << r.pdop << ";"
+            << r.nSats << ";"
+            << (r.converged ? 1 : 0) << "\n";
     }
-
-    // CSV
-    const std::string csvPath = csvDir + "/gnss_" + station + "_satcount.csv";
-    {
-        std::ofstream ofs(csvPath);
-        ofs << "mjd;gps;galileo;glonass;beidou;total\n";
-        for (const auto& r : rows)
-            ofs << std::fixed << std::setprecision(8) << r.mjd << ";"
-                << r.nGps << ";" << r.nGal << ";"
-                << r.nGlo << ";" << r.nBds << ";" << r.nTotal << "\n";
-    }
-    LOKI_INFO("CSV: " + csvPath);
-
-    // gnuplot
-    const std::string pngPath =
-        fwdSlash(imgDir + "/gnss_" + station + "_satcount.png");
-
-    loki::Gnuplot gp;
-    std::string datablock = "$data << EOD\n";
-    for (const auto& r : rows)
-        datablock += std::to_string(r.mjd) + " "
-                   + std::to_string(r.nTotal) + " "
-                   + std::to_string(r.nGps)   + " "
-                   + std::to_string(r.nGal)   + " "
-                   + std::to_string(r.nGlo)   + " "
-                   + std::to_string(r.nBds)   + "\n";
-    datablock += "EOD";
-    gp(datablock);
-
-    gp("set terminal pngcairo noenhanced font 'Sans,12' size 1200,500");
-    gp("set output '" + pngPath + "'");
-    gp("set title 'Visible satellites per epoch -- " + station + "'");
-    gp("set xlabel 'MJD'");
-    gp("set ylabel 'Number of satellites'");
-    gp("set key top right");
-    gp("set grid");
-    gp("set yrange [0:*]");
-    gp("plot $data u 1:2 w l lw 2 lc rgb '#222222' title 'Total', "
-       "     $data u 1:3 w l lw 1 lc rgb '#1f77b4' title 'GPS', "
-       "     $data u 1:4 w l lw 1 lc rgb '#ff7f0e' title 'Galileo', "
-       "     $data u 1:5 w l lw 1 lc rgb '#2ca02c' title 'GLONASS', "
-       "     $data u 1:6 w l lw 1 lc rgb '#d62728' title 'BeiDou'");
-    gp("unset output");
-
-    LOKI_INFO("PNG: " + pngPath);
+    LOKI_INFO("SPP CSV: " + path);
 }
 
 } // namespace
@@ -289,13 +257,11 @@ void plotSatCount(const loki::gnss::ObsFile& obs,
 // =============================================================================
 int main(int argc, char* argv[]) {
     const CliArgs args = parseArgs(argc, argv);
-    if (args.showHelp)    { printHelp();
-                           std::cout << "loki_gnss "
-                                     << loki::VERSION_STRING << "\n";
-                           return EXIT_SUCCESS; }
-    if (args.showVersion) { std::cout << "loki_gnss "
-                                      << loki::VERSION_STRING << "\n";
-                            return EXIT_SUCCESS; }
+    if (args.showHelp)    { printHelp();    return EXIT_SUCCESS; }
+    if (args.showVersion) {
+        std::cout << "loki_gnss " << loki::VERSION_STRING << "\n";
+        return EXIT_SUCCESS;
+    }
 
     loki::AppConfig cfg;
     try {
@@ -342,7 +308,6 @@ int main(int argc, char* argv[]) {
     try {
         loki::gnss::RinexObsParser::Config obsCfg;
         obsCfg.crx2rnxPath = gcfg.crx2rnxPath;
-        obsCfg.verbose     = false;
         loki::gnss::RinexObsParser obsParser(obsCfg);
         LOKI_INFO("Parsing OBS: " + gcfg.obsFile);
         obs = obsParser.parseGz(gcfg.obsFile);
@@ -352,20 +317,36 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // ── Plots ─────────────────────────────────────────────────────────────────
-    try {
-        plotSatCount(obs,
-                     cfg.imgDir.string(),
-                     cfg.csvDir.string(),
-                     gcfg.station);
-    } catch (const loki::LOKIException& ex) {
-        LOKI_WARNING(std::string("Plot failed: ") + ex.what());
+    // ── SPP ──────────────────────────────────────────────────────────────────
+    std::vector<loki::gnss::SppResult> sppResults;
+
+    if (gcfg.task == "spp" || gcfg.spp.enabled) {
+        try {
+            loki::gnss::SppSolver::Config solverCfg;
+            solverCfg.maxIterations         = gcfg.spp.maxIterations;
+            solverCfg.convergenceThresholdM = gcfg.spp.convergenceThresholdM;
+            solverCfg.weighting             = gcfg.spp.weighting;
+            solverCfg.ionosphere            = gcfg.corrections.ionosphere;
+            solverCfg.troposphere           = gcfg.corrections.troposphere;
+            solverCfg.sagnac                = gcfg.corrections.sagnac;
+            solverCfg.elevMaskDeg           = gcfg.elevationMaskDeg;
+            solverCfg.constellations        = gcfg.constellations;
+
+            loki::gnss::SppSolver solver(solverCfg);
+            LOKI_INFO("Running SPP for " + std::to_string(obs.epochs.size())
+                      + " epochs...");
+            sppResults = solver.solveAll(obs, nav, gcfg);
+
+            printSppSummary(sppResults, gcfg);
+            exportSppCsv(sppResults, cfg.csvDir.string(), gcfg.station);
+
+        } catch (const loki::LOKIException& ex) {
+            LOKI_ERROR(std::string("SPP failed: ") + ex.what());
+        }
     }
 
-    // ── SPP (placeholder) ────────────────────────────────────────────────────
-    if (gcfg.task == "spp" || gcfg.spp.enabled) {
-        LOKI_WARNING("SPP not yet implemented -- coming in next iteration.");
-    }
+    // ── PlotGnss (placeholder -- implemented in next iteration) ──────────────
+    LOKI_INFO("Plots: PlotGnss will be implemented in the next iteration.");
 
     LOKI_INFO("loki_gnss finished successfully.");
     return EXIT_SUCCESS;

@@ -119,13 +119,6 @@ ObsFile RinexObsParser::parseGz(const std::string& filePath) const {
             throw ParseException("RinexObsParser: CRX2RNX failed (exit="
                 + std::to_string(ret) + ") for: " + filePath); }
 
-        if (m_cfg.verbose) {
-            std::cerr << "[RinexObsParser] cmd=" << cmd << "\n";
-            std::cerr << "[RinexObsParser] rnxPath=" << rnxPath << "\n";
-            std::ifstream tmp(rnxPath, std::ios::ate);
-            std::cerr << "[RinexObsParser] size=" << tmp.tellg() << " bytes\n";
-        }
-
         FILE* probe = std::fopen(rnxPath.c_str(), "rb");
         if (!probe) throw ParseException(
             "RinexObsParser: CRX2RNX produced no output for: " + filePath);
@@ -307,7 +300,21 @@ bool RinexObsParser::parseEpochLine(const std::string& line,
         const double sec = std::stod(safeSub(line, 19, 10));
         epochFlag        = std::stoi(safeSub(line, 29, 3));
         numSat           = std::stoi(safeSub(line, 32, 3));
-        const ::TimeStamp ts(yr, mo, dy, hr, mi, sec);
+        // RINEX 3 OBS epoch time is in GPS system time for GPS receivers.
+        // Subtract leap seconds before creating UTC TimeStamp so that
+        // fromTimeStamp() adds them back, yielding the original GPS time.
+        double secG = sec - 18.0;
+        int miG = mi, hrG = hr, dyG = dy, moG = mo, yrG = yr;
+        if (secG < 0.0) { secG += 60.0; --miG; }
+        if (miG < 0)    { miG  += 60;   --hrG; }
+        if (hrG < 0)    { hrG  += 24;   --dyG; }
+        if (dyG < 1) {
+            --moG;
+            if (moG < 1) { moG = 12; --yrG; }
+            const int dim[] = {0,31,28,31,30,31,30,31,31,30,31,30,31};
+            dyG = dim[moG];
+        }
+        const ::TimeStamp ts(yrG, moG, dyG, hrG, miG, secG);
         time = GpsTime::fromTimeStamp(ts);
         return true;
     } catch (...) { return false; }

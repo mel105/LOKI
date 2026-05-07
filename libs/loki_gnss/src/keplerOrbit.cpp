@@ -62,7 +62,12 @@ SatState KeplerOrbit::_keplerPropagate(
     SatState state;
 
     // -- Time from clock reference epoch (toc) --------------------------------
-    const double toc_total = static_cast<double>(toe_week) * 604800.0 + toc_sow;
+    // toc and toe may be in different GPS weeks (week rollover case).
+    // Estimate toc_week from toe_week and toc_sow proximity.
+    int toc_week = toe_week;
+    if (toc_sow - toe_sow > 302400.0)  toc_week = toe_week - 1;
+    if (toc_sow - toe_sow < -302400.0) toc_week = toe_week + 1;
+    const double toc_total = static_cast<double>(toc_week) * 604800.0 + toc_sow;
     const double t_total   = static_cast<double>(t_week)   * 604800.0 + t_sow;
     double dt_clk = t_total - toc_total;
 

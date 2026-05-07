@@ -708,9 +708,30 @@ GpsTime RinexNavParser::epochToGpsTime(int yr, int mo, int dy,
     if (yr < 100) {
         yr += (yr < 80) ? 2000 : 1900;
     }
+    // RINEX 3 NAV epoch times are in GPS system time (not UTC).
+    // TimeStamp interprets its input as UTC and adds leap seconds on
+    // conversion to GPS time. To avoid double-counting leap seconds,
+    // we first create a UTC TimeStamp by subtracting the current leap
+    // second offset (18 s since 2017-01-01), then convert to GPS.
+    // This round-trip yields the correct GPS week + SOW.
     const int secInt  = static_cast<int>(sec);
     const double frac = sec - static_cast<double>(secInt);
-    const ::TimeStamp ts(yr, mo, dy, hr, mi,
-                         static_cast<double>(secInt) + frac);
+    const double secVal = static_cast<double>(secInt) + frac;
+    // Subtract leap seconds to get equivalent UTC, then convert UTC->GPS.
+    // TimeStamp::_leapSecondsAt will add them back, yielding the original GPS time.
+    double secUTC = secVal - 18.0;
+    int miUTC = mi, hrUTC = hr, dyUTC = dy, moUTC = mo, yrUTC = yr;
+    // Propagate borrow
+    if (secUTC < 0.0) { secUTC += 60.0; --miUTC; }
+    if (miUTC < 0)    { miUTC  += 60;   --hrUTC; }
+    if (hrUTC < 0)    { hrUTC  += 24;   --dyUTC; }
+    if (dyUTC < 1) {
+        --moUTC;
+        if (moUTC < 1) { moUTC = 12; --yrUTC; }
+        // Days in previous month (simplified -- GPS dates rarely cross month boundary here)
+        const int daysInPrevMonth[] = {0,31,28,31,30,31,30,31,31,30,31,30,31};
+        dyUTC = daysInPrevMonth[moUTC];
+    }
+    const ::TimeStamp ts(yrUTC, moUTC, dyUTC, hrUTC, miUTC, secUTC);
     return GpsTime::fromTimeStamp(ts);
 }
