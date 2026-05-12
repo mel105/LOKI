@@ -1,10 +1,13 @@
 #include <loki/gnss/sppSolver.hpp>
+#include <loki/gnss/gnssUtils.hpp>
+#include <loki/gnss/relativity.hpp>
+#include <loki/geodesy/coordTransform.hpp>
+#include <loki/math/ellipsoid.hpp>
 #include <loki/core/exceptions.hpp>
 
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <numbers>
 
 using namespace loki;
@@ -14,13 +17,24 @@ using namespace loki::gnss;
 //  Constructor
 // =============================================================================
 
-SppSolver::SppSolver(Config cfg) : m_cfg(std::move(cfg)) {}
+SppSolver::SppSolver(Config                                        cfg,
+                     std::unique_ptr<OrbitModel>                   orbit,
+                     std::vector<std::unique_ptr<CorrectionModel>> corrections)
+    : m_cfg(std::move(cfg))
+    , m_orbit(std::move(orbit))
+    , m_corrections(std::move(corrections))
+{
+    if (!m_orbit) {
+        throw ConfigException("SppSolver: orbit model must not be null.");
+    }
+}
 
 // =============================================================================
 //  isEnabled
 // =============================================================================
 
-bool SppSolver::isEnabled(GnssSystem system) const {
+bool SppSolver::isEnabled(GnssSystem system) const
+{
     const std::string name = [&]() -> std::string {
         switch (system) {
             case GnssSystem::GPS:     return "GPS";
@@ -37,159 +51,70 @@ bool SppSolver::isEnabled(GnssSystem system) const {
 }
 
 // =============================================================================
-//  ecefToGeodetic  (Bowring iterative, 5 iterations)
-// =============================================================================
-
-void SppSolver::ecefToGeodetic(double x, double y, double z,
-                                double& lat, double& lon, double& h) {
-    constexpr double a  = 6378137.0;
-    constexpr double e2 = 6.694379990141e-3;
-    lon = std::atan2(y, x);
-    const double p = std::sqrt(x*x + y*y);
-    lat = std::atan2(z, p * (1.0 - e2));
-    for (int i = 0; i < 5; ++i) {
-        const double sinLat = std::sin(lat);
-        const double N = a / std::sqrt(1.0 - e2 * sinLat * sinLat);
-        lat = std::atan2(z + e2 * N * sinLat, p);
-    }
-    const double sinLat = std::sin(lat);
-    const double N = a / std::sqrt(1.0 - e2 * sinLat * sinLat);
-    h = p / std::cos(lat) - N;
-}
-
-// =============================================================================
-//  selectPseudorange
-//  Priority: GPS C1C > C1W > C2W > C2C > C1X
-//            GAL C1X > C5X > C7X > C8X
-//            GLO C1C > C1P > C2C > C2P
-//            BDS C2I > C6I > C7I > C1X
-// =============================================================================
-
-double SppSolver::selectPseudorange(const SatObs& sat, GnssSystem system) {
-    std::vector<std::string> priority;
-    switch (system) {
-        case GnssSystem::GPS:
-        case GnssSystem::QZSS:
-            priority = {"C1C", "C1W", "C2W", "C2C", "C1X", "C5X"};
-            break;
-        case GnssSystem::GALILEO:
-            priority = {"C1X", "C5X", "C7X", "C8X", "C1C"};
-            break;
-        case GnssSystem::GLONASS:
-            priority = {"C1C", "C1P", "C2C", "C2P"};
-            break;
-        case GnssSystem::BEIDOU:
-            priority = {"C2I", "C6I", "C7I", "C1X", "C5X"};
-            break;
-        default:
-            return 0.0;
-    }
-    for (const auto& code : priority) {
-        const auto it = sat.obs.find(code);
-        if (it != sat.obs.end() && it->second.valid &&
-            it->second.value > 1.0e6)
-            return it->second.value;
-    }
-    return 0.0;
-}
-
-// =============================================================================
-//  elevationWeight  w = sin^2(el)
-// =============================================================================
-
-double SppSolver::elevationWeight(double elevRad) {
-    const double s = std::sin(elevRad);
-    return s * s;
-}
-
-// =============================================================================
-//  klobucharDelay  (IS-GPS-200 section 20.3.3.5.2.5)
-//  Returns L1 ionosphere delay [m].
-// =============================================================================
-
-double SppSolver::klobucharDelay(const std::array<double,4>& alpha,
-                                  const std::array<double,4>& beta,
-                                  double lat, double lon,
-                                  double az,  double el,
-                                  double gpsSow) {
-    const double psi  = 0.0137 / (el / std::numbers::pi + 0.11) - 0.022;
-    double phi_i = lat / std::numbers::pi + psi * std::cos(az);
-    phi_i = std::clamp(phi_i, -0.416, 0.416);
-    const double lambda_i = lon / std::numbers::pi
-        + psi * std::sin(az) / std::cos(phi_i * std::numbers::pi);
-    const double phi_m = phi_i
-        + 0.064 * std::cos((lambda_i - 1.617) * std::numbers::pi);
-    double t = 4.32e4 * lambda_i + gpsSow;
-    t = std::fmod(t, 86400.0);
-    if (t < 0.0) t += 86400.0;
-    double Per = alpha[0] + alpha[1]*phi_m + alpha[2]*phi_m*phi_m
-               + alpha[3]*phi_m*phi_m*phi_m;
-    Per = std::max(Per, 72000.0);
-    double Amp = beta[0] + beta[1]*phi_m + beta[2]*phi_m*phi_m
-               + beta[3]*phi_m*phi_m*phi_m;
-    Amp = std::max(Amp, 0.0);
-    const double x = 2.0 * std::numbers::pi * (t - 50400.0) / Per;
-    const double F = 1.0 + 16.0 * std::pow(0.53 - el / std::numbers::pi, 3.0);
-    const double T_iono = (std::fabs(x) < 1.57)
-        ? (5.0e-9 + Amp * (1.0 - x*x/2.0 + x*x*x*x/24.0)) * F
-        : 5.0e-9 * F;
-    return T_iono * SPEED_OF_LIGHT;
-}
-
-// =============================================================================
-//  saastamoinenDelay
-//  Returns zenith troposphere delay mapped to slant [m].
-// =============================================================================
-
-double SppSolver::saastamoinenDelay(double lat, double h, double el) {
-    const double P   = 1013.25 * std::pow(1.0 - 2.2557e-5 * h, 5.2568);
-    const double T   = 15.0 - 6.5e-3 * h + 273.15;
-    const double e   = 6.108 * std::exp(17.15 * (T - 273.15) / (T - 38.25));
-    const double Zhd = 0.0022768 * P
-        / (1.0 - 0.00266 * std::cos(2.0 * lat) - 2.8e-7 * h);
-    const double Zwet = 0.002277 * (1255.0 / T + 0.05) * e;
-    const double sinEl = std::sin(el);
-    return (Zhd + Zwet) / (sinEl < 0.05 ? 0.05 : sinEl);
-}
-
-// =============================================================================
 //  solve  -- iterative weighted LSQ SPP for one epoch
 // =============================================================================
 
 SppResult SppSolver::solve(
     const ObsEpoch&              epoch,
     const NavFile&               nav,
-    const std::array<double,3>&  approxPos,
-    const std::array<double,4>&  ionoAlpha,
-    const std::array<double,4>&  ionoBeta) const
+    const std::array<double,3>&  approxPos) const
 {
     SppResult result;
     result.time = epoch.time;
 
-    // Working state: ECEF position + receiver clock bias [m]
-    double rx      = approxPos[0];
-    double ry      = approxPos[1];
-    double rz      = approxPos[2];
-    double rcv_clk = 0.0;
+    // Working position estimate [m].
+    double rx = approxPos[0];
+    double ry = approxPos[1];
+    double rz = approxPos[2];
 
-    // Geodetic coords of current position estimate (for correction models)
-    double lat0 = 0.0, lon0 = 0.0, h0 = 0.0;
-    ecefToGeodetic(rx, ry, rz, lat0, lon0, h0);
+    // WGS-84 ellipsoid for ECEF -> geodetic conversion.
+    const loki::math::Ellipsoid wgs84 = loki::math::makeEllipsoid(
+        loki::math::EllipsoidModel::WGS84);
 
-    // clkBias stored separately for debug output
+    // clk[0] = GPS clock [m], clk[1] = GLO ISB, clk[2] = GAL ISB, clk[3] = BDS ISB.
+    std::array<double, 4> clk{0.0, 0.0, 0.0, 0.0};
+
+    // Fixed ISB column mapping (stable across all iterations):
+    //   0 = GPS / QZSS (reference clock)
+    //   1 = GLONASS ISB
+    //   2 = GALILEO ISB
+    //   3 = BEIDOU ISB
+    auto sysToFixedCol = [](GnssSystem sys) -> int {
+        switch (sys) {
+            case GnssSystem::GLONASS: return 1;
+            case GnssSystem::GALILEO: return 2;
+            case GnssSystem::BEIDOU:  return 3;
+            default:                  return 0;
+        }
+    };
+
+    // Per-measurement working structure used inside each iteration.
     struct SatMeas {
-        double     range;       // corrected pseudorange [m]
-        double     prRaw;       // raw pseudorange [m] before clock correction
-        double     clkBias;     // satellite clock bias [s]
-        double     xs, ys, zs; // satellite ECEF [m]
-        double     elevation;   // [rad]
-        double     azimuth;     // [rad]
+        double     range;           ///< Corrected pseudorange [m].
+        double     xs, ys, zs;     ///< Satellite ECEF [m] (Sagnac-rotated if enabled).
+        double     elevation;       ///< [rad]
+        double     azimuth;         ///< [rad]
         double     weight;
+        int        fixedCol;        ///< 0=GPS, 1=GLO, 2=GAL, 3=BDS
         GnssSystem system;
         int        prn;
     };
 
+    // Geodetic coordinates of current position (recomputed each iteration
+    // for correction models that depend on station position).
+    loki::geodesy::GeodPoint geod{0.0, 0.0, 0.0};
+
     for (int iter = 0; iter < m_cfg.maxIterations; ++iter) {
+
+        // Update geodetic position.
+        {
+            const loki::geodesy::EcefPoint ep{rx, ry, rz};
+            geod = loki::geodesy::ecef2geod(ep, wgs84);
+            // ecef2geod returns degrees; convert to radians for correction models.
+        }
+        const double latRad = geod.lat * (std::numbers::pi / 180.0);
+        const double lonRad = geod.lon * (std::numbers::pi / 180.0);
+        const double hM     = geod.h;
 
         std::vector<SatMeas> meas;
         meas.reserve(epoch.satellites.size());
@@ -198,70 +123,94 @@ SppResult SppSolver::solve(
             if (!isEnabled(satObs.system)) continue;
 
             const double pr = selectPseudorange(satObs, satObs.system);
-            if (pr < 1.0e6) continue;
+            if (pr == 0.0) continue;
 
-            // Approximate signal transmission time
-            const double tof = pr / SPEED_OF_LIGHT;
-            GpsTime txTime   = epoch.time;
-            txTime.sow      -= tof;
+            // Approximate signal time of flight.
+            const double tof  = pr / SPEED_OF_LIGHT;
+            GpsTime txTime    = epoch.time;
+            txTime.sow       -= tof;
             if (txTime.sow < 0.0) { txTime.sow += 604800.0; --txTime.week; }
 
-            // Satellite ECEF position + clock at transmission time
-            const SatState sat = KeplerOrbit::compute(
-                nav, satObs.system, satObs.prn, txTime);
+            // Satellite state at transmission time.
+            const SatState sat = m_orbit->compute(nav, satObs.system,
+                                                    satObs.prn, txTime);
             if (!sat.valid) continue;
 
-            // Sagnac correction (Earth rotation during signal travel)
+            // Optionally rotate satellite position for Sagnac effect.
             double xs = sat.x, ys = sat.y, zs = sat.z;
             if (m_cfg.sagnac) {
-                constexpr double OE = 7.2921151467e-5;
-                const double theta  = OE * tof;
-                xs =  sat.x * std::cos(theta) + sat.y * std::sin(theta);
-                ys = -sat.x * std::sin(theta) + sat.y * std::cos(theta);
-                zs =  sat.z;
+                const auto rotated = Relativity::rotateSatPosition(
+                    {sat.x, sat.y, sat.z}, tof);
+                xs = rotated[0]; ys = rotated[1]; zs = rotated[2];
             }
 
-            // Elevation and azimuth from current position estimate
-            double el = 0.0, az = 0.0;
-            SatVisibility::ecefToElevAzim({xs, ys, zs}, {rx, ry, rz}, el, az);
-            const double elRad = el * (std::numbers::pi / 180.0);
-            const double azRad = az * (std::numbers::pi / 180.0);
+            // Elevation and azimuth from current position estimate.
+            double elDeg = 0.0, azDeg = 0.0;
+            SatVisibility::ecefToElevAzim({xs, ys, zs}, {rx, ry, rz},
+                                           elDeg, azDeg);
+            if (elDeg < m_cfg.elevMaskDeg) continue;
 
-            if (el < m_cfg.elevMaskDeg) continue;
+            const double elRad = elDeg * (std::numbers::pi / 180.0);
+            const double azRad = azDeg * (std::numbers::pi / 180.0);
 
-            // Build corrected pseudorange.
-            // Pseudorange observation model: P = rho + c*dt_rcv - c*dt_sat + ...
-            // To isolate (rho + c*dt_rcv) we add c*dt_sat to both sides:
-            //   P + c*dt_sat = rho + c*dt_rcv
-            // clkBias = dt_sat [s], so: prCorr = pr + clkBias * c
-            double prCorr = pr;
-            prCorr += sat.clkBias * SPEED_OF_LIGHT;
+            // Apply satellite clock correction (ADD: positive clkBias shortens range).
+            double prCorr = pr + sat.clkBias * SPEED_OF_LIGHT;
 
-            if (m_cfg.ionosphere == "klobuchar") {
-                prCorr -= klobucharDelay(ionoAlpha, ionoBeta,
-                                          lat0, lon0, azRad, elRad,
-                                          epoch.time.sow);
+            // Apply injected correction models (subtract each delay).
+            if (!m_corrections.empty()) {
+                CorrectionInput ci;
+                ci.lat       = latRad;
+                ci.lon       = lonRad;
+                ci.h         = hM;
+                ci.elevation = elRad;
+                ci.azimuth   = azRad;
+                ci.gpsSow    = epoch.time.sow;
+
+                for (const auto& model : m_corrections) {
+                    prCorr -= model->delay(ci);
+                }
             }
 
-            if (m_cfg.troposphere == "saastamoinen") {
-                prCorr -= saastamoinenDelay(lat0, h0, elRad);
-            }
-
+            // Elevation-dependent weight.
             double w = 1.0;
             if (m_cfg.weighting == "elevation") {
                 w = elevationWeight(elRad);
                 if (w < 1.0e-6) continue;
             }
 
-            meas.push_back({prCorr, pr, sat.clkBias,
-                             xs, ys, zs, elRad, azRad, w,
+            meas.push_back({prCorr, xs, ys, zs,
+                             elRad, azRad, w,
+                             sysToFixedCol(satObs.system),
                              satObs.system, satObs.prn});
         }
 
-        if (static_cast<int>(meas.size()) < 4) break;
+        // Count satellites per fixed column.
+        int colCount[4] = {0, 0, 0, 0};
+        for (const auto& m2 : meas)
+            colCount[m2.fixedCol]++;
+
+        // Map fixed column -> compact parameter index.
+        // X,Y,Z = 0,1,2; GPS clock = 3; non-GPS ISB added if >= 2 satellites.
+        int compactIdx[4] = {3, -1, -1, -1};
+        int nParams = 4;
+        for (int c = 1; c <= 3; ++c) {
+            if (colCount[c] >= 2)
+                compactIdx[c] = nParams++;
+        }
+
+        // Drop measurements whose constellation ISB column was not activated.
+        meas.erase(
+            std::remove_if(meas.begin(), meas.end(),
+                [&](const SatMeas& m2) {
+                    return compactIdx[m2.fixedCol] < 0;
+                }),
+            meas.end());
 
         const int n = static_cast<int>(meas.size());
-        Eigen::MatrixXd H(n, 4);
+        if (n < nParams) break;
+
+        // Build weighted LSQ system H * dx = b, W = diag(weights).
+        Eigen::MatrixXd H = Eigen::MatrixXd::Zero(n, nParams);
         Eigen::VectorXd b(n);
         Eigen::VectorXd W(n);
 
@@ -275,33 +224,36 @@ SppResult SppSolver::solve(
             H(i, 0) = -ddx / rho;
             H(i, 1) = -ddy / rho;
             H(i, 2) = -ddz / rho;
-            H(i, 3) = 1.0;
+            H(i, compactIdx[meas[si].fixedCol]) = 1.0;
 
-            b(i) = meas[si].range - (rho + rcv_clk);
+            const double ct = clk[0]
+                + (meas[si].fixedCol > 0 ? clk[meas[si].fixedCol] : 0.0);
+            b(i) = meas[si].range - (rho + ct);
             W(i) = meas[si].weight;
         }
 
-        // Weighted LSQ: dx = (H^T W H)^-1 H^T W b
         const Eigen::MatrixXd Hw   = H.array().colwise() * W.array();
-        const Eigen::Matrix4d HtWH = Hw.transpose() * H;
-        const Eigen::Vector4d HtWb = Hw.transpose() * b;
-        const Eigen::Vector4d dx   = HtWH.ldlt().solve(HtWb);
+        const Eigen::MatrixXd HtWH = Hw.transpose() * H;
+        const Eigen::VectorXd HtWb = Hw.transpose() * b;
+        const Eigen::VectorXd dx   = HtWH.ldlt().solve(HtWb);
 
-        rx      += dx(0);
-        ry      += dx(1);
-        rz      += dx(2);
-        rcv_clk += dx(3);
+        rx     += dx(0);
+        ry     += dx(1);
+        rz     += dx(2);
+        clk[0] += dx(3);
+        for (int c = 1; c <= 3; ++c) {
+            if (compactIdx[c] >= 4)
+                clk[c] += dx(compactIdx[c]);
+        }
 
-        // Update geodetic for next iteration
-        ecefToGeodetic(rx, ry, rz, lat0, lon0, h0);
+        // Abort if estimate has diverged far from Earth surface.
+        if (rx*rx + ry*ry + rz*rz > 4.5e13) break;
 
         result.iterations = iter + 1;
 
-        const double norm = dx.head(3).norm();
-        if (norm < m_cfg.convergenceThresholdM) {
+        if (dx.head(3).norm() < m_cfg.convergenceThresholdM) {
             result.converged = true;
 
-            // Post-fit residuals
             result.residuals.reserve(static_cast<std::size_t>(n));
             result.usedSats.reserve(static_cast<std::size_t>(n));
 
@@ -311,7 +263,9 @@ SppResult SppSolver::solve(
                 const double ddy  = meas[si].ys - ry;
                 const double ddz  = meas[si].zs - rz;
                 const double rho2 = std::sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
-                result.residuals.push_back(meas[si].range - (rho2 + rcv_clk));
+                const double ct   = clk[0]
+                    + (meas[si].fixedCol > 0 ? clk[meas[si].fixedCol] : 0.0);
+                result.residuals.push_back(meas[si].range - (rho2 + ct));
 
                 SppResult::UsedSat us;
                 us.system    = meas[si].system;
@@ -321,82 +275,14 @@ SppResult SppSolver::solve(
                 result.usedSats.push_back(us);
             }
 
-            // PDOP from unweighted geometry matrix
-            const Eigen::Matrix4d Q = (H.transpose() * H).inverse();
+            const Eigen::MatrixXd Q = HtWH.inverse();
             result.pdop = std::sqrt(Q(0,0) + Q(1,1) + Q(2,2));
 
-            // ----------------------------------------------------------------
-            // DEBUG -- print detailed table for the first converged epoch only
-            // ----------------------------------------------------------------
-            static bool s_debugDone = false;
-            if (!s_debugDone) {
-                s_debugDone = true;
-                std::fprintf(stderr,
-                    "\n=== SPP DEBUG: first converged epoch ===\n");
-                std::fprintf(stderr,
-                    "  Converged: X=%12.3f  Y=%12.3f  Z=%12.3f  clk=%12.3f m"
-                    "  (%.3f us)\n",
-                    rx, ry, rz,
-                    rcv_clk, rcv_clk / SPEED_OF_LIGHT * 1.0e6);
-                std::fprintf(stderr,
-                    "  Reference: X=%12.3f  Y=%12.3f  Z=%12.3f\n",
-                    3979316.439, 1050312.253, 4857066.904);
-                const double dX = rx - 3979316.439;
-                const double dY = ry - 1050312.253;
-                const double dZ = rz - 4857066.904;
-                std::fprintf(stderr,
-                    "  Error:    dX=%9.3f  dY=%9.3f  dZ=%9.3f"
-                    "  3D=%9.3f [m]\n",
-                    dX, dY, dZ, std::sqrt(dX*dX + dY*dY + dZ*dZ));
-                std::fprintf(stderr,
-                    "\n  %-4s  %15s  %13s  %13s  %13s"
-                    "  %14s  %14s  %11s  %8s  %8s\n",
-                    "PRN", "pr_raw[m]", "clkBias[us]",
-                    "clk_corr[m]", "pr_corr[m]",
-                    "rho[m]", "resid[m]", "el[deg]",
-                    "weight", "tof[ms]");
-                for (int j = 0; j < n; ++j) {
-                    const std::size_t sj = static_cast<std::size_t>(j);
-                    const double ddx2 = meas[sj].xs - rx;
-                    const double ddy2 = meas[sj].ys - ry;
-                    const double ddz2 = meas[sj].zs - rz;
-                    const double rho2 = std::sqrt(
-                        ddx2*ddx2 + ddy2*ddy2 + ddz2*ddz2);
-                    const double res2 =
-                        meas[sj].range - (rho2 + rcv_clk);
-                    const double clkUs  =
-                        meas[sj].clkBias * 1.0e6;
-                    const double clkM   =
-                        meas[sj].clkBias * SPEED_OF_LIGHT;
-                    const double tofMs  =
-                        meas[sj].prRaw / SPEED_OF_LIGHT * 1.0e3;
-                    const std::string sys = [&]() -> std::string {
-                        switch (meas[sj].system) {
-                            case GnssSystem::GPS:     return "G";
-                            case GnssSystem::GALILEO: return "E";
-                            case GnssSystem::GLONASS: return "R";
-                            case GnssSystem::BEIDOU:  return "C";
-                            default:                  return "?";
-                        }
-                    }();
-                    std::fprintf(stderr,
-                        "  %-4s  %15.3f  %13.6f  %13.3f  %13.3f"
-                        "  %14.3f  %14.3f  %11.4f  %8.4f  %8.4f\n",
-                        (sys + std::to_string(meas[sj].prn)).c_str(),
-                        meas[sj].prRaw,
-                        clkUs,
-                        clkM,
-                        meas[sj].range,
-                        rho2,
-                        res2,
-                        meas[sj].elevation * (180.0 / std::numbers::pi),
-                        meas[sj].weight,
-                        tofMs);
-                }
-                std::fprintf(stderr,
-                    "========================================\n\n");
+            const std::array<std::string, 3> isbNames{"GLONASS", "GALILEO", "BEIDOU"};
+            for (int c = 1; c <= 3; ++c) {
+                if (compactIdx[c] >= 4)
+                    result.isbM[isbNames[static_cast<std::size_t>(c - 1)]] = clk[c];
             }
-            // ----------------------------------------------------------------
 
             break;
         }
@@ -407,7 +293,7 @@ SppResult SppSolver::solve(
     result.x        = rx;
     result.y        = ry;
     result.z        = rz;
-    result.clkBiasM = rcv_clk;
+    result.clkBiasM = clk[0];
     result.nSats    = static_cast<int>(result.usedSats.size());
     result.valid    = true;
     return result;
@@ -420,9 +306,9 @@ SppResult SppSolver::solve(
 std::vector<SppResult> SppSolver::solveAll(
     const ObsFile&    obs,
     const NavFile&    nav,
-    const GnssConfig& cfg) const
+    const GnssConfig& /*cfg*/) const
 {
-    const std::array<double,3> approxPos{
+    const std::array<double, 3> approxPos{
         obs.receiver.approxX,
         obs.receiver.approxY,
         obs.receiver.approxZ
@@ -432,8 +318,7 @@ std::vector<SppResult> SppSolver::solveAll(
     results.reserve(obs.epochs.size());
 
     for (const auto& epoch : obs.epochs)
-        results.push_back(solve(epoch, nav, approxPos,
-                                nav.ionoAlpha, nav.ionoBeta));
+        results.push_back(solve(epoch, nav, approxPos));
 
     return results;
 }

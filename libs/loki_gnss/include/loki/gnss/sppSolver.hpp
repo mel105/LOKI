@@ -1,11 +1,14 @@
 #pragma once
 
 #include <loki/gnss/gnssTypes.hpp>
-#include <loki/gnss/keplerOrbit.hpp>
+#include <loki/gnss/orbitModel.hpp>
+#include <loki/gnss/correctionModel.hpp>
 #include <loki/gnss/satVisibility.hpp>
 #include <loki/core/config.hpp>
 
 #include <array>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,13 +16,19 @@ namespace loki::gnss {
 
 /**
  * @brief Result of SPP positioning for one epoch.
+ *
+ * clkBiasM holds the GPS receiver clock bias [m].
+ * isbM holds inter-system biases relative to GPS [m] for each non-GPS
+ * constellation that contributed measurements: keys are "GLONASS",
+ * "GALILEO", "BEIDOU". Absent key means constellation had no measurements.
  */
 struct SppResult {
     GpsTime time;
     double  x{0.0};
     double  y{0.0};
     double  z{0.0};
-    double  clkBiasM{0.0};   ///< Receiver clock bias [m]
+    double  clkBiasM{0.0};              ///< GPS receiver clock bias [m].
+    std::map<std::string, double> isbM; ///< Inter-system biases [m].
     double  pdop{0.0};
     int     nSats{0};
     int     iterations{0};
@@ -44,33 +53,24 @@ struct SppResult {
  * default arguments in the enclosing class constructor.
  */
 struct SppSolverConfig {
-    int                      maxIterations         {10};
-    double                   convergenceThresholdM {0.001};
+    int                      maxIterations         {20};
+    double                   convergenceThresholdM {0.01};
     std::string              weighting             {"elevation"};
-    std::string              ionosphere            {"klobuchar"};
-    std::string              troposphere           {"saastamoinen"};
-    bool                     sagnac                {true};
-    bool                     relativistic          {true};
+    bool                     sagnac                {false};
     double                   elevMaskDeg           {10.0};
     std::vector<std::string> constellations        {"GPS"};
 
     explicit SppSolverConfig(
-        int                      maxIter_    = 10,
-        double                   convThresh_ = 0.001,
+        int                      maxIter_    = 20,
+        double                   convThresh_ = 0.01,
         std::string              weight_     = "elevation",
-        std::string              iono_       = "klobuchar",
-        std::string              tropo_      = "saastamoinen",
-        bool                     sagnac_     = true,
-        bool                     relat_      = true,
+        bool                     sagnac_     = false,
         double                   elMask_     = 10.0,
         std::vector<std::string> const_      = {"GPS"})
         : maxIterations        (maxIter_)
         , convergenceThresholdM(convThresh_)
         , weighting            (std::move(weight_))
-        , ionosphere           (std::move(iono_))
-        , troposphere          (std::move(tropo_))
         , sagnac               (sagnac_)
-        , relativistic         (relat_)
         , elevMaskDeg          (elMask_)
         , constellations       (std::move(const_))
     {}
@@ -79,19 +79,38 @@ struct SppSolverConfig {
 /**
  * @brief Single Point Positioning solver using broadcast ephemeris.
  *
- * Implements iterative weighted least-squares SPP (IS-GPS-200):
- *   1. Compute satellite ECEF position + clock correction.
- *   2. Sagnac correction (Earth rotation during signal travel).
- *   3. Klobuchar ionosphere + Saastamoinen troposphere delays.
- *   4. Weighted LSQ: dx = (H^T W H)^-1 H^T W b.
- *   5. Iterate until convergence.
+ * Implements iterative weighted least-squares SPP with multi-constellation
+ * support via per-constellation inter-system bias (ISB) parameters.
+ *
+ * Parameter vector: [X, Y, Z, clk_GPS, ISB_GLO, ISB_GAL, ISB_BDS]
+ * where ISB columns are added dynamically for each non-GPS constellation
+ * that has at least one valid measurement above the elevation mask.
+ * GPS and QZSS share the GPS clock column (QZSS uses GPS time system).
+ *
+ * Orbit propagation and signal corrections are fully injected via
+ * OrbitModel and CorrectionModel interfaces. The solver contains no
+ * physics -- it is a pure LSQ engine.
+ *
+ * References:
+ *   IS-GPS-200 Table 20-IV (Keplerian propagation)
+ *   Hofmann-Wellenhof et al., GPS: Theory and Practice
  */
 class SppSolver {
 public:
     using Config = SppSolverConfig;
 
-    /// @brief Constructs the solver with the given configuration.
-    explicit SppSolver(Config cfg = Config{});
+    /**
+     * @brief Constructs the solver with injected orbit model and corrections.
+     *
+     * @param cfg          Solver configuration.
+     * @param orbit        Orbit propagator (e.g. BroadcastOrbit). Must not be null.
+     * @param corrections  Optional correction models applied in order (iono, tropo, ...).
+     *                     Each model's delay() result is subtracted from the pseudorange.
+     */
+    explicit SppSolver(
+        Config                                              cfg,
+        std::unique_ptr<OrbitModel>                         orbit,
+        std::vector<std::unique_ptr<CorrectionModel>>       corrections = {});
 
     /**
      * @brief Solves SPP for a single observation epoch.
@@ -99,15 +118,11 @@ public:
      * @param epoch      One epoch of pseudorange observations.
      * @param nav        Navigation file with broadcast ephemerides.
      * @param approxPos  Initial ECEF position estimate [m].
-     * @param ionoAlpha  Klobuchar alpha [4] from NAV header.
-     * @param ionoBeta   Klobuchar beta  [4] from NAV header.
      */
     [[nodiscard]] SppResult solve(
         const ObsEpoch&              epoch,
         const NavFile&               nav,
-        const std::array<double,3>&  approxPos,
-        const std::array<double,4>&  ionoAlpha,
-        const std::array<double,4>&  ionoBeta) const;
+        const std::array<double,3>&  approxPos) const;
 
     /**
      * @brief Solves SPP for all epochs in an OBS file.
@@ -118,24 +133,11 @@ public:
         const GnssConfig& cfg) const;
 
 private:
-    Config m_cfg;
+    Config                                        m_cfg;
+    std::unique_ptr<OrbitModel>                   m_orbit;
+    std::vector<std::unique_ptr<CorrectionModel>> m_corrections;
 
     static constexpr double SPEED_OF_LIGHT = 299792458.0;
-
-    static double klobucharDelay(const std::array<double,4>& alpha,
-                                  const std::array<double,4>& beta,
-                                  double lat, double lon,
-                                  double az,  double el,
-                                  double gpsSow);
-
-    static double saastamoinenDelay(double lat, double h, double el);
-
-    static void ecefToGeodetic(double x, double y, double z,
-                                double& lat, double& lon, double& h);
-
-    static double selectPseudorange(const SatObs& sat, GnssSystem system);
-
-    static double elevationWeight(double elevRad);
 
     bool isEnabled(GnssSystem system) const;
 };

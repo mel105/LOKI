@@ -6,6 +6,15 @@ add_library(loki_gnss STATIC
     src/keplerOrbit.cpp
     src/satVisibility.cpp
     src/sppSolver.cpp
+    src/broadcastOrbit.cpp
+    src/gnssUtils.cpp
+    src/ionosphere.cpp
+    src/troposphere.cpp
+    src/relativity.cpp
+    src/gnssAnalyzer.cpp
+    src/gnssProtocol.cpp
+    src/gnssCsvExport.cpp
+    src/plotGnss.cpp
 )
 
 target_include_directories(loki_gnss
@@ -17,8 +26,9 @@ target_include_directories(loki_gnss
 target_link_libraries(loki_gnss
     PUBLIC
         loki_core
+        loki_geodesy
     PRIVATE
-        z
+        -lz
 )
 
 target_include_directories(loki_gnss SYSTEM PUBLIC

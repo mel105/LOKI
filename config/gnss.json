@@ -21,7 +21,7 @@
         "nav_file": "INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
         "obs_file": "INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
 
-        "constellations": ["GPS"],
+        "constellations": ["GPS", "GALILEO"],
         "elevation_mask_deg": 10.0,
 
         "spp": {
@@ -32,8 +32,8 @@
         },
 
         "corrections": {
-            "ionosphere":    "none",
-            "troposphere":   "none",
+            "ionosphere":    "klobuchar",
+            "troposphere":   "saastamoinen",
             "relativistic":  true,
             "sagnac":        false,
             "solid_tides":   false,
