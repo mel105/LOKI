@@ -79,6 +79,30 @@ void GnssProtocol::_writeHeader(std::ostream& f) const
 }
 
 // =============================================================================
+//  _writeAppliedCorrections
+// =============================================================================
+
+void GnssProtocol::_writeAppliedCorrections(std::ostream& f) const
+{
+    const GnssConfig& gcfg = m_cfg.gnss;
+
+    f << "\n";
+    f << "APPLIED CORRECTIONS\n";
+    f << "\n";
+
+    auto yn = [](bool b) -> const char* { return b ? "yes" : "no"; };
+
+    f << "  Satellite clock (relativistic dtr) : always active (KeplerOrbit)\n";
+    f << "  Sagnac (Earth rotation)            : " << yn(gcfg.corrections.sagnac)       << "\n";
+    f << "  Ionosphere                         : " << gcfg.corrections.ionosphere        << "\n";
+    f << "  Troposphere                        : " << gcfg.corrections.troposphere       << "\n";
+    f << "  Solid Earth tides (IERS2010 step-1): " << yn(gcfg.corrections.solidTides)   << "\n";
+    f << "  Ocean loading                      : no (PPP -- requires BLQ file)\n";
+    f << "  PCO/PCV                            : no (PPP -- requires ANTEX)\n";
+    f << "  Phase windup                       : no (carrier phase only, PPP)\n";
+}
+
+// =============================================================================
 //  _writeParseSummary
 // =============================================================================
 
@@ -264,6 +288,7 @@ void GnssProtocol::write(const GnssResult& result) const
         throw IoException("GnssProtocol: cannot open " + path);
 
     _writeHeader(f);
+    _writeAppliedCorrections(f);
     _writeParseSummary(f, result.parse);
 
     if (result.hasSpp)

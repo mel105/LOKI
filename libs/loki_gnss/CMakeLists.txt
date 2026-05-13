@@ -15,6 +15,7 @@ add_library(loki_gnss STATIC
     src/gnssProtocol.cpp
     src/gnssCsvExport.cpp
     src/plotGnss.cpp
+    src/solidTides.cpp
 )
 
 target_include_directories(loki_gnss

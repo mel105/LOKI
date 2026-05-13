@@ -34,6 +34,7 @@ Program-specific sections (`outlier`, `homogeneity`) are ignored by programs tha
 21. [loki_spatial](#21-loki_spatial)
 22. [loki_geodesy](#22-loki_geodesy)
 23. [loki_multivariate](#23-loki_multivariate)
+24. [loki_gnss](#24-loki_gnss)
 
 ---
 
@@ -7572,3 +7573,742 @@ datasets, reduce `n_factors` or merge small groups before running.
   dedicated channel. Float values are rounded to the nearest integer — label
   0.9 becomes 1, not 0. Verify label distribution in the protocol before
   interpreting classification accuracy.
+
+# 24. loki_gnss
+
+`loki_gnss` is the GNSS processing pipeline of LOKI. It parses satellite
+navigation and observation data, computes satellite positions and signal
+corrections, and solves for the receiver position using Single Point
+Positioning (SPP). Precise Point Positioning (PPP) is planned for the
+next development phase.
+
+The pipeline is controlled by a single JSON configuration file. All paths
+are resolved relative to `workspace` unless already absolute.
+
+---
+
+## 24.1 Minimal working configuration
+
+```json
+{
+    "workspace": "C:/data/project",
+
+    "output": {
+        "log_level": "info"
+    },
+
+    "gnss": {
+        "task":    "spp",
+        "mode":    "static",
+        "station": "GOPE",
+        "year":    2024,
+        "doy":     75,
+
+        "nav_file": "INPUT/GNSS/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
+        "obs_file": "INPUT/GNSS/obs/2024/075/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
+
+        "constellations":     ["GPS", "GALILEO"],
+        "elevation_mask_deg": 10.0,
+
+        "spp": {
+            "enabled":                 true,
+            "max_iterations":          20,
+            "convergence_threshold_m": 0.01,
+            "weighting":               "elevation"
+        },
+
+        "corrections": {
+            "ionosphere":  "klobuchar",
+            "troposphere": "saastamoinen",
+            "sagnac":      true,
+            "solid_tides": false
+        },
+
+        "reference_position": {
+            "enabled": true,
+            "x":       3979316.439,
+            "y":       1050312.253,
+            "z":       4857066.904,
+            "source":  "ITRF2020"
+        }
+    }
+}
+```
+
+This configuration parses a mixed RINEX 3 NAV file and a Hatanaka-compressed
+OBS file, runs SPP for all 2880 epochs using GPS and Galileo, applies Klobuchar
+ionosphere, Saastamoinen troposphere, and Sagnac correction, and computes
+the position error against a known ITRF2020 reference.
+
+---
+
+## 24.2 Top-level gnss keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `task` | `"parse"` | Processing task. See Section 24.3. |
+| `mode` | `"static"` | Station mode. `"static"` or `"kinematic"`. |
+| `station` | `"UNKN"` | Station identifier (up to 9 characters). Used in output file names. |
+| `year` | `0` | Year of observation (informational, used in logs). |
+| `doy` | `0` | Day of year 1--366 (informational). |
+| `crx2rnx_path` | `"tools/hatanaka/CRX2RNX"` | Path to the CRX2RNX binary (Hatanaka decompressor). Relative to the working directory (project root). |
+| `nav_file` | `""` | Path to the RINEX 3 NAV file (.rnx or .rnx.gz). Relative to `workspace`. |
+| `obs_file` | `""` | Path to the RINEX 3 OBS file (.rnx, .crx, .crx.gz). Relative to `workspace`. |
+| `constellations` | `["GPS","GLONASS","GALILEO","BEIDOU"]` | Active constellations. See Section 24.4. |
+| `elevation_mask_deg` | `10.0` | Minimum satellite elevation [deg]. Satellites below this angle are rejected. |
+
+---
+
+## 24.3 Tasks
+
+| `task` | Description | Status |
+|--------|-------------|--------|
+| `"parse"` | Parse NAV + OBS files. Produce observation-level plots only (satcount, skyplot, DOP). No positioning. | Available |
+| `"spp"` | Single Point Positioning using broadcast ephemeris and pseudorange observations. | Available |
+| `"ppp"` | Precise Point Positioning using SP3 orbits, CLK clocks, and carrier-phase IF combination. | Planned |
+| `"ppp_ar"` | PPP with integer Ambiguity Resolution using OSB/FCB products. | Planned |
+| `"rtk"` | Double-difference post-processing against a base station OBS file. | Planned |
+| `"kinematic_spp"` | Kinematic SPP via Kalman filter. Position changes each epoch (vehicle/train). | Planned |
+| `"kinematic_ppp"` | Kinematic PPP via Kalman filter. | Planned |
+
+For the `"parse"` task, only `nav_file`, `obs_file`, `constellations` and
+`elevation_mask_deg` are required. All solver sections (`spp`, `ppp`, `rtk`,
+`kinematic`) are ignored.
+
+---
+
+## 24.4 Constellations
+
+| Value | System | Time reference | Status |
+|-------|--------|----------------|--------|
+| `"GPS"` | GPS (NAVSTAR) | GPS time | Available, verified |
+| `"GALILEO"` | Galileo | GST (aligned to GPS) | Available, verified |
+| `"GLONASS"` | GLONASS | GLONASS time (UTC+3h) | Parsed, time conversion unverified -- do NOT use |
+| `"BEIDOU"` | BeiDou | BDT (GPS - 14s) | Parsed, time conversion unverified -- do NOT use |
+| `"QZSS"` | QZSS | GPS time | Parsed, not tested |
+| `"SBAS"` | SBAS | GPS time | Parsed, not used in positioning |
+
+**Important:** GLONASS and BeiDou have known time system conversion issues
+in the current implementation. Adding them to `constellations` will degrade
+positioning accuracy. Use only `["GPS", "GALILEO"]` until further notice.
+
+The RINEX NAV parser reads all constellations present in the file regardless
+of this setting. Only the solver respects the constellation filter.
+
+---
+
+## 24.5 SPP solver
+
+Single Point Positioning solves for the receiver ECEF position X, Y, Z and
+receiver clock bias using pseudorange observations in an iterative weighted
+least-squares loop. Inter-system biases (ISB) are estimated as additional
+parameters for each non-GPS constellation.
+
+```json
+"spp": {
+    "enabled":                 true,
+    "max_iterations":          20,
+    "convergence_threshold_m": 0.01,
+    "weighting":               "elevation"
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable SPP solver. Also triggered when `task = "spp"`. |
+| `max_iterations` | `20` | Maximum iterations per epoch. 10--20 is sufficient for static receivers. For kinematic with large position jumps, increase to 30. |
+| `convergence_threshold_m` | `0.01` | Convergence criterion: stop iterating when position correction \|\|dx\|\| < threshold [m]. |
+| `weighting` | `"elevation"` | Observation weighting scheme. `"elevation"` = sin²(el), down-weights low satellites. `"uniform"` = equal weights (not recommended). |
+
+### Pseudorange selection
+
+The solver selects the best available pseudorange code per satellite following
+priority tables:
+
+| Constellation | Priority order |
+|---------------|----------------|
+| GPS / QZSS | C1C > C1W > C2W > C2C > C1X > C5X |
+| Galileo | C1X > C5X > C7X > C8X > C1C |
+| GLONASS | C1C > C1P > C2C > C2P |
+| BeiDou | C2I > C6I > C7I > C1X > C5X |
+
+### Expected accuracy
+
+| Configuration | Typical RMS error |
+|---------------|-------------------|
+| GPS only, no corrections | ~20--30 m |
+| GPS only, Sagnac only | ~5--10 m |
+| GPS + Galileo, Sagnac + Klobuchar + Saastamoinen | ~1--3 m |
+| GPS + Galileo, all SPP corrections | ~1--2 m |
+| PPP (planned) | ~1--5 cm after convergence |
+
+Result: GOPE station, DOY 075/2024, GPS + Galileo with Sagnac + Klobuchar +
+Saastamoinen: **1.6 m RMS** against ITRF2020 reference.
+
+---
+
+## 24.6 Corrections
+
+The corrections section controls which physical corrections are applied to
+the pseudorange observations. Each correction is injected into the solver
+via the `CorrectionModel` interface.
+
+```json
+"corrections": {
+    "ionosphere":    "klobuchar",
+    "troposphere":   "saastamoinen",
+    "sagnac":        true,
+    "solid_tides":   false,
+    "ocean_loading": false,
+    "phase_windup":  false,
+    "pco_pcv":       false
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ionosphere` | `"klobuchar"` | Ionosphere model. See Section 24.6.1. |
+| `troposphere` | `"saastamoinen"` | Troposphere model. See Section 24.6.2. |
+| `sagnac` | `true` | Sagnac (Earth-rotation) effect. See Section 24.6.3. **Critical for SPP accuracy.** |
+| `solid_tides` | `false` | Solid Earth tides (IERS 2010 step-1). See Section 24.6.4. |
+| `ocean_loading` | `false` | Ocean loading. Requires BLQ file. PPP only. |
+| `phase_windup` | `false` | Carrier-phase windup. PPP only (carrier phase observations). |
+| `pco_pcv` | `false` | Antenna phase centre corrections. Requires ANTEX file. PPP only. |
+
+Note: the relativistic satellite clock correction (dtr = F·e·sqrtA·sin(E)) is
+always active regardless of configuration. It is computed inside the orbit
+propagator and cannot be disabled.
+
+### 24.6.1 Ionosphere
+
+| Value | Description | Accuracy | Data required |
+|-------|-------------|----------|---------------|
+| `"klobuchar"` | IS-GPS-200 Klobuchar single-frequency model. Removes ~50% of ionosphere delay on average. | ~1--5 m | Klobuchar alpha/beta coefficients from NAV header (present in broadcast RINEX). |
+| `"ionex"` | Global Ionospheric Map bilinear interpolation. | ~0.5--2 m | IONEX file (e.g. CODE IGS). Planned. |
+| `"none"` | No ionosphere correction. | -- | -- |
+
+Recommendation for SPP: `"klobuchar"`. The coefficients are embedded in the
+broadcast NAV file -- no additional download is required.
+
+### 24.6.2 Troposphere
+
+| Value | Description | Accuracy | Data required |
+|-------|-------------|----------|---------------|
+| `"saastamoinen"` | Saastamoinen model with standard atmosphere. Zhd and Zwet derived from station height and latitude. | ~1--3 cm zenith, ~20--50 cm at low elevation | Station ECEF position (from OBS header). |
+| `"vmf3"` | Vienna Mapping Function 3 with gridded NWM-derived delays. | ~1--5 mm zenith | VMF3 grid file (YYYY-MM-DD format). Planned. |
+| `"none"` | No troposphere correction. | -- | -- |
+
+Saastamoinen uses a standard atmosphere pressure model. The zenith dry delay
+(Zhd) and wet delay (Zwet) are constant for a given station within one session.
+Only the slant delay varies (mapped via 1/sin(elevation)).
+
+Zhd is approximately 2.15--2.30 m zenith for mid-latitude stations at sea
+level. For GOPE (h = 592 m): Zhd ≈ 2149 mm, Zwet ≈ 135 mm, ZTD ≈ 2284 mm.
+
+### 24.6.3 Sagnac correction
+
+During signal propagation the Earth rotates. The satellite position at signal
+transmission must be rotated to match the receiver frame at reception.
+This effect causes ~20--40 m apparent range error if uncorrected.
+
+**This correction is critical. Without it, SPP error is ~24 m instead of
+~1.6 m for GOPE.** Always keep `"sagnac": true`.
+
+The implementation rotates the satellite ECEF position by theta = OmegaE * tof
+around the Z axis, where tof is the signal time of flight (~0.07 s for a
+mid-elevation satellite).
+
+### 24.6.4 Solid Earth Tides
+
+The gravitational pull of the Moon and Sun deforms the solid Earth, displacing
+the station by up to ~30 cm vertically and ~5 cm horizontally. The displacement
+is computed using the IERS 2010 Conventions step-1 model with degree-2 Love
+numbers (h2=0.6078, l2=0.0847).
+
+Body positions are computed from low-precision analytical series (Meeus 1998,
+~1 arcmin accuracy). This is sufficient for ~1 cm tidal accuracy, which is
+adequate for testing but slightly below the noise floor for SPP (~1.5 m).
+
+Recommendation for SPP: `"solid_tides": false` -- the current analytical
+ephemeris introduces ~3 cm systematic error which marginally worsens SPP
+results. Enable for PPP when a full IERS 2010 step-2 model with JPL DE440
+ephemeris is implemented.
+
+---
+
+## 24.7 PPP configuration (planned)
+
+The PPP section documents the planned configuration. Setting `enabled: true`
+currently has no effect (PPP solver not yet implemented).
+
+```json
+"ppp": {
+    "enabled":                 false,
+    "sp3_file":                "INPUT/GNSS/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz",
+    "clk_file":                "INPUT/GNSS/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz",
+    "antex_file":              "INPUT/GNSS/antex/igs20.atx",
+    "vmf3_file":               "INPUT/GNSS/vmf3/2024/20240315.h00",
+    "ocean_loading_blq":       "INPUT/GNSS/blq/GOPE.BLQ",
+    "if_combination":          true,
+    "ambiguity_resolution":    false,
+    "max_iterations":          20,
+    "convergence_threshold_m": 0.001
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `sp3_file` | SP3-c/d precise orbit file. Lagrange order-9 interpolation to observation epochs. Required. |
+| `clk_file` | RINEX CLK precise satellite clock file. 30s or 5s sampling. Required. |
+| `antex_file` | IGS ANTEX file for satellite and receiver antenna phase centre offsets (PCO/PCV). Required. |
+| `vmf3_file` | VMF3 grid file for troposphere mapping (replaces Saastamoinen for PPP). Recommended. |
+| `ocean_loading_blq` | BLQ file with ocean loading coefficients. Generate at holt.oso.chalmers.se/loading/. Optional. |
+| `if_combination` | Use ionosphere-free linear combination (L1+L2 / P1+P2). Eliminates first-order ionosphere to ~0.1 mm. Recommended. |
+| `ambiguity_resolution` | Enable PPP-AR using OSB/FCB products. Requires `osb_file`. Planned. |
+
+Product sources:
+- SP3 + CLK + BIAS: CODE Bern MGEX final -- `ftp.aiub.unibe.ch/CODE_MGEX/CODE/YYYY/`
+- IONEX + DCB: CODE Bern -- `ftp.aiub.unibe.ch/CODE/YYYY/`
+- ANTEX: IGS -- `igs20.atx` (current IGS antenna model)
+- VMF3 filenames use YYYYMMDD format, NOT DOY: `VMF3_20240315.H00`
+
+---
+
+## 24.8 RTK / DD configuration (planned)
+
+```json
+"rtk": {
+    "enabled":                 false,
+    "base_obs_file":           "INPUT/GNSS/obs/2024/075/BASE_R_20240750000_01D_30S_MO.crx.gz",
+    "base_x":                  3979316.439,
+    "base_y":                  1050312.253,
+    "base_z":                  4857066.904,
+    "base_source":             "ITRF2020",
+    "max_iterations":          20,
+    "convergence_threshold_m": 0.001
+}
+```
+
+RTK computes the baseline vector between a known base station and a rover
+receiver using double-difference carrier-phase observations. Requires a
+second OBS RINEX file for the base station. Base station coordinates must
+be provided in ECEF (WGS-84) with millimetre accuracy.
+
+---
+
+## 24.9 Kinematic configuration (planned)
+
+Used when `mode: "kinematic"` for vehicle, train, or drone applications.
+
+```json
+"kinematic": {
+    "process_noise_pos_m2s":  1.0,
+    "process_noise_clk_m2s":  10000.0,
+    "output_trajectory":      true,
+    "map_visualization":      false
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `process_noise_pos_m2s` | `1.0` | Position process noise [m²/s] for the Kalman filter. Higher values allow faster position changes (more agile platform). For a train at 160 km/h use 1.0--10.0. For a pedestrian use 0.1. |
+| `process_noise_clk_m2s` | `10000.0` | Clock process noise [m²/s]. High value models a free-running quartz oscillator. For a TCXO receiver use 1000--10000. |
+| `output_trajectory` | `true` | Export trajectory as CSV with lat/lon/h per epoch. |
+| `map_visualization` | `false` | Export trajectory as GeoJSON for display on OpenStreetMap. Planned. |
+
+---
+
+## 24.10 Quality control
+
+```json
+"quality": {
+    "raim":      false,
+    "residuals": false,
+    "dop":       false
+}
+```
+
+| Key | Description | Status |
+|-----|-------------|--------|
+| `raim` | Receiver Autonomous Integrity Monitoring. Detects and excludes satellite outliers via chi-squared test on residuals. | Planned |
+| `residuals` | Export per-satellite pseudorange residuals to CSV. | Planned |
+| `dop` | Compute GDOP/PDOP/HDOP/VDOP per epoch (currently PDOP only is computed). | Partial |
+
+---
+
+## 24.11 Reference position
+
+Provides a known accurate receiver position for accuracy assessment.
+The 3D error vs reference is reported in the protocol and plotted.
+
+```json
+"reference_position": {
+    "enabled": true,
+    "x":       3979316.439,
+    "y":       1050312.253,
+    "z":       4857066.904,
+    "source":  "ITRF2020"
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `enabled` | If `false`, accuracy assessment is skipped. |
+| `x`, `y`, `z` | Reference ECEF position [m] in WGS-84. |
+| `source` | Label for the protocol (e.g. `"ITRF2020"`, `"PPP"`, `"CSRS-PPP"`). |
+
+Reference positions for permanent stations can be obtained from:
+- EUREF/EPN SINEX: `epncb.oma.be`
+- IGS cumulative solution: `igs.org`
+- CSRS-PPP online service: `webapp.csrs-scrs.nrcan-rncan.gc.ca`
+
+---
+
+## 24.12 Plot figures
+
+Plot flags control which output images are generated. All flags default to
+`true` for observation-level plots and relevant solver outputs.
+
+```json
+"figures": {
+    "satcount":              true,
+    "elevation":             true,
+    "skyplot_constellation": true,
+    "skyplot_prn":           true,
+    "dop":                   true,
+
+    "spp": {
+        "clockbias":         true,
+        "residuals":         true,
+        "isb":               true,
+        "position_ecef":     false,
+        "position_error":    true,
+        "position_scatter":  true
+    },
+
+    "ppp": {
+        "position_error":    true,
+        "troposphere":       true,
+        "ambiguity":         true,
+        "clock_bias":        true
+    },
+
+    "rtk": {
+        "position_error":    true,
+        "baseline_length":   true
+    }
+}
+```
+
+### Observation-level figures (always available after parsing)
+
+| Flag | Plot | Description |
+|------|------|-------------|
+| `satcount` | `gnss_<sta>_satcount_timeseries.png` | Number of tracked satellites per epoch, one line per constellation. |
+| `elevation` | `gnss_<sta>_elevation_timeseries.png` | Min/mean/max satellite elevation per epoch. Sampled every 5th epoch. |
+| `skyplot_constellation` | `gnss_<sta>_skyplot_polar.png` | Full-session sky coverage. Colour by constellation (GPS=blue, GLONASS=orange, Galileo=green, BeiDou=red). Line style by constellation (solid/dashed/dotted/dash-dot). |
+| `skyplot_prn` | `gnss_<sta>_skyplot_prn.png` | Full-session sky coverage. Each satellite PRN in a unique colour. Labels at horizon crossing. |
+| `dop` | `gnss_<sta>_dop_timeseries.png` | PDOP time series with reference lines at 2.0 (good) and 5.0 (poor). |
+
+### SPP figures
+
+| Flag | Plot | Description |
+|------|------|-------------|
+| `spp.clockbias` | `gnss_<sta>_spp_clockbias.png` | Receiver clock bias [m] (top) and [us] (bottom). Two-panel. |
+| `spp.residuals` | `gnss_<sta>_spp_residuals.png` | Mean absolute and RMS pseudorange residuals per epoch [m]. |
+| `spp.isb` | `gnss_<sta>_spp_isb.png` | Inter-system biases for GLONASS, Galileo, BeiDou relative to GPS [m]. Only produced when multiple constellations are enabled. |
+| `spp.position_ecef` | `gnss_<sta>_spp_position_ecef.png` | Raw ECEF X, Y, Z time series. Three-panel. Disabled by default (usually not informative for static receivers). |
+| `spp.position_error` | `gnss_<sta>_spp_position_error.png` | dX, dY, dZ components and 3D error vs reference. Four-panel. Only produced when `reference_position.enabled = true`. |
+| `spp.position_scatter` | `gnss_<sta>_spp_position_scatter.png` | Horizontal scatter (dE vs dN) in local ENU frame centred on the reference position. Only produced when `reference_position.enabled = true`. |
+
+---
+
+## 24.13 Output files
+
+All outputs are written to subdirectories of `workspace/OUTPUT/`.
+
+### Protocol
+
+| File | Location | Description |
+|------|----------|-------------|
+| `gnss_<station>_spp_protocol.txt` | `OUTPUT/PROTOCOLS/` | Full text protocol with applied corrections, parse summary (obs codes, constellations, epochs), SPP statistics (mean ECEF, geodetic coords in DMS, position error vs reference), per-epoch table. |
+
+### CSV exports
+
+| File | Location | Description |
+|------|----------|-------------|
+| `gnss_<station>_spp_epochs.csv` | `OUTPUT/CSV/` | Per-epoch: MJD, X, Y, Z, lat, lon, h, clk_m, clk_us, pdop, n_sats, converged, mean_residual_m, rms_residual_m. |
+| `gnss_<station>_spp_clk.csv` | `OUTPUT/CSV/` | Receiver clock offset in RINEX-CLK-inspired format. Header lines prefixed with `#`. Fields: epoch, clk_s, sigma_s (sigma estimated from residual RMS). |
+| `gnss_<station>_spp_tropo.csv` | `OUTPUT/CSV/` | Per-epoch troposphere delays. Zhd and Zwet are constant (standard atmosphere). Slant delay varies with mean satellite elevation. Fields: epoch_utc, doy, sow, zhd_mm, zwet_mm, ztd_mm, mean_elev_deg, slant_delay_m. |
+
+---
+
+## 24.14 File format notes
+
+### NAV file
+
+The parser accepts:
+- RINEX 2.x GPS-only navigation files (`.n`)
+- RINEX 3.x mixed navigation files (`.rnx`, `.rnx.gz`)
+- All constellations in one mixed file (IGS BRDC format)
+
+The Klobuchar ionosphere coefficients (IONOSPHERIC CORR header records)
+are parsed automatically from the NAV header. They are passed to the
+`KlobucharModel` by the analyzer after parsing.
+
+### OBS file
+
+The parser accepts:
+- RINEX 3.x observation files (`.rnx`, `.rnx.gz`)
+- Hatanaka-compressed files (`.crx`, `.crx.gz`)
+
+Decompression pipeline for `.crx.gz`:
+1. gzip decompression via zlib C API (no subprocess).
+2. CRX2RNX (Hatanaka) via `cmd /c` subprocess on Windows.
+
+The `crx2rnx_path` must point to the correct binary for the platform
+(`CRX2RNX.exe` on Windows, `CRX2RNX` on Linux). The binary is not
+included in LOKI and must be obtained separately from the GSI Japan
+Hatanaka tools distribution.
+
+### SP3 / CLK files (PPP, planned)
+
+SP3 files use 5-minute or 15-minute sampling. The solver will interpolate
+satellite positions and clocks to 30-second OBS epochs using Lagrange
+polynomials of order 9 (IGS standard).
+
+CLK files use 30-second or 5-second sampling. Linear interpolation is
+used to match OBS epochs.
+
+---
+
+## 24.15 Use case configurations
+
+### 24.15.1 Static station -- SPP accuracy assessment
+
+**Data:** IGS permanent station, RINEX 3 NAV + Hatanaka OBS, broadcast
+ephemeris, GPS + Galileo.
+
+**Goal:** Evaluate SPP accuracy against a known ITRF2020 reference position.
+Standard configuration for quality control of a new station or verification
+of a new correction model.
+
+```json
+{
+    "workspace": "C:/data/project",
+    "output": { "log_level": "info" },
+
+    "gnss": {
+        "task":    "spp",
+        "mode":    "static",
+        "station": "GOPE",
+        "year":    2024,
+        "doy":     75,
+
+        "crx2rnx_path": "tools/hatanaka/CRX2RNX",
+
+        "nav_file": "INPUT/GNSS/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
+        "obs_file": "INPUT/GNSS/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
+
+        "constellations":     ["GPS", "GALILEO"],
+        "elevation_mask_deg": 10.0,
+
+        "spp": {
+            "enabled":                 true,
+            "max_iterations":          20,
+            "convergence_threshold_m": 0.01,
+            "weighting":               "elevation"
+        },
+
+        "corrections": {
+            "ionosphere":  "klobuchar",
+            "troposphere": "saastamoinen",
+            "sagnac":      true,
+            "solid_tides": false
+        },
+
+        "reference_position": {
+            "enabled": true,
+            "x":       3979316.439,
+            "y":       1050312.253,
+            "z":       4857066.904,
+            "source":  "ITRF2020"
+        },
+
+        "figures": {
+            "satcount":              true,
+            "elevation":             true,
+            "skyplot_constellation": true,
+            "skyplot_prn":           false,
+            "dop":                   true,
+            "spp": {
+                "clockbias":         true,
+                "residuals":         true,
+                "isb":               true,
+                "position_ecef":     false,
+                "position_error":    true,
+                "position_scatter":  true
+            }
+        }
+    }
+}
+```
+
+**Expected results (GOPE, DOY 075/2024):**
+- Valid epochs: 2880 / 2880
+- Mean 3D error: ~1.6 m RMS
+- Mean PDOP: ~2.8
+- Mean satellites used: ~15
+
+---
+
+### 24.15.2 Observation parsing only -- skyplot and coverage
+
+**Goal:** Quickly visualise satellite coverage, observation availability and
+data quality for a new station or date. No positioning required.
+
+```json
+{
+    "workspace": "C:/data/project",
+    "output": { "log_level": "info" },
+
+    "gnss": {
+        "task":    "parse",
+        "station": "GOPE",
+        "year":    2024,
+        "doy":     75,
+
+        "crx2rnx_path": "tools/hatanaka/CRX2RNX",
+
+        "nav_file": "INPUT/GNSS/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
+        "obs_file": "INPUT/GNSS/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
+
+        "constellations":     ["GPS", "GLONASS", "GALILEO", "BEIDOU"],
+        "elevation_mask_deg": 5.0,
+
+        "figures": {
+            "satcount":              true,
+            "elevation":             true,
+            "skyplot_constellation": true,
+            "skyplot_prn":           true,
+            "dop":                   true
+        }
+    }
+}
+```
+
+Note: for the `"parse"` task, all constellations can be listed without
+affecting positioning quality (no solver runs). The satcount and skyplot
+plots will show all four systems.
+
+---
+
+### 24.15.3 GPS-only SPP -- minimal corrections
+
+**Goal:** Establish a baseline result using only GPS and the minimal set of
+corrections. Useful for debugging or comparing with a legacy GPS-only receiver.
+
+```json
+{
+    "workspace": "C:/data/project",
+    "output": { "log_level": "info" },
+
+    "gnss": {
+        "task":    "spp",
+        "station": "GOPE",
+        "year":    2024,
+        "doy":     75,
+
+        "crx2rnx_path": "tools/hatanaka/CRX2RNX",
+
+        "nav_file": "INPUT/GNSS/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
+        "obs_file": "INPUT/GNSS/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
+
+        "constellations":     ["GPS"],
+        "elevation_mask_deg": 15.0,
+
+        "spp": {
+            "enabled":    true,
+            "max_iterations":          20,
+            "convergence_threshold_m": 0.01,
+            "weighting":               "elevation"
+        },
+
+        "corrections": {
+            "ionosphere":  "none",
+            "troposphere": "none",
+            "sagnac":      true,
+            "solid_tides": false
+        },
+
+        "reference_position": {
+            "enabled": true,
+            "x": 3979316.439,
+            "y": 1050312.253,
+            "z": 4857066.904,
+            "source": "ITRF2020"
+        }
+    }
+}
+```
+
+**Expected results:** ~3--8 m RMS (no iono/tropo correction, GPS only).
+
+---
+
+## 24.16 Technical notes
+
+### Time system
+
+All internal timestamps are stored as GPS time (week + seconds of week).
+The `TimeStamp` class stores UTC as MJD. The conversion between GPS and UTC
+applies the built-in leap-second table (last entry: 2017-01-01, +18 s).
+
+RINEX 3 epoch lines in both NAV and OBS files are in GPS system time for
+GPS receivers. The parsers subtract 18 leap seconds before constructing the
+UTC `TimeStamp`, so that `gpsTotalSeconds()` returns the original GPS time.
+This is critical: applying the correction to only one of NAV or OBS produces
+a systematic 18-second error in the satellite position computation.
+
+### Satellite clock correction sign
+
+The satellite clock correction is ADDED to the pseudorange:
+
+```
+prCorrected = prRaw + clkBias * c
+```
+
+where `clkBias` [seconds] = af0 + af1·dt + dtr − TGD. A positive `clkBias`
+means the satellite clock is fast relative to GPS time, so the measured
+pseudorange is too short by `clkBias * c` metres.
+
+### Sagnac correction implementation
+
+The solver rotates the satellite ECEF position by the Earth rotation angle
+accumulated during signal travel time:
+
+```
+theta = OmegaE * tof = OmegaE * rho / c  [rad]
+```
+
+Only X and Y are affected (rotation around Z). The Sagnac effect is equivalent
+to ~1--4 km of equivalent range error at the equator; after correction the
+residual is below 1 mm.
+
+### Coordinate system
+
+All positions are in WGS-84 ECEF [m]. Geodetic conversion to
+latitude/longitude/height uses the Vermeille (2002) non-iterative method
+implemented in `loki_geodesy::ecef2geod()`. The ENU rotation matrix for
+skyplot and position scatter uses `loki_geodesy::ecefEnuRotMat()`.
+
+### GLONASS and BeiDou status
+
+GLONASS and BeiDou orbit propagators are implemented (RK4 for GLONASS,
+Keplerian for BeiDou) and the parsers correctly read their ephemerides.
+However, the time system conversions have not been verified:
+- GLONASS: UTC+3h (Moscow time) to GPS time conversion.
+- BeiDou: BDT to GPS time (14-second offset, not 18 s).
+
+Adding these constellations currently degrades SPP accuracy. Debug is
+deferred. Default configuration: `["GPS", "GALILEO"]` only.

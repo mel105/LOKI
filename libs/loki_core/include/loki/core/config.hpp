@@ -1583,23 +1583,25 @@ struct MultivariateConfig {
  */
 struct GnssSppConfig {
     bool        enabled                {false};
-    int         maxIterations          {10};
-    double      convergenceThresholdM  {0.001};
+    int         maxIterations          {20};
+    double      convergenceThresholdM  {0.01};
     std::string weighting              {"elevation"}; ///< "elevation" | "uniform"
 };
  
 /**
  * @brief Atmospheric and physical correction switches.
+ *
+ * relativistic: removed -- satellite clock relativistic correction (dtr) is
+ * always active inside KeplerOrbit::_keplerPropagate(). It cannot be disabled.
  */
 struct GnssCorrectionsConfig {
-    std::string ionosphere   {"klobuchar"};     ///< "klobuchar" | "ionex" | "none"
-    std::string troposphere  {"saastamoinen"};  ///< "saastamoinen" | "vmf3" | "none"
-    bool        relativistic {true};
+    std::string ionosphere   {"klobuchar"};    ///< "klobuchar" | "ionex" | "none"
+    std::string troposphere  {"saastamoinen"}; ///< "saastamoinen" | "vmf3" | "none"
     bool        sagnac       {true};
     bool        solidTides   {false};
-    bool        oceanLoading {false};
-    bool        phaseWindup  {false};
-    bool        pcoPcv       {false};
+    bool        oceanLoading {false};  ///< PPP only -- requires BLQ file
+    bool        phaseWindup  {false};  ///< PPP only -- carrier phase
+    bool        pcoPcv       {false};  ///< PPP only -- requires ANTEX
 };
  
 /**
@@ -1607,14 +1609,41 @@ struct GnssCorrectionsConfig {
  */
 struct GnssPppConfig {
     bool        enabled               {false};
-    std::string sp3File               {};  ///< Resolved absolute path.
-    std::string clkFile               {};  ///< Resolved absolute path.
-    std::string antexFile             {};  ///< Resolved absolute path.
-    std::string vmf3File              {};  ///< Resolved absolute path.
-    std::string oceanLoadingBlq       {};  ///< Resolved absolute path.
-    bool        ifCombination         {true};
+    std::string sp3File               {};
+    std::string clkFile               {};
+    std::string antexFile             {};
+    std::string vmf3File              {};
+    std::string oceanLoadingBlq       {};
+    bool        ifCombination         {true};   ///< Use ionosphere-free LC
+    bool        ambiguityResolution   {false};  ///< PPP-AR (requires OSB/FCB products)
+    std::string osb_file              {};        ///< OSB/FCB for PPP-AR
     int         maxIterations         {20};
-    double      convergenceThresholdM {0.01};
+    double      convergenceThresholdM {0.001};
+};
+ 
+/**
+ * @brief Kinematic mode configuration.
+ * Used when mode = "kinematic" (vehicle, drone, vessel).
+ */
+struct GnssKinematicConfig {
+    double processNoisePosM2s  {1.0};    ///< Position process noise [m^2/s] for Kalman
+    double processNoiseClkM2s  {1.0e4}; ///< Clock process noise [m^2/s]
+    bool   outputTrajectory    {true};   ///< Export trajectory CSV
+    bool   mapVisualization    {false};  ///< Export GeoJSON for OSM map display
+};
+ 
+/**
+ * @brief RTK / Double-Difference configuration (post-processing).
+ */
+struct GnssRtkConfig {
+    bool        enabled        {false};
+    std::string baseObsFile    {};        ///< Base station OBS RINEX
+    double      baseX          {0.0};     ///< Base station ECEF X [m]
+    double      baseY          {0.0};
+    double      baseZ          {0.0};
+    std::string baseSource     {};        ///< e.g. "ITRF2020"
+    int         maxIterations  {20};
+    double      convergenceThresholdM {0.001};
 };
  
 /**
@@ -1631,40 +1660,90 @@ struct GnssQualityConfig {
  */
 struct GnssReferencePositionConfig {
     bool        enabled {false};
-    double      x       {0.0};   ///< ECEF X [m]
-    double      y       {0.0};   ///< ECEF Y [m]
-    double      z       {0.0};   ///< ECEF Z [m]
-    std::string source  {};      ///< e.g. "ITRF2020"
+    double      x       {0.0};
+    double      y       {0.0};
+    double      z       {0.0};
+    std::string source  {};
+};
+ 
+/**
+ * @brief Per-method figure enable/disable flags.
+ *
+ * Observation-level plots (satcount, elevation, skyplot) are independent
+ * of the positioning method and live at the top level.
+ * Method-specific plots are grouped under their solver (spp, ppp, rtk).
+ */
+struct GnssFiguresSppConfig {
+    bool clockbias       {true};
+    bool residuals       {true};
+    bool isb             {true};
+    bool positionEcef    {false};  ///< Raw ECEF X/Y/Z -- usually not needed
+    bool positionError   {true};   ///< dX/dY/dZ vs reference
+    bool positionScatter {true};   ///< Horizontal scatter dE vs dN
+};
+ 
+struct GnssFiguresPppConfig {
+    bool positionError   {true};
+    bool troposphere     {true};
+    bool ambiguity       {true};
+    bool clockBias       {true};
+};
+ 
+struct GnssFiguresRtkConfig {
+    bool positionError   {true};
+    bool baselineLength  {true};
+};
+ 
+struct GnssFiguresConfig {
+    // Observation-level (always available after parse)
+    bool satcount        {true};
+    bool elevation       {true};
+    bool skyplotConstellation {true};   ///< Skyplot coloured by constellation
+    bool skyplotPrn      {true};        ///< Skyplot coloured by PRN
+    bool dop             {true};
+ 
+    // Method-specific
+    GnssFiguresSppConfig spp{};
+    GnssFiguresPppConfig ppp{};
+    GnssFiguresRtkConfig rtk{};
 };
  
 /**
  * @brief Top-level configuration for the loki_gnss pipeline.
  *
  * task:
- *   "parse"  -- parse NAV + OBS, produce summary and sat-count plot.
- *   "spp"    -- Single Point Positioning (broadcast ephemeris, pseudorange).
- *   "ppp"    -- Precise Point Positioning (SP3 + CLK, IF combination).
+ *   "parse"          -- parse NAV+OBS, produce summary and observation plots.
+ *   "spp"            -- Single Point Positioning (broadcast ephemeris).
+ *   "ppp"            -- Precise Point Positioning (SP3+CLK+ANTEX).
+ *   "ppp_ar"         -- PPP with Ambiguity Resolution.
+ *   "rtk"            -- Double-difference post-processing (requires base OBS).
+ *   "kinematic_spp"  -- Kinematic SPP via Kalman filter (vehicle/train).
+ *   "kinematic_ppp"  -- Kinematic PPP via Kalman filter.
  *
- * Paths (nav_file, obs_file, ppp.*) are stored as absolute paths after
- * resolution against workspace by ConfigLoader.
+ * mode:
+ *   "static"    -- station fixed, average over full session.
+ *   "kinematic" -- position changes each epoch (vehicle, train, drone).
  */
 struct GnssConfig {
-    std::string  task              {"parse"};  ///< "parse" | "spp" | "ppp"
-    std::string  station           {"UNKN"};   ///< 4-character station code
+    std::string  task              {"parse"};
+    std::string  mode              {"static"};  ///< "static" | "kinematic"
+    std::string  station           {"UNKN"};
     int          year              {0};
-    int          doy               {0};        ///< Day of year (1-366)
-    std::string  crx2rnxPath       {};         ///< Absolute path to CRX2RNX binary
-    std::string  navFile           {};         ///< Resolved absolute path
-    std::string  obsFile           {};         ///< Resolved absolute path
-    std::vector<std::string> constellations    ///< Active constellations
-        {"GPS", "GLONASS", "GALILEO", "BEIDOU"};
+    int          doy               {0};
+    std::string  crx2rnxPath       {};
+    std::string  navFile           {};
+    std::string  obsFile           {};
+    std::vector<std::string> constellations {"GPS", "GLONASS", "GALILEO", "BEIDOU"};
     double       elevationMaskDeg  {10.0};
  
-    GnssSppConfig               spp        {};
-    GnssCorrectionsConfig       corrections{};
-    GnssPppConfig               ppp        {};
-    GnssQualityConfig           quality    {};
+    GnssSppConfig               spp             {};
+    GnssPppConfig               ppp             {};
+    GnssRtkConfig               rtk             {};
+    GnssKinematicConfig         kinematic       {};
+    GnssCorrectionsConfig       corrections     {};
+    GnssQualityConfig           quality         {};
     GnssReferencePositionConfig referencePosition{};
+    GnssFiguresConfig           figures         {};
 };
 
 // -----------------------------------------------------------------------------

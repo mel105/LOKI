@@ -2637,108 +2637,70 @@ GnssConfig ConfigLoader::_parseGnss(const nlohmann::json& j,
 {
     GnssConfig cfg;
  
-    // -- task -----------------------------------------------------------------
+    // -- task / mode -----------------------------------------------------------
     cfg.task = j.value("task", "parse");
-    if (cfg.task != "parse" && cfg.task != "spp" && cfg.task != "ppp") {
+    const std::vector<std::string> validTasks{
+        "parse","spp","ppp","ppp_ar","rtk","kinematic_spp","kinematic_ppp"};
+    if (std::find(validTasks.begin(), validTasks.end(), cfg.task) == validTasks.end())
         throw ConfigException(
-            "ConfigLoader: gnss.task must be 'parse', 'spp', or 'ppp', got '"
-            + cfg.task + "'.");
-    }
+            "ConfigLoader: gnss.task invalid: '" + cfg.task + "'.");
  
-    // -- station / date -------------------------------------------------------
+    cfg.mode = j.value("mode", "static");
+    if (cfg.mode != "static" && cfg.mode != "kinematic")
+        throw ConfigException(
+            "ConfigLoader: gnss.mode must be 'static' or 'kinematic'.");
+ 
+    // -- station / date --------------------------------------------------------
     cfg.station = j.value("station", "UNKN");
-    if (cfg.station.size() > 4) cfg.station = cfg.station.substr(0, 4);
-    cfg.year    = j.value("year", 0);
-    cfg.doy     = j.value("doy",  0);
+    if (cfg.station.size() > 9) cfg.station = cfg.station.substr(0, 9);
+    cfg.year = j.value("year", 0);
+    cfg.doy  = j.value("doy",  0);
  
-    // -- crx2rnx path ---------------------------------------------------------
-    // Resolved relative to LOKI directory (where the binary lives).
+    // -- crx2rnx ---------------------------------------------------------------
     {
-        // crx2rnx_path is relative to the LOKI project root (CWD at runtime).
         const std::string raw = j.value("crx2rnx_path", "tools/hatanaka/CRX2RNX");
-        const auto resolved = _resolvePath(raw, std::filesystem::current_path());
-        cfg.crx2rnxPath = resolved.string();
+        cfg.crx2rnxPath = _resolvePath(raw, std::filesystem::current_path()).string();
     }
  
-    // -- nav_file / obs_file --------------------------------------------------
-    // Resolved relative to workspace (files live in INPUT/).
+    // -- nav / obs files -------------------------------------------------------
     auto toFwd = [](std::filesystem::path p) {
         std::string s = p.string();
         for (char& c : s) { if (c == '\\') c = '/'; }
         return s;
     };
-    if (j.contains("nav_file"))
-        cfg.navFile = toFwd(_resolvePath(
-            j["nav_file"].get<std::string>(), workspaceDir));
-    if (j.contains("obs_file"))
-        cfg.obsFile = toFwd(_resolvePath(
-            j["obs_file"].get<std::string>(), workspaceDir));
+    if (j.contains("nav_file") && !j["nav_file"].get<std::string>().empty())
+        cfg.navFile = toFwd(_resolvePath(j["nav_file"].get<std::string>(), workspaceDir));
+    if (j.contains("obs_file") && !j["obs_file"].get<std::string>().empty())
+        cfg.obsFile = toFwd(_resolvePath(j["obs_file"].get<std::string>(), workspaceDir));
  
-    // -- constellations -------------------------------------------------------
-    if (j.contains("constellations") && j["constellations"].is_array()) {
+    // -- constellations / elevation mask ---------------------------------------
+    if (j.contains("constellations") && j["constellations"].is_array())
         cfg.constellations = j["constellations"].get<std::vector<std::string>>();
-    }
- 
-    // -- elevation mask -------------------------------------------------------
     cfg.elevationMaskDeg = j.value("elevation_mask_deg", 10.0);
-    if (cfg.elevationMaskDeg < 0.0 || cfg.elevationMaskDeg > 90.0) {
-        throw ConfigException(
-            "ConfigLoader: gnss.elevation_mask_deg must be in [0, 90].");
-    }
+    if (cfg.elevationMaskDeg < 0.0 || cfg.elevationMaskDeg > 90.0)
+        throw ConfigException("ConfigLoader: gnss.elevation_mask_deg must be in [0,90].");
  
-    // -- spp ------------------------------------------------------------------
+    // -- spp -------------------------------------------------------------------
     if (j.contains("spp")) {
-        const auto& s        = j["spp"];
-        cfg.spp.enabled      = s.value("enabled",                false);
-        cfg.spp.maxIterations= s.value("max_iterations",         10);
-        cfg.spp.convergenceThresholdM
-                             = s.value("convergence_threshold_m", 0.001);
-        cfg.spp.weighting    = s.value("weighting",              "elevation");
-        if (cfg.spp.weighting != "elevation" && cfg.spp.weighting != "uniform") {
+        const auto& s = j["spp"];
+        cfg.spp.enabled               = s.value("enabled",                 false);
+        cfg.spp.maxIterations         = s.value("max_iterations",          20);
+        cfg.spp.convergenceThresholdM = s.value("convergence_threshold_m", 0.01);
+        cfg.spp.weighting             = s.value("weighting",               "elevation");
+        if (cfg.spp.weighting != "elevation" && cfg.spp.weighting != "uniform")
             throw ConfigException(
-                "ConfigLoader: gnss.spp.weighting must be 'elevation' or "
-                "'uniform', got '" + cfg.spp.weighting + "'.");
-        }
+                "ConfigLoader: gnss.spp.weighting must be 'elevation' or 'uniform'.");
     }
  
-    // -- corrections ----------------------------------------------------------
-    if (j.contains("corrections")) {
-        const auto& c              = j["corrections"];
-        cfg.corrections.ionosphere = c.value("ionosphere",    "klobuchar");
-        cfg.corrections.troposphere= c.value("troposphere",   "saastamoinen");
-        cfg.corrections.relativistic = c.value("relativistic", true);
-        cfg.corrections.sagnac     = c.value("sagnac",        true);
-        cfg.corrections.solidTides = c.value("solid_tides",   false);
-        cfg.corrections.oceanLoading= c.value("ocean_loading", false);
-        cfg.corrections.phaseWindup= c.value("phase_windup",  false);
-        cfg.corrections.pcoPcv     = c.value("pco_pcv",       false);
- 
-        const std::vector<std::string> validIono{"klobuchar", "ionex", "none"};
-        if (std::find(validIono.begin(), validIono.end(),
-                      cfg.corrections.ionosphere) == validIono.end()) {
-            throw ConfigException(
-                "ConfigLoader: gnss.corrections.ionosphere must be "
-                "'klobuchar', 'ionex', or 'none'.");
-        }
-        const std::vector<std::string> validTropo{"saastamoinen", "vmf3", "none"};
-        if (std::find(validTropo.begin(), validTropo.end(),
-                      cfg.corrections.troposphere) == validTropo.end()) {
-            throw ConfigException(
-                "ConfigLoader: gnss.corrections.troposphere must be "
-                "'saastamoinen', 'vmf3', or 'none'.");
-        }
-    }
- 
-    // -- ppp ------------------------------------------------------------------
+    // -- ppp -------------------------------------------------------------------
     if (j.contains("ppp")) {
-        const auto& p            = j["ppp"];
-        cfg.ppp.enabled          = p.value("enabled",                 false);
-        cfg.ppp.ifCombination    = p.value("if_combination",          true);
-        cfg.ppp.maxIterations    = p.value("max_iterations",          20);
-        cfg.ppp.convergenceThresholdM
-                                 = p.value("convergence_threshold_m", 0.01);
+        const auto& p = j["ppp"];
+        cfg.ppp.enabled               = p.value("enabled",                 false);
+        cfg.ppp.ifCombination         = p.value("if_combination",          true);
+        cfg.ppp.ambiguityResolution   = p.value("ambiguity_resolution",    false);
+        cfg.ppp.maxIterations         = p.value("max_iterations",          20);
+        cfg.ppp.convergenceThresholdM = p.value("convergence_threshold_m", 0.001);
  
-        // Resolve product file paths relative to workspace
         auto pppPath = [&](const std::string& key) -> std::string {
             if (!p.contains(key) || p[key].get<std::string>().empty()) return {};
             return toFwd(_resolvePath(p[key].get<std::string>(), workspaceDir));
@@ -2748,28 +2710,113 @@ GnssConfig ConfigLoader::_parseGnss(const nlohmann::json& j,
         cfg.ppp.antexFile       = pppPath("antex_file");
         cfg.ppp.vmf3File        = pppPath("vmf3_file");
         cfg.ppp.oceanLoadingBlq = pppPath("ocean_loading_blq");
+        cfg.ppp.osb_file        = pppPath("osb_file");
  
         if (cfg.ppp.enabled) {
             if (cfg.ppp.sp3File.empty())
                 throw ConfigException(
-                    "ConfigLoader: gnss.ppp.sp3_file is required when ppp.enabled.");
+                    "ConfigLoader: gnss.ppp.sp3_file required when ppp.enabled.");
             if (cfg.ppp.clkFile.empty())
                 throw ConfigException(
-                    "ConfigLoader: gnss.ppp.clk_file is required when ppp.enabled.");
+                    "ConfigLoader: gnss.ppp.clk_file required when ppp.enabled.");
         }
     }
  
-    // -- quality --------------------------------------------------------------
+    // -- rtk -------------------------------------------------------------------
+    if (j.contains("rtk")) {
+        const auto& r = j["rtk"];
+        cfg.rtk.enabled               = r.value("enabled",                 false);
+        cfg.rtk.maxIterations         = r.value("max_iterations",          20);
+        cfg.rtk.convergenceThresholdM = r.value("convergence_threshold_m", 0.001);
+        cfg.rtk.baseSource            = r.value("base_source",             "");
+        cfg.rtk.baseX                 = r.value("base_x",                  0.0);
+        cfg.rtk.baseY                 = r.value("base_y",                  0.0);
+        cfg.rtk.baseZ                 = r.value("base_z",                  0.0);
+        if (r.contains("base_obs_file") && !r["base_obs_file"].get<std::string>().empty())
+            cfg.rtk.baseObsFile = toFwd(_resolvePath(
+                r["base_obs_file"].get<std::string>(), workspaceDir));
+    }
+ 
+    // -- kinematic -------------------------------------------------------------
+    if (j.contains("kinematic")) {
+        const auto& k = j["kinematic"];
+        cfg.kinematic.processNoisePosM2s = k.value("process_noise_pos_m2s", 1.0);
+        cfg.kinematic.processNoiseClkM2s = k.value("process_noise_clk_m2s", 1.0e4);
+        cfg.kinematic.outputTrajectory   = k.value("output_trajectory",     true);
+        cfg.kinematic.mapVisualization   = k.value("map_visualization",     false);
+    }
+ 
+    // -- corrections -----------------------------------------------------------
+    if (j.contains("corrections")) {
+        const auto& c = j["corrections"];
+        cfg.corrections.ionosphere   = c.value("ionosphere",    "klobuchar");
+        cfg.corrections.troposphere  = c.value("troposphere",   "saastamoinen");
+        cfg.corrections.sagnac       = c.value("sagnac",        true);
+        cfg.corrections.solidTides   = c.value("solid_tides",   false);
+        cfg.corrections.oceanLoading = c.value("ocean_loading", false);
+        cfg.corrections.phaseWindup  = c.value("phase_windup",  false);
+        cfg.corrections.pcoPcv       = c.value("pco_pcv",       false);
+        // Note: "relativistic" key silently ignored if present -- dtr is
+        // always active in KeplerOrbit::_keplerPropagate().
+ 
+        const std::vector<std::string> validIono{"klobuchar","ionex","none"};
+        if (std::find(validIono.begin(), validIono.end(),
+                      cfg.corrections.ionosphere) == validIono.end())
+            throw ConfigException(
+                "ConfigLoader: gnss.corrections.ionosphere must be "
+                "'klobuchar', 'ionex', or 'none'.");
+ 
+        const std::vector<std::string> validTropo{"saastamoinen","vmf3","none"};
+        if (std::find(validTropo.begin(), validTropo.end(),
+                      cfg.corrections.troposphere) == validTropo.end())
+            throw ConfigException(
+                "ConfigLoader: gnss.corrections.troposphere must be "
+                "'saastamoinen', 'vmf3', or 'none'.");
+    }
+ 
+    // -- quality ---------------------------------------------------------------
     if (j.contains("quality")) {
-        const auto& q   = j["quality"];
+        const auto& q = j["quality"];
         cfg.quality.raim      = q.value("raim",      false);
         cfg.quality.residuals = q.value("residuals", false);
         cfg.quality.dop       = q.value("dop",       false);
     }
  
-    // -- reference_position ---------------------------------------------------
+    // -- figures ---------------------------------------------------------------
+    if (j.contains("figures")) {
+        const auto& f = j["figures"];
+        cfg.figures.satcount              = f.value("satcount",              true);
+        cfg.figures.elevation             = f.value("elevation",             true);
+        cfg.figures.skyplotConstellation  = f.value("skyplot_constellation", true);
+        cfg.figures.skyplotPrn            = f.value("skyplot_prn",           true);
+        cfg.figures.dop                   = f.value("dop",                   true);
+ 
+        if (f.contains("spp")) {
+            const auto& fs = f["spp"];
+            cfg.figures.spp.clockbias       = fs.value("clockbias",        true);
+            cfg.figures.spp.residuals       = fs.value("residuals",        true);
+            cfg.figures.spp.isb             = fs.value("isb",              true);
+            cfg.figures.spp.positionEcef    = fs.value("position_ecef",    false);
+            cfg.figures.spp.positionError   = fs.value("position_error",   true);
+            cfg.figures.spp.positionScatter = fs.value("position_scatter", true);
+        }
+        if (f.contains("ppp")) {
+            const auto& fp = f["ppp"];
+            cfg.figures.ppp.positionError = fp.value("position_error", true);
+            cfg.figures.ppp.troposphere   = fp.value("troposphere",    true);
+            cfg.figures.ppp.ambiguity     = fp.value("ambiguity",      true);
+            cfg.figures.ppp.clockBias     = fp.value("clock_bias",     true);
+        }
+        if (f.contains("rtk")) {
+            const auto& fr = f["rtk"];
+            cfg.figures.rtk.positionError  = fr.value("position_error",  true);
+            cfg.figures.rtk.baselineLength = fr.value("baseline_length", true);
+        }
+    }
+ 
+    // -- reference_position ----------------------------------------------------
     if (j.contains("reference_position")) {
-        const auto& r            = j["reference_position"];
+        const auto& r = j["reference_position"];
         cfg.referencePosition.enabled = r.value("enabled", false);
         cfg.referencePosition.x       = r.value("x",       0.0);
         cfg.referencePosition.y       = r.value("y",       0.0);

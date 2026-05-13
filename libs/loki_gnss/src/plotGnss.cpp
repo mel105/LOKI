@@ -78,7 +78,7 @@ std::string PlotGnss::fwdSlash(const std::string& p)
 
 void PlotGnss::plotSatCount(const ObsFile& obs) const
 {
-    if (obs.epochs.empty()) return;
+    if (!m_cfg.gnss.figures.satcount || obs.epochs.empty()) return;
 
     std::ostringstream blk;
     blk << "$SAT << EOD\n";
@@ -125,7 +125,7 @@ void PlotGnss::plotSatCount(const ObsFile& obs) const
 
 void PlotGnss::plotElevation(const ObsFile& obs, const NavFile& nav) const
 {
-    if (obs.epochs.empty()) return;
+    if (!m_cfg.gnss.figures.elevation || obs.epochs.empty()) return;
 
     const std::array<double,3> staEcef{
         obs.receiver.approxX, obs.receiver.approxY, obs.receiver.approxZ};
@@ -197,6 +197,8 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
                                  bool perPrn) const
 {
     if (obs.epochs.empty()) return;
+    if (perPrn  && !m_cfg.gnss.figures.skyplotPrn)          return;
+    if (!perPrn && !m_cfg.gnss.figures.skyplotConstellation) return;
 
     const std::array<double,3> staEcef{
         obs.receiver.approxX, obs.receiver.approxY, obs.receiver.approxZ};
@@ -443,7 +445,7 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
 
 void PlotGnss::plotDop(const std::vector<SppResult>& spp) const
 {
-    if (spp.empty()) return;
+    if (!m_cfg.gnss.figures.dop || spp.empty()) return;
 
     // SppResult only carries PDOP. For HDOP/VDOP we'd need SatVisibility.
     // For now plot PDOP alone with a good-geometry threshold line.
@@ -478,7 +480,7 @@ void PlotGnss::plotDop(const std::vector<SppResult>& spp) const
 
 void PlotGnss::plotClockBias(const std::vector<SppResult>& spp) const
 {
-    if (spp.empty()) return;
+    if (!m_cfg.gnss.figures.spp.clockbias || spp.empty()) return;
 
     constexpr double C = 299792458.0;
     std::ostringstream blk;
@@ -515,7 +517,7 @@ void PlotGnss::plotClockBias(const std::vector<SppResult>& spp) const
 
 void PlotGnss::plotResiduals(const std::vector<SppResult>& spp) const
 {
-    if (spp.empty()) return;
+    if (!m_cfg.gnss.figures.spp.residuals || spp.empty()) return;
 
     std::ostringstream blk;
     blk << "$RES << EOD\n";
@@ -553,6 +555,7 @@ void PlotGnss::plotResiduals(const std::vector<SppResult>& spp) const
 
 void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
 {
+    if (!m_cfg.gnss.figures.spp.isb) return;
     // Check if any epoch has ISB data
     bool hasGlo = false, hasGal = false, hasBds = false;
     for (const auto& r : spp) {
@@ -614,7 +617,7 @@ void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
 
 void PlotGnss::plotPositionEcef(const std::vector<SppResult>& spp) const
 {
-    if (spp.empty()) return;
+    if (!m_cfg.gnss.figures.spp.positionEcef || spp.empty()) return;
 
     std::ostringstream blk;
     blk << "$POS << EOD\n";
@@ -656,7 +659,7 @@ void PlotGnss::plotPositionEcef(const std::vector<SppResult>& spp) const
 void PlotGnss::plotPositionError(const std::vector<SppResult>& spp,
                                   const SppSummary&             summary) const
 {
-    if (!summary.hasReference || spp.empty()) return;
+    if (!m_cfg.gnss.figures.spp.positionError || !summary.hasReference || spp.empty()) return;
 
     std::ostringstream blk;
     blk << "$ERR << EOD\n";
@@ -705,7 +708,7 @@ void PlotGnss::plotPositionError(const std::vector<SppResult>& spp,
 void PlotGnss::plotPositionScatter(const std::vector<SppResult>& spp,
                                     const SppSummary&             summary) const
 {
-    if (!summary.hasReference || spp.empty()) return;
+    if (!m_cfg.gnss.figures.spp.positionScatter || !summary.hasReference || spp.empty()) return;
 
     static const loki::math::Ellipsoid wgs84 =
         loki::math::makeEllipsoid(loki::math::EllipsoidModel::WGS84);

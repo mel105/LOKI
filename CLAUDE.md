@@ -23,7 +23,7 @@ Current domains:
 - Spatial analysis (2D): complete.
 - Multivariate analysis: complete -- loki_multivariate.
 - Geodetic computations: complete -- loki_geodesy.
-- GNSS processing: loki_gnss -- IN PROGRESS (parsers + SPP working, see below).
+- GNSS processing: loki_gnss -- IN PROGRESS (SPP complete, PPP next).
 
 Planned domains (see Long-Term Roadmap section):
 - Climatological GNSS analysis: loki_climatology
@@ -40,6 +40,11 @@ Planned domains (see Long-Term Roadmap section):
 - Claude must NEVER use the `ask_user_input` widget or any questionnaire/poll tool.
 - All clarifying questions must be asked as plain text in the conversation.
 - This rule is absolute and applies to every thread.
+
+### Ask before writing code
+- Before writing any code, ask the user if they want the code written.
+- Discuss approach, propose signatures, wait for approval -- THEN implement.
+- This avoids wasting conversation context on unwanted refactors.
 
 ---
 
@@ -202,26 +207,20 @@ All plot output files follow this naming convention:
   Each `gp()` call is a separate `fputs` -- variables are not committed before the
   function definition is parsed on Windows/MinGW. Solution: compute model curves in
   C++ (e.g. 200 sample points) and send as a named datablock `$model << EOD ... EOD`.
+- **Skyplot**: do NOT use `set polar` -- use manual Cartesian transformation
+  x=(90-el)*sin(az), y=(90-el)*cos(az). Draw elevation rings and azimuth ticks as
+  explicit datablocks. `set polar` produces unusable axis labels on Windows gnuplot.
 
 ---
 
 ## Library Architecture
-
-### Project identity and domain scope
-LOKI is no longer limited to time series. The framework covers:
-- 1D time series analysis (complete)
-- 2D spatial analysis (loki_spatial -- complete)
-- Multivariate analysis (loki_multivariate -- complete)
-- Geodetic computations (loki_geodesy -- complete)
-- GNSS processing (loki_gnss -- in progress)
-- Climatology, gravity, EO, seismology (planned)
 
 ### Architecture principle -- math primitives in loki_core
 All reusable math primitives go into `loki_core/math/` (flat, no sub-directories).
 Module libraries are thin orchestrators: pipeline, protocol, CSV, plots.
 This enables all future modules to reuse the same math without cross-module dependencies.
 
-### Dependency graph (complete + planned)
+### Dependency graph
 ```
 loki_core
     ^
@@ -249,7 +248,7 @@ loki_spatial          (depends on loki_core only)                   <- COMPLETE
 loki_geodesy          (depends on loki_core only)                   <- COMPLETE
 loki_multivariate     (depends on loki_core only)                   <- COMPLETE
 
-loki_gnss             (depends on loki_core only)                   <- IN PROGRESS
+loki_gnss             (depends on loki_core + loki_geodesy)         <- IN PROGRESS
 loki_climatology      (depends on loki_core + loki_gnss +
                         loki_spatial + existing analysis modules)  <- PLANNED
 loki_gnss_rail        (depends on loki_core + loki_gnss +
@@ -267,6 +266,7 @@ loki_seismology       (depends on loki_core + loki_gnss +
 - Include paths follow `#include <loki/<module>/<class>.hpp>`.
 - No circular dependencies between modules.
 - `loki_core` must not depend on any other loki module.
+- `loki_gnss` depends on `loki_geodesy` (uses `ecef2geod`, `ecefEnuRotMat`).
 
 ---
 
@@ -314,10 +314,9 @@ loki/
 |   |       +-- stats/        (descriptive, filter, distributions, hypothesis, metrics,
 |   |       |                  wCorrelation, sampling, bootstrap, permutation)
 |   |       +-- io/           (loader, dataManager, gnuplot, plot, spatialLoader,
-|   |       |                  geodesyLoader,
-|   |       |                  gnssLoader, sp3Loader, ionexLoader, antexLoader,
-|   |       |                  sinexLoader, vmf3Loader, netcdfLoader, geotiffLoader,
-|   |       |                  dbManager, dbWriter, dbReader, dbSchema)
+|   |       |                  geodesyLoader, gnssLoader, sp3Loader, ionexLoader,
+|   |       |                  antexLoader, sinexLoader, vmf3Loader, netcdfLoader,
+|   |       |                  geotiffLoader, dbManager, dbWriter, dbReader, dbSchema)
 |   |       +-- math/         (lsqResult, lsq, designMatrix, hatMatrix, svd, lm,
 |   |                          lagMatrix, embedMatrix, randomizedSvd, spline, nelderMead,
 |   |                          krigingTypes, krigingVariogram, krigingBase,
@@ -348,18 +347,25 @@ loki/
 |   +-- loki_multivariate/           <- COMPLETE
 |   +-- loki_gnss/                   <- IN PROGRESS
 |   |   +-- include/loki/gnss/
-|   |   |   +-- gnssTypes.hpp        <- COMPLETE
-|   |   |   +-- rinexNavParser.hpp   <- COMPLETE
-|   |   |   +-- rinexObsParser.hpp   <- COMPLETE
-|   |   |   +-- keplerOrbit.hpp      <- COMPLETE
-|   |   |   +-- satVisibility.hpp    <- COMPLETE
-|   |   |   +-- sppSolver.hpp        <- COMPLETE (SPP working, ~3.8km error, see issues)
-|   |   +-- src/
-|   |       +-- rinexNavParser.cpp
-|   |       +-- rinexObsParser.cpp
-|   |       +-- keplerOrbit.cpp
-|   |       +-- satVisibility.cpp
-|   |       +-- sppSolver.cpp
+|   |   |   +-- gnssTypes.hpp
+|   |   |   +-- correctionModel.hpp  <- abstract base CorrectionModel
+|   |   |   +-- orbitModel.hpp       <- abstract base OrbitModel
+|   |   |   +-- broadcastOrbit.hpp/.cpp
+|   |   |   +-- ionosphere.hpp/.cpp  <- KlobucharModel
+|   |   |   +-- troposphere.hpp/.cpp <- SaastamoinenModel
+|   |   |   +-- relativity.hpp/.cpp  <- Sagnac, rotateSatPosition
+|   |   |   +-- solidTides.hpp/.cpp  <- IERS2010 step-1
+|   |   |   +-- gnssUtils.hpp/.cpp   <- selectPseudorange, elevationWeight, isbKey
+|   |   |   +-- keplerOrbit.hpp/.cpp <- GPS/GAL/BDS Kepler + GLONASS RK4
+|   |   |   +-- satVisibility.hpp/.cpp
+|   |   |   +-- rinexNavParser.hpp/.cpp
+|   |   |   +-- rinexObsParser.hpp/.cpp
+|   |   |   +-- sppSolver.hpp/.cpp   <- injected OrbitModel + CorrectionModel vector
+|   |   |   +-- gnssResult.hpp       <- ParseResult, SppSummary, GnssResult
+|   |   |   +-- gnssAnalyzer.hpp/.cpp
+|   |   |   +-- gnssProtocol.hpp/.cpp
+|   |   |   +-- plotGnss.hpp/.cpp
+|   |   |   +-- gnssCsvExport.hpp/.cpp
 |   +-- loki_climatology/            <- PLANNED
 |   +-- loki_gnss_rail/              <- PLANNED
 |   +-- loki_gravity/                <- PLANNED
@@ -367,9 +373,9 @@ loki/
 |   +-- loki_seismology/             <- PLANNED
 +-- tests/
 +-- config/
-|   +-- gnss.json                    <- COMPLETE (GPS-only, spp task)
+|   +-- gnss.json
 +-- scripts/
-|   +-- loki.sh                      <- gnss app registered
+|   +-- loki.sh
 +-- data/
 |   +-- gnss/                        -- downloaded GNSS products (gitignored)
 |   +-- era5/                        -- ERA5/NWM NetCDF files (gitignored)
@@ -379,10 +385,8 @@ loki/
 +-- docs/
 +-- tools/
 |   +-- hatanaka/
-|   |   +-- CRX2RNX.exe              -- Hatanaka decompressor (Windows PE32+)
-|   |   +-- CRX2RNX                  -- Hatanaka decompressor (Linux)
-|   |   +-- RNX2CRX.exe
-|   |   +-- RNX2CRX
+|   |   +-- CRX2RNX.exe
+|   |   +-- CRX2RNX
 |   +-- gnss_download/
 |       +-- download.sh              -- COMPLETE
 |       +-- README.md
@@ -408,8 +412,6 @@ loki/
 Any `Config` struct with enum member + default value CANNOT be a nested struct inside
 a class. Define outside with descriptive name, add `using` alias inside class.
 All `XxxConfig` structs in `config.hpp` follow this pattern.
-Same applies to loki_gnss: `RinexNavParserConfig`, `RinexObsParserConfig`,
-`SppSolverConfig` are all defined outside their respective classes.
 
 ### Eigen BDCSVD linking bug -- CRITICAL
 `Eigen::BDCSVD` causes `undefined reference` errors when used in `.cpp` files compiled
@@ -440,6 +442,8 @@ Functions end up in global namespace. Wrap all definitions in explicit namespace
 - `plot '-'` inside `set multiplot` NOT supported -- use datablocks (`$name << EOD`)
 - Do NOT use gnuplot user-defined functions via pipe -- compute curves in C++ as datablocks
 - Heatmaps: NEVER use `matrix rowheaders columnheaders`
+- `set terminal pngcairo ... size W,H` -- no duplicate size keyword; `terminal()` helper
+  returns base string without size, each plot appends its own `size W,H`
 
 ### MedianYearSeries API
 Constructor: `MedianYearSeries(const TimeSeries& series, Config cfg = Config{})`
@@ -457,100 +461,167 @@ Pipeline: gzip via zlib (C++ API, no subprocess), CRX2RNX via `_popen("cmd /c ..
 - CRX2RNX output: auto-derives .rnx from .crx basename -- do NOT provide output path arg.
 - Use same base name for both temp files: `loki_gnss_NNN.crx` -> `loki_gnss_NNN.rnx`.
 - CRX2RNX refuses if .rnx already exists -- use `-f` flag for force overwrite.
-- Temp paths: use `TEMP` env var on Windows (not `fs::temp_directory_path()` which
-  returns POSIX /tmp/ -- cmd.exe cannot resolve POSIX paths).
+- Temp paths: use `TEMP` env var on Windows (not `fs::temp_directory_path()`).
 - loki_gnss CMakeLists must link `-lz` for zlib.
 
 ### loki_gnss -- RINEX time system -- CRITICAL
-RINEX 3 time handling -- different for NAV and OBS:
-- RINEX 3 NAV epoch lines (toc): GPS system time. Parser must subtract 18 leap
-  seconds before constructing TimeStamp (which is UTC-based), so that
-  fromTimeStamp() adds them back yielding the original GPS time.
-  Function: `epochToGpsTime()` in rinexNavParser.cpp -- already implements this.
-- RINEX 3 OBS epoch lines: GPS system time for GPS receivers (Trimble ALLOY confirmed).
-  Parser must apply same leap-second subtraction as NAV.
-  Function: `parseEpochLine()` in rinexObsParser.cpp -- already implements this.
-- toe/week from broadcast record body (f[8], f[18]): GPS time directly -- NO conversion.
-  `eph.toe = GpsTime{ static_cast<int>(eph.week), toeSow }` -- correct as-is.
-- CONSEQUENCE: if both OBS and NAV epochToGpsTime add 18s, tk = t_obs - toe is correct
-  (both shifted by same amount, difference cancels).
-- MISTAKE TO AVOID: applying leap-second correction to only one of OBS/NAV but not both.
+- RINEX 3 NAV toc epoch: GPS system time. Parser subtracts 18 leap seconds before
+  constructing TimeStamp so that fromTimeStamp() adds them back = original GPS time.
+- RINEX 3 OBS epoch: GPS system time (Trimble ALLOY confirmed). Same subtraction.
+- toe/week from broadcast record body: GPS time directly, NO conversion.
+- Both OBS and NAV apply the same 18s shift -- difference tk = t_obs - toe cancels.
+- MISTAKE TO AVOID: applying leap-second correction to only one of OBS/NAV.
 
-### loki_gnss -- SPP solver known issues -- OPEN
-Current SPP accuracy: ~3.8 km with GPS-only, iono=none, tropo=none.
-Expected SPP accuracy with broadcast ephemeris: 3-10 m.
-Root cause not yet identified. Suspected issues:
-1. Possible remaining time system inconsistency (tk not exactly correct).
-2. `selectPseudorange` may pick wrong code for some satellites.
-3. LSQ convergence with only 10 iterations may be insufficient for epochs
-   where initial position error is large.
-Known NOT to be the cause:
-- Satellite clock sign (fixed: prCorr = pr + clkBias*c).
-- Multi-constellation time offsets (fixed: GPS-only mode).
-- Sagnac correction (tested: same result with sagnac=false).
-- Ionosphere/troposphere corrections (tested: same result with none).
-Next steps for debugging:
-- Compare satellite positions against RTKLIB or online GNSS calculator.
-- Verify pseudorange residuals per satellite after convergence.
-- Check if error is constant across all epochs (systematic) or variable.
+### loki_gnss -- SPP accuracy
+- GPS + Galileo, Klobuchar + Saastamoinen + Sagnac: ~1.6 m RMS (GOPE, DOY 075/2024).
+- Sagnac correction is critical: without it error is ~24 m, with it ~1.6 m.
+- Solid Earth Tides (IERS2010 step-1): tested, marginally worsens SPP (~3 cm).
+  Cause: low-precision analytical Moon/Sun ephemeris (Meeus truncated series, ~1 arcmin).
+  Recommendation: keep solid_tides=false for SPP; use full JPL DE440 for PPP.
+- Default constellations: GPS + GALILEO only (see GLONASS/BeiDou note below).
 
-### loki_gnss -- corrections architecture -- PLANNED REFACTOR
-Currently ionosphere (Klobuchar), troposphere (Saastamoinen), and Sagnac
-corrections are implemented inline in `sppSolver.cpp`. This is a temporary
-solution. Planned refactor in next thread:
-```
-corrections/
-    ionosphere.hpp/.cpp   -- Klobuchar, IONEX interpolation
-    troposphere.hpp/.cpp  -- Saastamoinen, VMF3
-    relativity.hpp/.cpp   -- Sagnac, clock relativistic term
-    antenna.hpp/.cpp      -- PCO/PCV from ANTEX
-    tides.hpp/.cpp        -- solid Earth tides, ocean loading
-    windup.hpp/.cpp       -- phase windup for PPP
-```
+### loki_gnss -- GLONASS and BeiDou -- TODO (deferred)
+GLONASS and BeiDou are parsed and have orbit propagators (RK4 for GLO, Kepler for BDS)
+but produce incorrect SPP results when added to the solution. Root cause: time system
+conversion errors.
+- GLONASS uses UTC+3h (Moscow time) -- conversion to GPS time in parser/propagator
+  not fully verified.
+- BeiDou uses BDT with 14-second offset from GPS (NOT 18s like UTC).
+  The offset may be applied incorrectly in some code paths.
+- Both constellations are DISABLED by default in gnss.json (constellations: GPS, GALILEO).
+- Debug deferred to a separate thread. Do NOT enable GLO/BDS in SPP until fixed.
+- When debugging: verify tk = t_obs - toe for a known satellite against RTKLIB output.
+
+### loki_gnss -- CorrectionModel architecture
+All signal corrections implement `CorrectionModel` interface (correctionModel.hpp).
+`CorrectionInput` contains: lat/lon/h [rad/m], elevation/azimuth [rad], gpsSow,
+gpsWeek, satX/Y/Z [m], staX/Y/Z [m].
+`SppSolver` fills all CorrectionInput fields before calling each model's `delay()`.
+Models: KlobucharModel, SaastamoinenModel, SolidTidesModel (all in loki_gnss).
+`relativistic` config flag removed -- dtr correction is always active in KeplerOrbit.
+
+### loki_gnss -- KalmanFilter not suitable for PPP
+`loki_kalman::KalmanFilter` is a scalar 1D filter (H: 1xn, R: 1x1).
+PPP requires:
+- Multi-observation update: H is mxn, R is mxm (30+ observations per epoch).
+- Variable-size state: ambiguity parameters added/removed per satellite arc.
+- Arc management: cycle slip detection resets individual ambiguity parameters.
+Solution: implement dedicated `PppFilter` in loki_gnss using same Joseph-form update
+logic but with dynamic state management. Do NOT force-fit loki_kalman.
 
 ---
 
-## loki_gnss -- Current State and Next Steps
+## loki_gnss -- Current State
 
-### Completed in this thread
+### Completed (this and previous threads)
 - `gnssTypes.hpp` -- all data structures (GPS/GAL/GLO/BDS/SBAS/SP3/CLK/IONEX/ANTEX/DCB/VMF3)
 - `rinexNavParser.hpp/.cpp` -- RINEX 2.x + 3.x NAV, all constellations
 - `rinexObsParser.hpp/.cpp` -- RINEX 3 OBS with Hatanaka+gzip decompression
-- `keplerOrbit.hpp/.cpp` -- Keplerian propagation (GPS/GAL/BDS) + GLONASS RK4
-- `satVisibility.hpp/.cpp` -- elevation/azimuth + DOP computation
-- `sppSolver.hpp/.cpp` -- GPS-only SPP with weighted LSQ, Klobuchar, Saastamoinen
-- `config.hpp` patch -- `GnssConfig` struct and sub-configs
-- `configLoader.cpp` patch -- `_parseGnss()` implementation
-- `gnss.json` -- working config for GOPE station, 2024 DOY 075
-- `apps/loki_gnss/main.cpp` -- parse + SPP pipeline with CSV export
-- `libs/loki_gnss/CMakeLists.txt` -- with zlib dependency
+- `keplerOrbit.hpp/.cpp` -- GPS/GAL/BDS Kepler + GLONASS RK4
+- `satVisibility.hpp/.cpp` -- elevation/azimuth (uses loki_geodesy ecef2geod)
+- `correctionModel.hpp` -- abstract CorrectionModel base with full CorrectionInput
+- `orbitModel.hpp` -- abstract OrbitModel base
+- `broadcastOrbit.hpp/.cpp` -- BroadcastOrbit : OrbitModel (wraps KeplerOrbit)
+- `ionosphere.hpp/.cpp` -- KlobucharModel : CorrectionModel
+- `troposphere.hpp/.cpp` -- SaastamoinenModel : CorrectionModel
+- `relativity.hpp/.cpp` -- Sagnac: rotateSatPosition(), sagnacDelay()
+- `solidTides.hpp/.cpp` -- SolidTidesModel : CorrectionModel (IERS2010 step-1,
+  low-precision Meeus ephemeris -- adequate for testing, not for PPP)
+- `gnssUtils.hpp/.cpp` -- selectPseudorange(), elevationWeight(), isbKey()
+- `sppSolver.hpp/.cpp` -- injected OrbitModel + vector<CorrectionModel>, ISB for GAL
+- `gnssResult.hpp` -- ParseResult (with ObsCodeMap), SppSummary (with geodetic coords),
+  GnssResult
+- `gnssAnalyzer.hpp/.cpp` -- full pipeline orchestrator
+- `gnssProtocol.hpp/.cpp` -- text protocol with DMS coords, obs codes, corrections section
+- `plotGnss.hpp/.cpp` -- 10 plots: satcount, elevation, skyplot (x2), dop, clockbias,
+  residuals, isb, positionEcef, positionError, positionScatter
+- `gnssCsvExport.hpp/.cpp` -- spp_epochs.csv, spp_clk.csv, spp_tropo.csv
+- `config.hpp` -- GnssConfig with GnssSppConfig, GnssPppConfig, GnssRtkConfig,
+  GnssKinematicConfig, GnssCorrectionsConfig (no relativistic flag),
+  GnssFiguresConfig (figures per method: spp/ppp/rtk)
+- `configLoader.cpp` -- _parseGnss() with all new sections
+- `gnss.json` -- GPS+Galileo, SPP enabled, Sagnac+Klobuchar+Saastamoinen
 
-### Test data
-- Station: GOPE00CZE (permanent EUREF/EPN station, Czech Republic)
-- Date: 2024-03-15 (DOY 075)
+### Test data (GOPE station, Czech Republic)
+- Station: GOPE00CZE (permanent EUREF/EPN station)
+- Date: 2024-03-15 (DOY 075, GPS week 2307)
 - NAV: `INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz`
 - OBS: `INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz`
-- CRX2RNX: `tools/hatanaka/CRX2RNX.exe`
-- Reference position ITRF2020: X=3979316.439 Y=1050312.253 Z=4857066.904 [m]
+- Reference ITRF2020: X=3979316.439 Y=1050312.253 Z=4857066.904 [m]
+- SPP result (GPS+GAL, Sagnac+Klobuchar+Saastamoinen): ~1.6 m RMS
+- PPP products available (CODE Bern, MGEX final):
+  SP3:  `INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz`
+  CLK:  `INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz`
+  ANTEX:`INPUT/GNSS/gnss_data/antex/igs20.atx`
+  VMF3: `INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00`
+  BLQ:  `INPUT/GNSS/gnss_data/blq/GOPE.BLQ`
+- CSRS-PPP reference (for comparison): ~mm accuracy, static final mode,
+  GPS+GLO+GAL, IF combination, 98.81% fixed ambiguities
 
-### Next thread tasks (priority order)
-1. **Debug SPP 3.8 km error** -- compare satellite positions against reference,
-   verify pseudorange residuals, check time system consistency.
-2. **Refactor corrections into `corrections/` submodule** -- ionosphere, troposphere,
-   relativity, antenna, tides, windup as separate classes.
-3. **Implement `plotGnss.hpp/.cpp`** -- satcount, skyplot, SNR, DOP, SPP position error.
-   Skyplot uses gnuplot polar terminal. SNR: one subplot per constellation.
-   Position error: time series of dX/dY/dZ vs ITRF reference.
-4. **`gnssAnalyzer.hpp/.cpp`** -- main orchestrator replacing current main.cpp logic.
-5. **`gnssProtocol.hpp/.cpp`** -- SPP summary protocol in .txt format.
+---
 
-### Files to request at start of next thread
-- `libs/loki_gnss/src/rinexNavParser.cpp` (current state)
-- `libs/loki_gnss/src/rinexObsParser.cpp` (current state)
-- `libs/loki_gnss/src/keplerOrbit.cpp` (current state)
-- `libs/loki_gnss/src/sppSolver.cpp` (current state)
-- `apps/loki_gnss/main.cpp` (current state)
-- `config/gnss.json` (current state)
+## loki_gnss -- PPP Next Thread
+
+### Goal
+Implement PPP (Precise Point Positioning) for static stations.
+Expected accuracy: ~1-5 cm after convergence (~20-30 min).
+Comparison target: CSRS-PPP output (already available for GOPE DOY 075/2024).
+
+### What needs to be implemented
+
+**1. loki_core/math/interpolation.hpp/.cpp** (NEW, goes into loki_core)
+- Lagrange polynomial interpolation, order 9 (IGS standard for SP3).
+- API: `lagrangeInterp(times, values, t_query, order) -> double`
+- Used by sp3Parser and clkParser for epoch interpolation.
+
+**2. sp3Parser.hpp/.cpp** (NEW, loki_gnss)
+- Parses SP3-c and SP3-d format (precise satellite orbits).
+- Stores positions [km] and velocities [dm/s] at 5-min or 15-min intervals.
+- Lagrange order-9 interpolation to arbitrary epoch.
+- Handles clock values in SP3 (microseconds -> seconds).
+
+**3. clkParser.hpp/.cpp** (NEW, loki_gnss)
+- Parses RINEX CLK format (satellite + receiver clock corrections).
+- 30s or 5s intervals; linear interpolation to arbitrary epoch.
+- Distinguishes AS (satellite) and AR (receiver) records.
+
+**4. antexParser.hpp/.cpp** (NEW, loki_gnss)
+- Parses ANTEX format (IGS antenna phase center corrections).
+- Satellite PCO [mm] per frequency per constellation.
+- Receiver PCO/PCV [mm] per frequency -- looked up by antenna type from OBS header.
+
+**5. phaseWindup.hpp/.cpp** (NEW, loki_gnss)
+- Phase windup correction for carrier phase observations.
+- Analytical model: depends on satellite attitude + station-satellite geometry.
+- Returns correction in cycles (convert to metres: cycles * lambda).
+- Requires satellite ECEF velocity (from SP3) for attitude computation.
+
+**6. PppFilter** (NEW, loki_gnss) -- NOT loki_kalman
+- Sequential Kalman filter with variable-size state vector.
+- State: [X, Y, Z, clk_GPS, ZTD_wet, N_1, ..., N_n]
+- Multi-observation update per epoch (H: mxn, R: mxm).
+- Arc management: add/remove ambiguity parameters per satellite arc.
+- Cycle slip detection: geometry-free combination L1-L2.
+- Joseph-form covariance update (same as loki_kalman but multi-obs).
+
+**7. pppSolver.hpp/.cpp** (NEW, loki_gnss)
+- IF combination: P_IF = (f1^2*P1 - f2^2*P2)/(f1^2-f2^2) [eliminates iono]
+- Phase IF: L_IF = (f1^2*L1 - f2^2*L2)/(f1^2-f2^2)
+- Satellite position from SP3 (not broadcast ephemeris).
+- Satellite clock from CLK file.
+- PCO/PCV from ANTEX.
+- Phase windup correction.
+- ZTD_wet estimated as filter parameter (Saastamoinen as prior/initial).
+- Ocean loading: optional, requires BLQ (small effect, can be added later).
+
+### Files to request at start of PPP thread
+- `libs/loki_gnss/include/loki/gnss/gnssTypes.hpp` (current state)
+- `libs/loki_gnss/include/loki/gnss/correctionModel.hpp`
+- `libs/loki_gnss/include/loki/gnss/orbitModel.hpp`
+- `libs/loki_gnss/include/loki/gnss/sppSolver.hpp`
+- `libs/loki_gnss/src/sppSolver.cpp`
+- `libs/loki_gnss/CMakeLists.txt`
+- `config/gnss.json`
 
 ---
 
@@ -586,56 +657,47 @@ corrections/
   or add per-constellation inter-system bias (ISB) parameters.
 - RINEX 3 NAV and OBS epoch times are in GPS system time for GPS receivers.
   Both must subtract 18 leap seconds before constructing UTC TimeStamp.
+- Sagnac correction is critical for SPP: without it error is ~24 m vs ~1.6 m with it.
+- SP3 interpolation: Lagrange polynomial order 9 (IGS standard).
+- PPP IF combination eliminates ionosphere to ~0.1 mm level.
+- PPP convergence time: ~20-30 min for static station; PPP-AR much faster.
+- Solid Earth Tides: for PPP use full IERS 2010 step-2 with JPL DE440 ephemeris.
+  Meeus truncated analytical series is insufficient for PPP accuracy.
 
 ---
 
 ## Long-Term Roadmap
 
-This section describes planned modules not yet implemented.
-Implementation order follows the dependency graph.
-
 ### Infrastructure (Faza 0)
 
 #### 0.1 GNSS Data Downloader -- COMPLETE
-See `tools/gnss_download/README.md`.
 
-#### 0.2 loki_gnss parsers -- IN PROGRESS
-Completed: gnssTypes, rinexNavParser, rinexObsParser, keplerOrbit, satVisibility, sppSolver.
-Remaining: sp3Parser, clkParser, ionexParser, antexParser, dcbParser, vmf3Parser.
+#### 0.2 loki_gnss parsers
+Completed: gnssTypes, rinexNavParser, rinexObsParser, keplerOrbit, satVisibility,
+           sppSolver, corrections (Klobuchar, Saastamoinen, Sagnac, SolidTides),
+           gnssAnalyzer, gnssProtocol, plotGnss, gnssCsvExport.
+Remaining: sp3Parser, clkParser, antexParser, phaseWindup (all needed for PPP).
+           ionexParser, dcbParser, vmf3Parser (lower priority, PPP phase 2).
 
-#### 0.3 SQLite database layer -- PLANNED (after loki_gnss complete)
+#### 0.3 SQLite database layer -- PLANNED (after loki_gnss PPP complete)
 
-#### 0.4 loki_core/math/ primitives -- PLANNED
-interpolation (Lagrange order 9 for SP3), sphericalHarmonics, legendrePolynomials,
-stokesIntegral.
+#### 0.4 loki_core/math/ primitives
+interpolation (Lagrange order 9) -- NEEDED FOR PPP (next thread).
+sphericalHarmonics, legendrePolynomials, stokesIntegral -- gravity module (later).
 
-### loki_gnss -- IN PROGRESS
-See "loki_gnss -- Current State and Next Steps" section above.
-
-### loki_climatology -- PLANNED
-### loki_gnss_rail -- PLANNED
-### loki_gravity -- PLANNED
-### loki_eo -- PLANNED
-### loki_seismology -- PLANNED
-
----
-
-## Module Roadmap (full picture)
+### Module Roadmap
 
 | Priority | Module | Status |
 |---|---|---|
 | COMPLETE | all time series modules | COMPLETE |
 | COMPLETE | loki_spatial, loki_geodesy, loki_multivariate | COMPLETE |
 | Faza 0 | GNSS downloader | COMPLETE |
-| Faza 0 | loki_gnss parsers (gnssTypes, rinexNav, rinexObs) | COMPLETE |
-| Faza 0 | loki_gnss keplerOrbit, satVisibility, sppSolver | COMPLETE (SPP ~3.8km, debug needed) |
-| Faza 0 | loki_gnss corrections refactor | NEXT THREAD |
-| Faza 0 | loki_gnss plotGnss, gnssAnalyzer, protocol | NEXT THREAD |
-| Faza 0 | SPP accuracy debug | NEXT THREAD |
-| Faza 0 | sp3Parser, clkParser, ionexParser, antexParser | PLANNED |
-| Faza 0 | loki_core/math/ interpolation, keplerOrbit | PLANNED |
-| Faza 1 | loki_gnss PPP solver | PLANNED |
-| Faza 0 | loki_core/io/ DB layer (SQLite) | PLANNED (after loki_gnss) |
+| Faza 0 | loki_gnss SPP (GPS+Galileo, ~1.6m RMS) | COMPLETE |
+| Faza 0 | loki_gnss GLONASS+BeiDou SPP | TODO (time system debug deferred) |
+| Faza 1 | loki_core interpolation (Lagrange order 9) | NEXT THREAD |
+| Faza 1 | loki_gnss sp3Parser, clkParser, antexParser | NEXT THREAD |
+| Faza 1 | loki_gnss phaseWindup, PppFilter, pppSolver | NEXT THREAD |
+| Faza 0 | loki_core/io/ DB layer (SQLite) | PLANNED |
 | Faza 2 | loki_climatology | PLANNED |
 | Faza 3 | loki_gnss_rail | PLANNED |
 | Faza 4 | loki_gravity | PLANNED |
@@ -666,7 +728,7 @@ See "loki_gnss -- Current State and Next Steps" section above.
 - `loader.hpp` is in `loki_core/io/`, NOT in `timeseries/`.
 - `spatialLoader.hpp` is in `loki_core/io/`, namespace `loki::io`.
 - `geodesyLoader.hpp` is in `loki_core/io/`, namespace `loki::io`.
-- `ellipsoid.hpp` is in `loki_core/math/` (placed there during loki_geodesy).
+- `ellipsoid.hpp` is in `loki_core/math/`.
 - `svd.cpp` does NOT exist -- `SvdDecomposition` is header-only in `svd.hpp`.
 - `krigingFactory.hpp` is header-only.
 - gnuplot.cpp: `-persist` flag is REMOVED. Do not restore it.
@@ -681,12 +743,6 @@ See "loki_gnss -- Current State and Next Steps" section above.
   with deep integration into the LOKI ecosystem.
 - GNSS multipath has sidereal periodicity (~23h 56min, not 24h).
 - Draconitic period: 351.4 days (GPS orbital resonance with Sun).
-- SP3 interpolation: Lagrange polynomial order 9 (IGS standard).
-- CDDIS requires NASA Earthdata account for HTTPS access (~/.netrc).
-  CDDIS OAuth redirect requires cookie jar (--cookie-jar ~/.cddis_cookies).
-  CODE Bern and EUREF/EPN are freely accessible without authentication.
-- OBS RINEX from EUREF/EPN is Hatanaka compressed (.crx.gz).
-  Parsers must handle: gunzip (zlib) -> CRX2RNX (cmd /c) -> standard RINEX 3.
 - VMF3 filenames use YYYYMMDD format (NOT DOY): VMF3_20240315.H00
 - CODE Bern directory structure:
   SP3/CLK/BIAS: ftp.aiub.unibe.ch/CODE_MGEX/CODE/YYYY/
@@ -699,4 +755,8 @@ See "loki_gnss -- Current State and Next Steps" section above.
   Raw RINEX/SP3/CLK files NEVER stored in DB.
 - Ocean loading BLQ: manual generation at holt.oso.chalmers.se/loading/
 - loki_gnss CMakeLists: must include Eigen3 system includes and link zlib (-lz).
-  See libs/loki_gnss/CMakeLists.txt for correct target_include_directories pattern.
+- GnssFiguresConfig lives in GnssConfig (not PlotConfig) -- per-method figures
+  sections (spp/ppp/rtk) follow the GNSS-specific hierarchy in gnss.json.
+  Other modules use PlotConfig booleans as before.
+- PlotConfig in config.hpp has geodesy plot flags (geodCovariancePanel,
+  geodDistanceBar) -- added but parsePlots patch not yet applied to configLoader.

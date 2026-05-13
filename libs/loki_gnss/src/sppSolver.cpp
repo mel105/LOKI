@@ -165,6 +165,10 @@ SppResult SppSolver::solve(
                 ci.elevation = elRad;
                 ci.azimuth   = azRad;
                 ci.gpsSow    = epoch.time.sow;
+                ci.gpsWeek   = epoch.time.week;
+                // ECEF positions for geometry-dependent models (solid tides, PCO/PCV)
+                ci.satX = xs;  ci.satY = ys;  ci.satZ = zs;
+                ci.staX = rx;  ci.staY = ry;  ci.staZ = rz;
 
                 for (const auto& model : m_corrections) {
                     prCorr -= model->delay(ci);

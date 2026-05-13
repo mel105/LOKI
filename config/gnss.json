@@ -11,35 +11,25 @@
 
     "gnss": {
         "task": "spp",
+        "mode": "static",
 
         "station": "GOPE",
-        "year": 2024,
-        "doy": 75,
+        "year":    2024,
+        "doy":     75,
 
         "crx2rnx_path": "tools/hatanaka/CRX2RNX",
 
         "nav_file": "INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
         "obs_file": "INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
 
-        "constellations": ["GPS", "GALILEO"],
-        "elevation_mask_deg": 10.0,
+        "constellations":      ["GPS", "GALILEO"],
+        "elevation_mask_deg":  10.0,
 
         "spp": {
-            "enabled": true,
-            "max_iterations": 20,
+            "enabled":                 true,
+            "max_iterations":          20,
             "convergence_threshold_m": 0.01,
-            "weighting": "elevation"
-        },
-
-        "corrections": {
-            "ionosphere":    "klobuchar",
-            "troposphere":   "saastamoinen",
-            "relativistic":  true,
-            "sagnac":        false,
-            "solid_tides":   false,
-            "ocean_loading": false,
-            "phase_windup":  false,
-            "pco_pcv":       false
+            "weighting":               "elevation"
         },
 
         "ppp": {
@@ -50,14 +40,72 @@
             "vmf3_file":               "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
             "ocean_loading_blq":       "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
             "if_combination":          true,
-            "max_iterations":          10,
+            "ambiguity_resolution":    false,
+            "max_iterations":          20,
             "convergence_threshold_m": 0.001
+        },
+
+        "rtk": {
+            "enabled":                 false,
+            "base_obs_file":           "",
+            "base_x":                  0.0,
+            "base_y":                  0.0,
+            "base_z":                  0.0,
+            "base_source":             "",
+            "max_iterations":          20,
+            "convergence_threshold_m": 0.001
+        },
+
+        "kinematic": {
+            "process_noise_pos_m2s":   1.0,
+            "process_noise_clk_m2s":   10000.0,
+            "output_trajectory":       true,
+            "map_visualization":       false
+        },
+
+        "corrections": {
+            "ionosphere":    "klobuchar",
+            "troposphere":   "saastamoinen",
+            "sagnac":        true,
+            "solid_tides":   false,
+            "ocean_loading": false,
+            "phase_windup":  false,
+            "pco_pcv":       false
         },
 
         "quality": {
             "raim":      false,
             "residuals": false,
             "dop":       false
+        },
+
+        "figures": {
+            "satcount":               true,
+            "elevation":              true,
+            "skyplot_constellation":  true,
+            "skyplot_prn":            true,
+            "dop":                    true,
+
+            "spp": {
+                "clockbias":          true,
+                "residuals":          true,
+                "isb":                true,
+                "position_ecef":      false,
+                "position_error":     true,
+                "position_scatter":   true
+            },
+
+            "ppp": {
+                "position_error":     true,
+                "troposphere":        true,
+                "ambiguity":          true,
+                "clock_bias":         true
+            },
+
+            "rtk": {
+                "position_error":     true,
+                "baseline_length":    true
+            }
         },
 
         "reference_position": {

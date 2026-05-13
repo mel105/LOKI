@@ -3,6 +3,7 @@
 #include <loki/gnss/correctionModel.hpp>
 #include <loki/gnss/ionosphere.hpp>
 #include <loki/gnss/troposphere.hpp>
+#include <loki/gnss/solidTides.hpp>
 #include <loki/gnss/sppSolver.hpp>
 #include <loki/gnss/gnssProtocol.hpp>
 #include <loki/gnss/plotGnss.hpp>
@@ -120,6 +121,10 @@ std::vector<SppResult> GnssAnalyzer::_runSpp(const NavFile& nav,
     if (gcfg.corrections.troposphere == "saastamoinen") {
         corr.push_back(std::make_unique<SaastamoinenModel>());
         LOKI_INFO("GnssAnalyzer: troposphere = Saastamoinen");
+    }
+    if (gcfg.corrections.solidTides) {
+        corr.push_back(std::make_unique<SolidTidesModel>());
+        LOKI_INFO("GnssAnalyzer: solid Earth tides = IERS2010 step-1");
     }
 
     SppSolverConfig solverCfg;

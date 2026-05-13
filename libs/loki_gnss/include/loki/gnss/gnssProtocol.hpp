@@ -35,7 +35,8 @@ public:
 private:
     loki::AppConfig m_cfg;
 
-    void _writeHeader      (std::ostream& f) const;
+    void _writeHeader            (std::ostream& f) const;
+    void _writeAppliedCorrections(std::ostream& f) const;
     void _writeParseSummary(std::ostream& f, const ParseResult&  parse)  const;
     void _writeSppResults  (std::ostream& f, const SppSummary&   spp,
                             const std::vector<SppResult>& epochs)         const;
