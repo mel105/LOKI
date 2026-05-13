@@ -8,26 +8,22 @@ namespace loki::gnss {
 /**
  * @brief Writes the loki_gnss text protocol to OUTPUT/PROTOCOLS/.
  *
- * Output file: gnss_<station>_spp_protocol.txt
+ * Output file name reflects the active task:
+ *   gnss_<station>_ppp_protocol.txt  (when hasPpp == true)
+ *   gnss_<station>_spp_protocol.txt  (when hasSpp == true and hasPpp == false)
+ *   gnss_<station>_parse_protocol.txt (parse-only run)
  *
- * Protocol sections (present only when the corresponding pipeline stage ran):
- *   - Header        : run parameters, config summary.
- *   - PARSE SUMMARY : NAV ephemeris counts, OBS epoch stats, constellation counts.
- *   - SPP RESULTS   : aggregate statistics, position error vs reference if available.
- *
- * New sections will be added alongside new GnssResult fields (PPP, DD, ...).
+ * Sections present only when the corresponding pipeline stage ran:
+ *   - Header, Applied Corrections, Parse Summary (always).
+ *   - SPP RESULTS  (when hasSpp == true).
+ *   - PPP RESULTS  (when hasPpp == true).
  */
 class GnssProtocol {
 public:
-    /**
-     * @brief Constructs the protocol writer.
-     * @param cfg  Full AppConfig (provides output paths, station name, config params).
-     */
     explicit GnssProtocol(const loki::AppConfig& cfg);
 
     /**
      * @brief Writes the protocol file for the given result.
-     * @param result  Completed GnssResult from GnssAnalyzer::run().
      * @throws IoException if the output file cannot be opened.
      */
     void write(const GnssResult& result) const;
@@ -40,6 +36,8 @@ private:
     void _writeParseSummary(std::ostream& f, const ParseResult&  parse)  const;
     void _writeSppResults  (std::ostream& f, const SppSummary&   spp,
                             const std::vector<SppResult>& epochs)         const;
+    void _writePppResults  (std::ostream& f, const PppSummary&   ppp,
+                            const std::vector<PppResult>& epochs)         const;
 
     static void sep(std::ostream& f);
     static void thin(std::ostream& f);

@@ -38,7 +38,6 @@ std::string fmt(double v)
     return oss.str();
 }
 
-// Terminal without size -- each plot specifies its own dimensions
 std::string term(int w = 1200, int h = 600)
 {
     return "set terminal pngcairo noenhanced font 'Sans,12' size "
@@ -120,7 +119,6 @@ void PlotGnss::plotSatCount(const ObsFile& obs) const
 
 // =============================================================================
 //  plotElevation
-//  Mean satellite elevation per epoch, computed from visibility.
 // =============================================================================
 
 void PlotGnss::plotElevation(const ObsFile& obs, const NavFile& nav) const
@@ -133,7 +131,6 @@ void PlotGnss::plotElevation(const ObsFile& obs, const NavFile& nav) const
     std::ostringstream blk;
     blk << "$ELV << EOD\n";
 
-    // Sample every 10th epoch for speed
     for (std::size_t ei = 0; ei < obs.epochs.size(); ei += 10) {
         const auto& ep = obs.epochs[ei];
         double sumEl = 0.0;
@@ -176,21 +173,16 @@ void PlotGnss::plotElevation(const ObsFile& obs, const NavFile& nav) const
 
 // =============================================================================
 //  plotSkyplot
+// =============================================================================
+
 void PlotGnss::plotSkyplot(const ObsFile& obs, const NavFile& nav) const
 {
-    _plotSkyplotImpl(obs, nav, false);   // per-constellation colours
-    _plotSkyplotImpl(obs, nav, true);    // per-PRN colours
+    _plotSkyplotImpl(obs, nav, false);
+    _plotSkyplotImpl(obs, nav, true);
 }
 
 // =============================================================================
-//  _plotSkyplotImpl  -- shared sky-plot engine
-//
-//  perPrn = false : colour by constellation (4 colours), style by constellation
-//  perPrn = true  : colour by PRN (cyklická 20-colour palette), PRN label at
-//                   the last point of each track (horizon exit)
-//
-//  Coordinate system: x = (90-el)*sin(az),  y = (90-el)*cos(az)
-//  Plot origin = zenith, rim = horizon (el=0 deg, r=90).
+//  _plotSkyplotImpl
 // =============================================================================
 
 void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
@@ -210,7 +202,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     };
     std::map<std::string, Track> tracks;
 
-    // Sample every 5th epoch
     for (std::size_t ei = 0; ei < obs.epochs.size(); ei += 5) {
         const auto& ep = obs.epochs[ei];
         for (const auto& sat : ep.satellites) {
@@ -234,9 +225,9 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
             id << sysChar << std::setw(2) << std::setfill('0') << sat.prn;
             const std::string key = id.str();
 
-            auto& tr  = tracks[key];
-            tr.prn    = key;
-            tr.sys    = sysChar;
+            auto& tr = tracks[key];
+            tr.prn   = key;
+            tr.sys   = sysChar;
 
             const double az_rad = az * (std::numbers::pi / 180.0);
             const double r      = 90.0 - el;
@@ -245,11 +236,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     }
     if (tracks.empty()) return;
 
-    // -------------------------------------------------------------------------
-    //  Helper lambdas for colours / line styles
-    // -------------------------------------------------------------------------
-
-    // Per-constellation colour
     auto sysColor = [](char s) -> std::string {
         switch (s) {
             case 'G': return "#1f77b4";
@@ -269,17 +255,12 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
         }
     };
 
-    // 20-colour cyklická paleta pre per-PRN mode
     static const std::vector<std::string> PRN_PALETTE = {
         "#1f77b4","#aec7e8","#ff7f0e","#ffbb78","#2ca02c",
         "#98df8a","#d62728","#ff9896","#9467bd","#c5b0d5",
         "#8c564b","#c49c94","#e377c2","#f7b6d2","#7f7f7f",
         "#c7c7c7","#bcbd22","#dbdb8d","#17becf","#9edae5"
     };
-
-    // -------------------------------------------------------------------------
-    //  Build elevation rings + tick datablocks (shared by both modes)
-    // -------------------------------------------------------------------------
 
     auto makeCircle = [](double r, int n) -> std::string {
         std::ostringstream oss;
@@ -305,7 +286,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     }
     datablocks << "EOD\n";
 
-    // Track datablocks
     int prnIdx = 0;
     std::map<std::string,std::string> prnColorMap;
     for (const auto& [key, tr] : tracks) {
@@ -318,10 +298,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
                            % PRN_PALETTE.size()];
         ++prnIdx;
     }
-
-    // -------------------------------------------------------------------------
-    //  Build plot command
-    // -------------------------------------------------------------------------
 
     std::ostringstream plotcmd;
     plotcmd << "plot ";
@@ -338,10 +314,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
                 << " u 1:2 w l lc rgb '" << col
                 << "' lw 0.8 dt " << dt << " notitle";
     }
-
-    // -------------------------------------------------------------------------
-    //  Gnuplot setup
-    // -------------------------------------------------------------------------
 
     const std::string suffix = perPrn ? "prn" : "polar";
     const std::string title  = perPrn
@@ -361,13 +333,11 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     gp("set key off");
     gp("set title '" + title + "'");
 
-    // Elevation ring labels
     gp("set label 100 '0'  at  0, 92 center font ',9' tc rgb '#666666'");
     gp("set label 101 '30' at  0, 62 center font ',9' tc rgb '#666666'");
     gp("set label 102 '60' at  0, 32 center font ',9' tc rgb '#666666'");
     gp("set label 103 '90' at  0,  2 center font ',9' tc rgb '#666666'");
 
-    // Cardinal labels
     const std::vector<std::pair<std::string,std::pair<double,double>>> cardinals = {
         {"N",  { 0.0,  95.0}}, {"NE", { 68.0,  68.0}},
         {"E",  {95.0,   0.0}}, {"SE", { 68.0, -68.0}},
@@ -381,9 +351,8 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
            + " center font ',10' tc rgb '#333333'");
     }
 
-    // Azimuth degree tick labels every 30 deg
     for (int deg = 0; deg < 360; deg += 30) {
-        const double a  = deg * (std::numbers::pi / 180.0);
+        const double a = deg * (std::numbers::pi / 180.0);
         gp("set label " + std::to_string(lblId++)
            + " '" + std::to_string(deg) + "' at "
            + fmt(94.0 * std::sin(a)) + "," + fmt(94.0 * std::cos(a))
@@ -391,7 +360,6 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     }
 
     if (!perPrn) {
-        // Per-constellation legend: compact block below plot
         std::set<char> sysSeen;
         for (const auto& [key, tr] : tracks) sysSeen.insert(tr.sys);
 
@@ -413,15 +381,12 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
             legX += 50.0;
         }
     } else {
-        // Per-PRN mode: label each track at its LAST visible point
         for (const auto& [key, tr] : tracks) {
             if (tr.pts.empty()) continue;
             const auto& last = tr.pts.back();
-            // Only label near the rim (el < 25 deg -> r > 65) to avoid clutter
             const double r = std::sqrt(last.first*last.first + last.second*last.second);
-            if (r < 55.0) continue;   // satellite still high -- skip label
+            if (r < 55.0) continue;
             const std::string col = prnColorMap.at(key);
-            // Offset label slightly outward
             const double norm = (r > 0.01) ? r : 1.0;
             const double lx = last.first  + 5.0 * last.first  / norm;
             const double ly = last.second + 5.0 * last.second / norm;
@@ -438,17 +403,14 @@ void PlotGnss::_plotSkyplotImpl(const ObsFile& obs, const NavFile& nav,
     LOKI_INFO("PlotGnss: " + out);
 }
 
-
 // =============================================================================
-//  plotDop  -- 4-panel: GDOP / PDOP / HDOP / VDOP
+//  plotDop
 // =============================================================================
 
 void PlotGnss::plotDop(const std::vector<SppResult>& spp) const
 {
     if (!m_cfg.gnss.figures.dop || spp.empty()) return;
 
-    // SppResult only carries PDOP. For HDOP/VDOP we'd need SatVisibility.
-    // For now plot PDOP alone with a good-geometry threshold line.
     std::ostringstream blk;
     blk << "$DOP << EOD\n";
     for (const auto& r : spp) {
@@ -475,7 +437,7 @@ void PlotGnss::plotDop(const std::vector<SppResult>& spp) const
 }
 
 // =============================================================================
-//  plotClockBias  -- 2-panel: [m] and [us]
+//  plotClockBias  (SPP)
 // =============================================================================
 
 void PlotGnss::plotClockBias(const std::vector<SppResult>& spp) const
@@ -497,7 +459,7 @@ void PlotGnss::plotClockBias(const std::vector<SppResult>& spp) const
     Gnuplot gp;
     gp(term(1200, 700));
     gp("set output '" + out + "'");
-    gp("set multiplot layout 2,1 title 'GPS receiver clock bias -- " + m_station + "'");
+    gp("set multiplot layout 2,1 title 'GPS receiver clock bias (SPP) -- " + m_station + "'");
     gp(blk.str());
     gp("set xlabel ''");
     gp("set ylabel 'Clock bias [m]'");
@@ -512,7 +474,7 @@ void PlotGnss::plotClockBias(const std::vector<SppResult>& spp) const
 }
 
 // =============================================================================
-//  plotResiduals  -- mean absolute + RMS per epoch
+//  plotResiduals  (SPP)
 // =============================================================================
 
 void PlotGnss::plotResiduals(const std::vector<SppResult>& spp) const
@@ -537,7 +499,7 @@ void PlotGnss::plotResiduals(const std::vector<SppResult>& spp) const
     Gnuplot gp;
     gp(term(1200, 500));
     gp("set output '" + out + "'");
-    gp("set title 'Pseudorange residuals -- " + m_station + "'");
+    gp("set title 'Pseudorange residuals (SPP) -- " + m_station + "'");
     gp("set xlabel 'MJD'");
     gp("set ylabel 'Residual [m]'");
     gp("set yrange [0:*]");
@@ -550,13 +512,13 @@ void PlotGnss::plotResiduals(const std::vector<SppResult>& spp) const
 }
 
 // =============================================================================
-//  plotIsb  -- inter-system biases for non-GPS constellations
+//  plotIsb  (SPP)
 // =============================================================================
 
 void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
 {
     if (!m_cfg.gnss.figures.spp.isb) return;
-    // Check if any epoch has ISB data
+
     bool hasGlo = false, hasGal = false, hasBds = false;
     for (const auto& r : spp) {
         if (!r.valid) continue;
@@ -572,7 +534,8 @@ void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
         if (!r.valid) continue;
         auto get = [&](const std::string& k) -> double {
             auto it = r.isbM.find(k);
-            return (it != r.isbM.end()) ? it->second : std::numeric_limits<double>::quiet_NaN();
+            return (it != r.isbM.end()) ? it->second
+                                        : std::numeric_limits<double>::quiet_NaN();
         };
         blk << fmt(r.time.toTimeStamp().mjd()) << " "
             << fmt(get("GLONASS")) << " "
@@ -585,7 +548,7 @@ void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
     Gnuplot gp;
     gp(term(1200, 600));
     gp("set output '" + out + "'");
-    gp("set title 'Inter-system biases -- " + m_station + "'");
+    gp("set title 'Inter-system biases (SPP) -- " + m_station + "'");
     gp("set xlabel 'MJD'");
     gp("set ylabel 'ISB [m]'");
     gp("set grid");
@@ -594,25 +557,15 @@ void PlotGnss::plotIsb(const std::vector<SppResult>& spp) const
 
     std::string plotcmd = "plot ";
     bool first = true;
-    if (hasGlo) {
-        plotcmd += "$ISB u 1:2 w l lc rgb '#ff7f0e' lw 1.5 title 'GLONASS'";
-        first = false;
-    }
-    if (hasGal) {
-        if (!first) plotcmd += ", ";
-        plotcmd += "$ISB u 1:3 w l lc rgb '#2ca02c' lw 1.5 title 'Galileo'";
-        first = false;
-    }
-    if (hasBds) {
-        if (!first) plotcmd += ", ";
-        plotcmd += "$ISB u 1:4 w l lc rgb '#d62728' lw 1.5 title 'BeiDou'";
-    }
+    if (hasGlo) { plotcmd += "$ISB u 1:2 w l lc rgb '#ff7f0e' lw 1.5 title 'GLONASS'"; first = false; }
+    if (hasGal) { if (!first) plotcmd += ", "; plotcmd += "$ISB u 1:3 w l lc rgb '#2ca02c' lw 1.5 title 'Galileo'"; first = false; }
+    if (hasBds) { if (!first) plotcmd += ", "; plotcmd += "$ISB u 1:4 w l lc rgb '#d62728' lw 1.5 title 'BeiDou'"; }
     gp(plotcmd);
     LOKI_INFO("PlotGnss: " + out);
 }
 
 // =============================================================================
-//  plotPositionEcef  -- X, Y, Z time series (3-panel)
+//  plotPositionEcef  (SPP)
 // =============================================================================
 
 void PlotGnss::plotPositionEcef(const std::vector<SppResult>& spp) const
@@ -653,7 +606,7 @@ void PlotGnss::plotPositionEcef(const std::vector<SppResult>& spp) const
 }
 
 // =============================================================================
-//  plotPositionError  -- dX/dY/dZ + 3D error (4-panel)
+//  plotPositionError  (SPP)
 // =============================================================================
 
 void PlotGnss::plotPositionError(const std::vector<SppResult>& spp,
@@ -702,7 +655,7 @@ void PlotGnss::plotPositionError(const std::vector<SppResult>& spp,
 }
 
 // =============================================================================
-//  plotPositionScatter  -- horizontal dE vs dN scatter in local ENU
+//  plotPositionScatter  (SPP)
 // =============================================================================
 
 void PlotGnss::plotPositionScatter(const std::vector<SppResult>& spp,
@@ -713,7 +666,6 @@ void PlotGnss::plotPositionScatter(const std::vector<SppResult>& spp,
     static const loki::math::Ellipsoid wgs84 =
         loki::math::makeEllipsoid(loki::math::EllipsoidModel::WGS84);
 
-    // ENU rotation matrix at reference point
     const loki::geodesy::EcefPoint refEp{summary.refX, summary.refY, summary.refZ};
     const loki::geodesy::GeodPoint refGp = loki::geodesy::ecef2geod(refEp, wgs84);
     const Eigen::Matrix3d R = loki::geodesy::ecefEnuRotMat(refGp.lat, refGp.lon);
@@ -727,7 +679,7 @@ void PlotGnss::plotPositionScatter(const std::vector<SppResult>& spp,
             r.y - summary.refY,
             r.z - summary.refZ};
         const Eigen::Vector3d enu = R * dEcef;
-        blk << fmt(enu(0)) << " " << fmt(enu(1)) << "\n";   // E, N
+        blk << fmt(enu(0)) << " " << fmt(enu(1)) << "\n";
     }
     blk << "EOD";
 
@@ -749,6 +701,150 @@ void PlotGnss::plotPositionScatter(const std::vector<SppResult>& spp,
 }
 
 // =============================================================================
+//  plotPppPositionError  (PPP)
+// =============================================================================
+
+void PlotGnss::plotPppPositionError(const std::vector<PppResult>& ppp,
+                                     const PppSummary& summary) const
+{
+    if (!m_cfg.gnss.figures.ppp.positionError || !summary.hasReference || ppp.empty()) return;
+
+    std::ostringstream blk;
+    blk << "$ERR << EOD\n";
+    for (const auto& r : ppp) {
+        if (!r.valid) continue;
+        const double dX = r.x - summary.refX;
+        const double dY = r.y - summary.refY;
+        const double dZ = r.z - summary.refZ;
+        const double d3 = std::sqrt(dX*dX + dY*dY + dZ*dZ);
+        // col: 1=MJD  2=dX  3=dY  4=dZ  5=d3  6=converged(0/1)
+        blk << fmt(r.time.toTimeStamp().mjd()) << " "
+            << fmt(dX) << " " << fmt(dY) << " " << fmt(dZ) << " "
+            << fmt(d3) << " " << (r.converged ? 1 : 0) << "\n";
+    }
+    blk << "EOD";
+
+    const std::string out = fwdSlash(outPath("ppp", "position_error"));
+    const std::string ref = "vs " + summary.referenceSource;
+
+    Gnuplot gp;
+    gp(term(1200, 1000));
+    gp("set output '" + out + "'");
+    gp("set multiplot layout 4,1 title 'PPP position error ("
+       + ref + ") -- " + m_station + "'");
+    gp(blk.str());
+
+    const std::vector<std::string> cols   = {"2","3","4","5"};
+    const std::vector<std::string> labels = {"dX [m]","dY [m]","dZ [m]","3D error [m]"};
+    const std::vector<std::string> colors = {"#1f77b4","#ff7f0e","#2ca02c","#d62728"};
+
+    for (int i = 0; i < 4; ++i) {
+        gp("set ylabel '" + labels[static_cast<std::size_t>(i)] + "'");
+        gp((i == 3) ? "set xlabel 'MJD'" : "set xlabel ''");
+        gp("set grid");
+        gp("set key top right");
+        // Converged epochs in colour, pre-convergence in grey.
+        gp("plot $ERR u 1:(($6==1)?$" + cols[static_cast<std::size_t>(i)] + ":1/0)"
+           " w l lc rgb '" + colors[static_cast<std::size_t>(i)] + "' lw 1.5 title 'converged', "
+           "     $ERR u 1:(($6==0)?$" + cols[static_cast<std::size_t>(i)] + ":1/0)"
+           " w l lc rgb '#aaaaaa' lw 0.8 title 'pre-conv'");
+    }
+    gp("unset multiplot");
+    LOKI_INFO("PlotGnss: " + out);
+}
+
+// =============================================================================
+//  plotPppTroposphere  (PPP)
+// =============================================================================
+
+void PlotGnss::plotPppTroposphere(const std::vector<PppResult>& ppp) const
+{
+    if (!m_cfg.gnss.figures.ppp.troposphere || ppp.empty()) return;
+
+    std::ostringstream blk;
+    blk << "$TRP << EOD\n";
+    for (const auto& r : ppp) {
+        if (!r.valid) continue;
+        // col: 1=MJD  2=ZTD_wet_mm  3=ZTD_tot_mm  4=converged
+        blk << fmt(r.time.toTimeStamp().mjd()) << " "
+            << fmt(r.ztdWetM   * 1000.0) << " "
+            << fmt(r.ztdTotalM * 1000.0) << " "
+            << (r.converged ? 1 : 0) << "\n";
+    }
+    blk << "EOD";
+
+    const std::string out = fwdSlash(outPath("ppp", "troposphere"));
+    Gnuplot gp;
+    gp(term(1200, 700));
+    gp("set output '" + out + "'");
+    gp("set multiplot layout 2,1 title 'PPP troposphere (Kalman ZTD wet) -- " + m_station + "'");
+    gp(blk.str());
+
+    gp("set ylabel 'ZTD wet [mm]'");
+    gp("set xlabel ''");
+    gp("set grid");
+    gp("set key top right");
+    gp("plot $TRP u 1:(($4==1)?$2:1/0) w l lc rgb '#2ca02c' lw 1.5 title 'converged', "
+       "     $TRP u 1:(($4==0)?$2:1/0) w l lc rgb '#aaaaaa' lw 0.8 title 'pre-conv'");
+
+    gp("set ylabel 'ZTD total [mm]'");
+    gp("set xlabel 'MJD'");
+    gp("set grid");
+    gp("set key top right");
+    gp("plot $TRP u 1:(($4==1)?$3:1/0) w l lc rgb '#1f77b4' lw 1.5 title 'converged', "
+       "     $TRP u 1:(($4==0)?$3:1/0) w l lc rgb '#aaaaaa' lw 0.8 title 'pre-conv'");
+
+    gp("unset multiplot");
+    LOKI_INFO("PlotGnss: " + out);
+}
+
+// =============================================================================
+//  plotPppClockBias  (PPP)
+// =============================================================================
+
+void PlotGnss::plotPppClockBias(const std::vector<PppResult>& ppp) const
+{
+    if (!m_cfg.gnss.figures.ppp.clockBias || ppp.empty()) return;
+
+    constexpr double C = 299792458.0;
+    std::ostringstream blk;
+    blk << "$CLK << EOD\n";
+    for (const auto& r : ppp) {
+        if (!r.valid) continue;
+        // col: 1=MJD  2=clk_m  3=clk_us  4=converged
+        blk << fmt(r.time.toTimeStamp().mjd()) << " "
+            << fmt(r.clkBiasM) << " "
+            << fmt(r.clkBiasM / C * 1.0e6) << " "
+            << (r.converged ? 1 : 0) << "\n";
+    }
+    blk << "EOD";
+
+    const std::string out = fwdSlash(outPath("ppp", "clockbias"));
+    Gnuplot gp;
+    gp(term(1200, 700));
+    gp("set output '" + out + "'");
+    gp("set multiplot layout 2,1 title 'PPP receiver clock bias -- " + m_station + "'");
+    gp(blk.str());
+
+    gp("set ylabel 'Clock bias [m]'");
+    gp("set xlabel ''");
+    gp("set grid");
+    gp("set key top right");
+    gp("plot $CLK u 1:(($4==1)?$2:1/0) w l lc rgb '#1f77b4' lw 1.5 title 'converged', "
+       "     $CLK u 1:(($4==0)?$2:1/0) w l lc rgb '#aaaaaa' lw 0.8 title 'pre-conv'");
+
+    gp("set ylabel 'Clock bias [us]'");
+    gp("set xlabel 'MJD'");
+    gp("set grid");
+    gp("set key top right");
+    gp("plot $CLK u 1:(($4==1)?$3:1/0) w l lc rgb '#ff7f0e' lw 1.5 title 'converged', "
+       "     $CLK u 1:(($4==0)?$3:1/0) w l lc rgb '#aaaaaa' lw 0.8 title 'pre-conv'");
+
+    gp("unset multiplot");
+    LOKI_INFO("PlotGnss: " + out);
+}
+
+// =============================================================================
 //  plotAll
 // =============================================================================
 
@@ -756,19 +852,26 @@ void PlotGnss::plotAll(const GnssResult& result,
                         const NavFile&    nav,
                         const ObsFile&    obs) const
 {
-    // --- Observation-level plots (always) ---
+    // Observation-level (always).
     plotSatCount(obs);
     plotElevation(obs, nav);
     plotSkyplot(obs, nav);
 
-    // --- SPP plots ---
+    // SPP.
     if (result.hasSpp) {
-        plotDop          (result.spp);
-        plotClockBias    (result.spp);
-        plotResiduals    (result.spp);
-        plotIsb          (result.spp);
-        plotPositionEcef (result.spp);
+        plotDop            (result.spp);
+        plotClockBias      (result.spp);
+        plotResiduals      (result.spp);
+        plotIsb            (result.spp);
+        plotPositionEcef   (result.spp);
         plotPositionError  (result.spp, result.sppSummary);
         plotPositionScatter(result.spp, result.sppSummary);
+    }
+
+    // PPP.
+    if (result.hasPpp) {
+        plotPppPositionError(result.ppp, result.pppSummary);
+        plotPppTroposphere  (result.ppp);
+        plotPppClockBias    (result.ppp);
     }
 }

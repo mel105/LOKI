@@ -45,6 +45,7 @@ target_sources(loki_core
         src/math/universalKriging.cpp
         src/math/bspline.cpp
         src/math/bsplineFit.cpp
+       src/math/interpolation.cpp
 )
 
 target_include_directories(loki_core

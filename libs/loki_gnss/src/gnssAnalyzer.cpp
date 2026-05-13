@@ -8,6 +8,13 @@
 #include <loki/gnss/gnssProtocol.hpp>
 #include <loki/gnss/plotGnss.hpp>
 #include <loki/gnss/gnssCsvExport.hpp>
+#include <loki/gnss/sp3Parser.hpp>
+#include <loki/gnss/clkParser.hpp>
+#include <loki/gnss/antexParser.hpp>
+#include <loki/gnss/sp3Orbit.hpp>
+#include <loki/gnss/pppSolver.hpp>
+#include <loki/gnss/troposphere.hpp>
+#include <loki/gnss/relativity.hpp>
 #include <loki/geodesy/coordTransform.hpp>
 #include <loki/math/ellipsoid.hpp>
 #include <loki/core/exceptions.hpp>
@@ -144,6 +151,163 @@ std::vector<SppResult> GnssAnalyzer::_runSpp(const NavFile& nav,
 }
 
 // =============================================================================
+//  _runPpp
+// =============================================================================
+std::vector<PppResult> GnssAnalyzer::_runPpp(const NavFile& /*nav*/,
+                                               const ObsFile&  obs) const
+{
+   
+    const GnssPppConfig& pppCfg = m_cfg.gnss.ppp;
+ 
+    LOKI_INFO("PPP: loading SP3: " + pppCfg.sp3File);
+    Sp3Parser sp3Parser;
+    Sp3File sp3 = sp3Parser.parseGz(pppCfg.sp3File);
+ 
+    LOKI_INFO("PPP: loading CLK: " + pppCfg.clkFile);
+    ClkParser clkParser;
+    ClkFile clk = clkParser.parseGz(pppCfg.clkFile);
+ 
+    LOKI_INFO("PPP: SP3 epochs: " + std::to_string(sp3.epochs.size())
+              + "  CLK records: " + std::to_string(clk.records.size()));
+
+              //////////////////////////////////////
+    // DEBUG -- pridaj za "LOKI_INFO PPP: SP3 epochs" riadok
+if (!sp3.epochs.empty()) {
+    const auto& ep0 = sp3.epochs.front();
+    const auto& ep1 = sp3.epochs.back();
+    LOKI_INFO("SP3 first epoch: week=" + std::to_string(ep0.time.week)
+              + " sow=" + std::to_string(static_cast<int>(ep0.time.sow))
+              + " nSats=" + std::to_string(ep0.satellites.size()));
+    LOKI_INFO("SP3 last  epoch: week=" + std::to_string(ep1.time.week)
+              + " sow=" + std::to_string(static_cast<int>(ep1.time.sow)));
+    // Prvý satelit v prvej epoche
+    if (!ep0.satellites.empty()) {
+        const auto& s = ep0.satellites.front();
+        LOKI_INFO("SP3 sat[0]: sys=" + std::to_string(static_cast<int>(s.system))
+                  + " prn=" + std::to_string(s.prn)
+                  + " x=" + std::to_string(s.x)
+                  + " posMissing=" + std::to_string(s.posMissing)
+                  + " clkMissing=" + std::to_string(s.clockMissing));
+    }
+}
+// Prvá OBS epocha
+const auto& obsEp0 = obs.epochs.front();
+LOKI_INFO("OBS first epoch: week=" + std::to_string(obsEp0.time.week)
+          + " sow=" + std::to_string(static_cast<int>(obsEp0.time.sow)));
+
+
+          //////////////////////////////
+ 
+    // Build Sp3Orbit (orbit + clock from precise products).
+    auto orbit = std::make_shared<Sp3Orbit>(std::move(sp3), std::move(clk));
+ 
+    // Build PppSolverConfig from AppConfig.
+    PppSolverConfig solverCfg;
+    solverCfg.constellations = m_cfg.gnss.constellations;
+    solverCfg.elevMaskDeg    = m_cfg.gnss.elevationMaskDeg;
+    solverCfg.phaseWindup    = m_cfg.gnss.corrections.phaseWindup;
+    solverCfg.pcoPcv         = m_cfg.gnss.corrections.pcoPcv;
+ 
+    // No additional CorrectionModel injections for PPP --
+    // ZHD is computed internally in PppSolver::saastamoinenZhd().
+    // ZWD is a filter parameter.
+ 
+    PppSolver solver(solverCfg, orbit);
+    return solver.solveAll(obs, {}, m_cfg.gnss);
+}
+ 
+PppSummary GnssAnalyzer::_computePppSummary(
+    const std::vector<PppResult>& results) const
+{
+    PppSummary s;
+    s.nEpochsTotal = results.size();
+ 
+    // Reference position.
+    const bool hasRef = m_cfg.gnss.referencePosition.enabled;
+    if (hasRef) {
+        s.hasReference  = true;
+        s.refX          = m_cfg.gnss.referencePosition.x;
+        s.refY          = m_cfg.gnss.referencePosition.y;
+        s.refZ          = m_cfg.gnss.referencePosition.z;
+        s.referenceSource = m_cfg.gnss.referencePosition.source;
+    }
+ 
+    // Collect post-convergence epochs.
+    std::vector<double> xs, ys, zs, clks, ztds, nsats;
+    std::vector<double> errors3d;
+    double firstConvSec = -1.0;
+ 
+    for (const auto& r : results) {
+        if (!r.valid) continue;
+        ++s.nEpochsValid;
+        if (r.converged) {
+            ++s.nEpochsConverged;
+            if (firstConvSec < 0.0)
+                firstConvSec = r.time.totalSeconds();
+            xs.push_back(r.x);
+            ys.push_back(r.y);
+            zs.push_back(r.z);
+            clks.push_back(r.clkBiasM);
+            ztds.push_back(r.ztdWetM);
+            nsats.push_back(static_cast<double>(r.nSats));
+ 
+            if (hasRef) {
+                const double ex = r.x - s.refX;
+                const double ey = r.y - s.refY;
+                const double ez = r.z - s.refZ;
+                errors3d.push_back(std::sqrt(ex*ex + ey*ey + ez*ez));
+            }
+        }
+    }
+ 
+    if (!results.empty() && firstConvSec > 0.0) {
+        const double startSec = results.front().time.totalSeconds();
+        s.convergenceTimeMin = (firstConvSec - startSec) / 60.0;
+    }
+ 
+    auto mean = [](const std::vector<double>& v) {
+        if (v.empty()) return 0.0;
+        double sum = 0.0;
+        for (double x : v) sum += x;
+        return sum / static_cast<double>(v.size());
+    };
+    auto stddev = [&mean](const std::vector<double>& v) {
+        if (v.size() < 2) return 0.0;
+        const double m = mean(v);
+        double ss = 0.0;
+        for (double x : v) ss += (x-m)*(x-m);
+        return std::sqrt(ss / static_cast<double>(v.size() - 1));
+    };
+    auto rms = [](const std::vector<double>& v) {
+        if (v.empty()) return 0.0;
+        double ss = 0.0;
+        for (double x : v) ss += x*x;
+        return std::sqrt(ss / static_cast<double>(v.size()));
+    };
+ 
+    s.meanX        = mean(xs);
+    s.meanY        = mean(ys);
+    s.meanZ        = mean(zs);
+    s.stdX         = stddev(xs);
+    s.stdY         = stddev(ys);
+    s.stdZ         = stddev(zs);
+    s.meanClkBiasM = mean(clks);
+    s.meanZtdWetM  = mean(ztds);
+    s.meanNSats    = mean(nsats);
+ 
+    if (hasRef && !errors3d.empty()) {
+        s.mean3dErrorM = mean(errors3d);
+        s.std3dErrorM  = stddev(errors3d);
+        s.rmsErrorM    = rms(errors3d);
+    }
+ 
+    // Geodetic mean (approximate: convert mean ECEF).
+    // (Proper conversion uses ecef2geod -- left to caller if needed.)
+ 
+    return s;
+}
+
+// =============================================================================
 //  _computeSppSummary
 // =============================================================================
 
@@ -243,32 +407,28 @@ SppSummary GnssAnalyzer::_computeSppSummary(
 GnssResult GnssAnalyzer::run(const NavFile& nav, const ObsFile& obs) const
 {
     GnssResult result;
-
     result.parse = _buildParseSummary(nav, obs);
-    LOKI_INFO("GnssAnalyzer: parse summary built -- "
-              + std::to_string(obs.epochs.size()) + " epochs, station "
-              + result.parse.obs.station);
 
-    const GnssConfig& gcfg = m_cfg.gnss;
-
-    if (gcfg.task == "spp" || gcfg.spp.enabled) {
+    if (m_cfg.gnss.spp.enabled) {
         result.spp        = _runSpp(nav, obs);
         result.sppSummary = _computeSppSummary(result.spp);
         result.hasSpp     = true;
-        LOKI_INFO("GnssAnalyzer: SPP done -- "
-                  + std::to_string(result.sppSummary.nEpochsValid)
-                  + " / " + std::to_string(result.sppSummary.nEpochsTotal)
-                  + " valid epochs");
     }
 
-    GnssProtocol proto(m_cfg);
-    proto.write(result);
+    if (m_cfg.gnss.ppp.enabled) {
+        result.ppp        = _runPpp(nav, obs);
+        result.pppSummary = _computePppSummary(result.ppp);
+        result.hasPpp     = true;
+    }
 
-    GnssCsvExport csvExport(m_cfg);
-    csvExport.exportAll(result, obs);
+    GnssProtocol protocol(m_cfg);
+    protocol.write(result);
 
     PlotGnss plotter(m_cfg, m_cfg.gnss.station);
     plotter.plotAll(result, nav, obs);
+
+    GnssCsvExport exporter(m_cfg);
+    exporter.exportAll(result, obs);
 
     return result;
 }

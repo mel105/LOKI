@@ -10,19 +10,15 @@ namespace loki::gnss {
  * @brief Main orchestrator for the loki_gnss processing pipeline.
  *
  * Responsibilities:
- *   1. Compute parse summary (ObsSummary, ParseResult) from pre-loaded data.
- *   2. Build and run the SPP solver (SppSolver) for all epochs.
- *   3. Compute SppSummary aggregate statistics.
+ *   1. Build parse summary from pre-loaded NAV + OBS data.
+ *   2. Run SPP solver when gnss.spp.enabled == true.
+ *   3. Run PPP solver when gnss.ppp.enabled == true.
  *   4. Write the text protocol (GnssProtocol).
  *   5. Produce all plots (PlotGnss).
+ *   6. Export CSV files (GnssCsvExport).
  *
- * GnssAnalyzer does NOT own the parsers. Parsing is done in main() and the
- * NavFile + ObsFile are passed directly to run(). This keeps the analyzer
- * focused on computation and output, not I/O.
- *
- * New pipeline stages (PPP, DD, seismology events, ...) will be added as
- * additional private methods called from run() and filling new fields in
- * GnssResult.
+ * GnssAnalyzer does NOT own the parsers.  Parsing is done in main() and the
+ * NavFile + ObsFile are passed directly to run().
  */
 class GnssAnalyzer {
 public:
@@ -35,11 +31,15 @@ public:
     /**
      * @brief Runs the full GNSS pipeline on pre-parsed NAV + OBS data.
      *
-     * Sequence:
-     *   _buildParseSummary() -> _runSpp() -> _computeSppSummary()
-     *   -> GnssProtocol::write() -> PlotGnss::plotAll()
+     * Sequence (enabled stages only):
+     *   _buildParseSummary()
+     *   -> _runSpp()           (if spp.enabled)
+     *   -> _runPpp()           (if ppp.enabled)
+     *   -> GnssProtocol::write()
+     *   -> PlotGnss::plotAll()
+     *   -> GnssCsvExport::exportAll()
      *
-     * @param nav  Parsed navigation file.
+     * @param nav  Parsed navigation file (broadcast ephemerides).
      * @param obs  Parsed observation file.
      * @return     GnssResult containing all computed results.
      */
@@ -48,14 +48,18 @@ public:
 private:
     loki::AppConfig m_cfg;
 
-    /// @brief Fills ParseResult from nav + obs metadata.
-    ParseResult _buildParseSummary(const NavFile& nav, const ObsFile& obs) const;
+    ParseResult            _buildParseSummary(const NavFile& nav,
+                                               const ObsFile& obs) const;
 
-    /// @brief Runs SPP solver for all epochs; returns raw SppResult vector.
-    std::vector<SppResult> _runSpp(const NavFile& nav, const ObsFile& obs) const;
+    std::vector<SppResult> _runSpp(const NavFile& nav,
+                                    const ObsFile& obs) const;
 
-    /// @brief Computes aggregate SppSummary from raw results.
+    std::vector<PppResult> _runPpp(const NavFile& nav,
+                                    const ObsFile& obs) const;
+
     SppSummary _computeSppSummary(const std::vector<SppResult>& results) const;
+
+    PppSummary _computePppSummary(const std::vector<PppResult>& results) const;
 };
 
 } // namespace loki::gnss

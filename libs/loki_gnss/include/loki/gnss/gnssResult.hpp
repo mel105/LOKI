@@ -2,6 +2,7 @@
 
 #include <loki/gnss/gnssTypes.hpp>
 #include <loki/gnss/sppSolver.hpp>
+#include <loki/gnss/pppSolver.hpp>
 
 #include <map>
 #include <string>
@@ -36,7 +37,6 @@ struct ObsSummary {
     double      spanStartMjd{0.0};
     double      spanEndMjd{0.0};
 
-    // Per-constellation observation counts
     std::size_t nGps{0};
     std::size_t nGlonass{0};
     std::size_t nGalileo{0};
@@ -44,7 +44,6 @@ struct ObsSummary {
     std::size_t nSbas{0};
     std::size_t nQzss{0};
 
-    // Observation codes from OBS header per constellation
     ObsCodeMap  obsCodes;
 };
 
@@ -72,11 +71,9 @@ struct SppSummary {
     std::size_t nEpochsValid{0};
     std::size_t nEpochsConverged{0};
 
-    // Mean ECEF position [m] and standard deviation
     double meanX{0.0}, meanY{0.0}, meanZ{0.0};
     double stdX{0.0},  stdY{0.0},  stdZ{0.0};
 
-    // Mean geodetic position (WGS-84): lat/lon [deg], h [m]
     double meanLat{0.0};
     double meanLon{0.0};
     double meanH{0.0};
@@ -85,13 +82,47 @@ struct SppSummary {
     double meanPdop{0.0};
     double meanNSats{0.0};
 
-    // Position error vs reference (filled only if referencePosition.enabled)
     bool   hasReference{false};
     double refX{0.0}, refY{0.0}, refZ{0.0};
-    double refLat{0.0}, refLon{0.0}, refH{0.0};  ///< Reference in geodetic [deg/m]
+    double refLat{0.0}, refLon{0.0}, refH{0.0};
     double mean3dErrorM{0.0};
     double std3dErrorM{0.0};
     double rmsErrorM{0.0};
+    std::string referenceSource;
+};
+
+// =============================================================================
+//  PppSummary
+// =============================================================================
+
+/**
+ * @brief Aggregate statistics over all valid PPP epochs.
+ *
+ * Includes separate convergence-period and post-convergence statistics
+ * so the protocol can report both.
+ */
+struct PppSummary {
+    std::size_t nEpochsTotal{0};
+    std::size_t nEpochsValid{0};
+    std::size_t nEpochsConverged{0};
+
+    // Post-convergence position mean and std.
+    double meanX{0.0}, meanY{0.0}, meanZ{0.0};
+    double stdX{0.0},  stdY{0.0},  stdZ{0.0};
+    double meanLat{0.0}, meanLon{0.0}, meanH{0.0};
+
+    double meanClkBiasM{0.0};
+    double meanZtdWetM{0.0};
+    double meanNSats{0.0};
+
+    // Position error vs reference (filled only when referencePosition.enabled).
+    bool   hasReference{false};
+    double refX{0.0}, refY{0.0}, refZ{0.0};
+    double refLat{0.0}, refLon{0.0}, refH{0.0};
+    double mean3dErrorM{0.0};
+    double std3dErrorM{0.0};
+    double rmsErrorM{0.0};
+    double convergenceTimeMin{0.0};  ///< Time to first converged epoch [min].
     std::string referenceSource;
 };
 
@@ -103,15 +134,17 @@ struct SppSummary {
  * @brief Complete result of one loki_gnss pipeline run.
  *
  * GnssAnalyzer::run() fills this and passes it to GnssProtocol and PlotGnss.
- * New pipeline stages add their own fields here.
  */
 struct GnssResult {
     ParseResult              parse;
+
     std::vector<SppResult>   spp;
     SppSummary               sppSummary;
     bool                     hasSpp{false};
 
-    // Future: ppp, dd, seismology, ...
+    std::vector<PppResult>   ppp;
+    PppSummary               pppSummary;
+    bool                     hasPpp{false};
 };
 
 } // namespace loki::gnss

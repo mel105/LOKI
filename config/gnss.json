@@ -10,7 +10,7 @@
     },
 
     "gnss": {
-        "task": "spp",
+        "task": "ppp",
         "mode": "static",
 
         "station": "GOPE",
@@ -22,25 +22,25 @@
         "nav_file": "INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz",
         "obs_file": "INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz",
 
-        "constellations":      ["GPS", "GALILEO"],
-        "elevation_mask_deg":  10.0,
+        "constellations":     ["GPS", "GALILEO"],
+        "elevation_mask_deg": 10.0,
 
         "spp": {
-            "enabled":                 true,
+            "enabled":                 false,
             "max_iterations":          20,
             "convergence_threshold_m": 0.01,
             "weighting":               "elevation"
         },
 
         "ppp": {
-            "enabled":                 false,
-            "sp3_file":                "INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz",
-            "clk_file":                "INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz",
-            "antex_file":              "INPUT/GNSS/gnss_data/antex/igs20.atx",
-            "vmf3_file":               "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
-            "ocean_loading_blq":       "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
-            "if_combination":          true,
-            "ambiguity_resolution":    false,
+            "enabled":  true,
+            "sp3_file": "INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz",
+            "clk_file": "INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz",
+            "antex_file":          "INPUT/GNSS/gnss_data/antex/igs20.atx",
+            "vmf3_file":           "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
+            "ocean_loading_blq":   "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
+            "if_combination":      true,
+            "ambiguity_resolution": false,
             "max_iterations":          20,
             "convergence_threshold_m": 0.001
         },
@@ -64,47 +64,47 @@
         },
 
         "corrections": {
-            "ionosphere":    "klobuchar",
+            "ionosphere":    "ionex",
             "troposphere":   "saastamoinen",
             "sagnac":        true,
             "solid_tides":   false,
             "ocean_loading": false,
-            "phase_windup":  false,
+            "phase_windup":  true,
             "pco_pcv":       false
         },
 
         "quality": {
             "raim":      false,
-            "residuals": false,
+            "residuals": true,
             "dop":       false
         },
 
         "figures": {
-            "satcount":               true,
-            "elevation":              true,
-            "skyplot_constellation":  true,
-            "skyplot_prn":            true,
-            "dop":                    true,
+            "satcount":              true,
+            "elevation":             true,
+            "skyplot_constellation": true,
+            "skyplot_prn":           false,
+            "dop":                   false,
 
             "spp": {
-                "clockbias":          true,
-                "residuals":          true,
-                "isb":                true,
-                "position_ecef":      false,
-                "position_error":     true,
-                "position_scatter":   true
+                "clockbias":        false,
+                "residuals":        false,
+                "isb":              false,
+                "position_ecef":    false,
+                "position_error":   false,
+                "position_scatter": false
             },
 
             "ppp": {
-                "position_error":     true,
-                "troposphere":        true,
-                "ambiguity":          true,
-                "clock_bias":         true
+                "position_error": true,
+                "troposphere":    true,
+                "ambiguity":      false,
+                "clock_bias":     true
             },
 
             "rtk": {
-                "position_error":     true,
-                "baseline_length":    true
+                "position_error":  false,
+                "baseline_length": false
             }
         },
 

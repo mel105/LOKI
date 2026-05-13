@@ -6,24 +6,25 @@
 namespace loki::gnss {
 
 /**
- * @brief Exports loki_gnss pipeline results to CSV and standardised text files.
+ * @brief Exports loki_gnss pipeline results to CSV files.
  *
  * Output files written to OUTPUT/CSV/:
  *
  *   gnss_<station>_spp_epochs.csv
- *     One row per valid epoch: MJD, X, Y, Z, lat, lon, h, clk_m, clk_us,
- *     pdop, n_sats, converged, mean_residual_m, rms_residual_m.
+ *     One row per valid SPP epoch.
  *
  *   gnss_<station>_spp_clk.csv
- *     RINEX-CLOCK-inspired format (# header, data rows):
- *     # AR <station> <year> <month> <day> <hh> <mm> <ss>  2  <clk_s>  <sigma_s>
- *     sigma estimated from epoch LSQ residual RMS / speed_of_light.
+ *     RINEX-CLOCK-inspired receiver clock file.
  *
  *   gnss_<station>_spp_tropo.csv
- *     Per-epoch Saastamoinen components: epoch, zhd_mm, zwet_mm, ztd_mm, slant_m.
- *     Useful for comparison with PPP TRO files and VMF3 products.
+ *     Per-epoch Saastamoinen ZHD/ZWD (constant std atmosphere).
  *
- * New exporters will be added as pipeline stages grow (PPP, DD, ...).
+ *   gnss_<station>_ppp_epochs.csv
+ *     One row per valid PPP epoch: position, clock, ZTD wet, ZTD total,
+ *     convergence flag, residual RMS (code and phase).
+ *
+ *   gnss_<station>_ppp_tropo.csv
+ *     Per-epoch Kalman-estimated ZTD wet and total ZTD.
  */
 class GnssCsvExport {
 public:
@@ -35,23 +36,17 @@ public:
      */
     void exportAll(const GnssResult& result, const ObsFile& obs) const;
 
-    /// SPP per-epoch positions, clocks, quality.
+    // SPP exports.
     void exportSppEpochs(const GnssResult& result) const;
-
-    /// RINEX-CLOCK-inspired receiver clock file.
     void exportClk(const std::vector<SppResult>& spp) const;
-
-    /**
-     * @brief Per-epoch Saastamoinen dry/wet ZTD components.
-     *
-     * Requires the station ECEF position from the OBS header to derive
-     * geodetic lat/lon/h for the Saastamoinen model.
-     */
     void exportTropo(const std::vector<SppResult>& spp, const ObsFile& obs) const;
+
+    // PPP exports.
+    void exportPppEpochs(const GnssResult& result) const;
+    void exportPppTropo(const std::vector<PppResult>& ppp, const ObsFile& obs) const;
 
 private:
     loki::AppConfig m_cfg;
-
     std::string outPath(const std::string& tag) const;
 };
 
