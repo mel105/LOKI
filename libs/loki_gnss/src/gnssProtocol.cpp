@@ -37,12 +37,18 @@ static std::string toDms(double deg)
     const double rm = (deg - d) * 60.0;
     const int    m  = static_cast<int>(rm);
     const double s  = (rm - m) * 60.0;
-
     std::ostringstream oss;
     oss << (neg ? "-" : "") << d << " deg "
         << std::setw(2) << std::setfill('0') << m << "' "
         << std::fixed << std::setprecision(5) << s << "\"";
     return oss.str();
+}
+
+static loki::geodesy::GeodPoint toGeod(double x, double y, double z)
+{
+    static const loki::math::Ellipsoid wgs84 =
+        loki::math::makeEllipsoid(loki::math::EllipsoidModel::WGS84);
+    return loki::geodesy::ecef2geod({x, y, z}, wgs84);
 }
 
 // =============================================================================
@@ -85,7 +91,6 @@ void GnssProtocol::_writeAppliedCorrections(std::ostream& f) const
 {
     const GnssConfig& gcfg = m_cfg.gnss;
     auto yn = [](bool b) -> const char* { return b ? "yes" : "no"; };
-
     f << "\n";
     f << "APPLIED CORRECTIONS\n";
     f << "\n";
@@ -201,7 +206,8 @@ void GnssProtocol::_writeSppResults(std::ostream& f,
         f << "\n";
         f << "  Reference (" << s.referenceSource << "):\n";
         f << std::setprecision(4);
-        f << "    ECEF: X = " << s.refX << "  Y = " << s.refY << "  Z = " << s.refZ << " [m]\n";
+        f << "    ECEF: X = " << s.refX << "  Y = " << s.refY
+          << "  Z = " << s.refZ << " [m]\n";
         f << "    Lat = " << toDms(s.refLat) << "\n";
         f << "    Lon = " << toDms(s.refLon) << "\n";
         f << "    h   = " << std::setprecision(4) << s.refH << " [m]\n";
@@ -213,7 +219,6 @@ void GnssProtocol::_writeSppResults(std::ostream& f,
         f << "    RMS  3D error : " << s.rmsErrorM    << " m\n";
     }
 
-    // Per-epoch table (first 20 valid).
     f << "\n";
     f << "  Per-epoch sample (first 20 valid):\n";
     f << "  " << std::left
@@ -230,15 +235,11 @@ void GnssProtocol::_writeSppResults(std::ostream& f,
       << "\n";
     f << "  " << std::string(132, '-') << "\n";
 
-    static const loki::math::Ellipsoid wgs84 =
-        loki::math::makeEllipsoid(loki::math::EllipsoidModel::WGS84);
-
     int printed = 0;
     for (const auto& r : epochs) {
         if (!r.valid) continue;
         if (printed >= 20) break;
-        const loki::geodesy::EcefPoint ep{r.x, r.y, r.z};
-        const loki::geodesy::GeodPoint gp = loki::geodesy::ecef2geod(ep, wgs84);
+        const auto gp = toGeod(r.x, r.y, r.z);
         f << "  " << std::left << std::fixed
           << std::setprecision(8) << std::setw(14) << r.time.toTimeStamp().mjd()
           << std::setprecision(3)
@@ -278,8 +279,19 @@ void GnssProtocol::_writePppResults(std::ostream& f,
     f << "    Y = " << s.meanY << " +/- " << s.stdY << " [m]\n";
     f << "    Z = " << s.meanZ << " +/- " << s.stdZ << " [m]\n";
 
-    f << "\n";
-    f << std::setprecision(3);
+    // Mean geodetic.
+    if (s.meanX != 0.0 || s.meanY != 0.0 || s.meanZ != 0.0) {
+        const auto gm = toGeod(s.meanX, s.meanY, s.meanZ);
+        f << "\n";
+        f << "  Post-convergence mean geodetic position (WGS-84):\n";
+        f << "    Lat = " << toDms(gm.lat)
+          << "  (" << std::setprecision(9) << gm.lat << " deg)\n";
+        f << "    Lon = " << toDms(gm.lon)
+          << "  (" << std::setprecision(9) << gm.lon << " deg)\n";
+        f << "    h   = " << std::setprecision(4) << gm.h << " [m]\n";
+    }
+
+    f << "\n" << std::setprecision(3);
     f << "  Mean clk bias     : " << s.meanClkBiasM
       << " [m]  = " << s.meanClkBiasM / 299792458.0 * 1.0e6 << " [us]\n";
     f << "  Mean ZTD wet      : " << s.meanZtdWetM * 1000.0 << " [mm]\n";
@@ -287,9 +299,15 @@ void GnssProtocol::_writePppResults(std::ostream& f,
     if (s.hasReference) {
         f << "\n";
         f << "  Reference (" << s.referenceSource << "):\n";
+        const auto gr = toGeod(s.refX, s.refY, s.refZ);
         f << std::setprecision(4);
         f << "    ECEF: X = " << s.refX << "  Y = " << s.refY
           << "  Z = " << s.refZ << " [m]\n";
+        f << "    Lat = " << toDms(gr.lat)
+          << "  (" << std::setprecision(9) << gr.lat << " deg)\n";
+        f << "    Lon = " << toDms(gr.lon)
+          << "  (" << std::setprecision(9) << gr.lon << " deg)\n";
+        f << "    h   = " << std::setprecision(4) << gr.h << " [m]\n";
         f << std::setprecision(3);
         f << "\n";
         f << "  Post-convergence position error vs reference:\n";
@@ -298,33 +316,41 @@ void GnssProtocol::_writePppResults(std::ostream& f,
         f << "    RMS  3D error : " << s.rmsErrorM    << " m\n";
     }
 
-    // Per-epoch table (first 20 converged epochs).
+    // Per-epoch table (first 20 converged) -- ECEF + geodetic.
     f << "\n";
     f << "  Per-epoch sample (first 20 converged):\n";
     f << "  " << std::left
       << std::setw(14) << "MJD"
-      << std::setw(16) << "X [m]"
-      << std::setw(16) << "Y [m]"
-      << std::setw(16) << "Z [m]"
+      << std::setw(14) << "X [m]"
+      << std::setw(14) << "Y [m]"
+      << std::setw(14) << "Z [m]"
+      << std::setw(14) << "Lat [deg]"
+      << std::setw(14) << "Lon [deg]"
+      << std::setw(10) << "h [m]"
       << std::setw(12) << "clk [m]"
-      << std::setw(12) << "ZTD_wet [m]"
-      << std::setw(12) << "ZTD_tot [m]"
+      << std::setw(11) << "ZTD_wet[m]"
+      << std::setw(11) << "ZTD_tot[m]"
       << std::setw(6)  << "nSat"
       << "\n";
-    f << "  " << std::string(110, '-') << "\n";
+    f << "  " << std::string(144, '-') << "\n";
 
     int printed = 0;
     for (const auto& r : epochs) {
         if (!r.valid || !r.converged) continue;
         if (printed >= 20) break;
+        const auto gp = toGeod(r.x, r.y, r.z);
         f << "  " << std::left << std::fixed
           << std::setprecision(8) << std::setw(14) << r.time.toTimeStamp().mjd()
           << std::setprecision(3)
-          << std::setw(16) << r.x << std::setw(16) << r.y << std::setw(16) << r.z
+          << std::setw(14) << r.x << std::setw(14) << r.y << std::setw(14) << r.z
+          << std::setprecision(9)
+          << std::setw(14) << gp.lat << std::setw(14) << gp.lon
+          << std::setprecision(3)
+          << std::setw(10) << gp.h
           << std::setw(12) << r.clkBiasM
           << std::setprecision(5)
-          << std::setw(12) << r.ztdWetM
-          << std::setw(12) << r.ztdTotalM
+          << std::setw(11) << r.ztdWetM
+          << std::setw(11) << r.ztdTotalM
           << std::setw(6)  << r.nSats
           << "\n";
         ++printed;
@@ -339,7 +365,6 @@ void GnssProtocol::write(const GnssResult& result) const
 {
     fs::create_directories(m_cfg.protocolsDir);
 
-    // Protocol name reflects the active task, not always "spp".
     const std::string task = result.hasPpp ? "ppp" :
                              result.hasSpp ? "spp" : "parse";
 

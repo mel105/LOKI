@@ -36,9 +36,10 @@
             "enabled":  true,
             "sp3_file": "INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz",
             "clk_file": "INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz",
+            "osb_file": "INPUT/GNSS/gnss_data/bias/COD0MGXFIN_20240750000_01D_01D_OSB.BIA.gz",
             "antex_file":          "INPUT/GNSS/gnss_data/antex/igs20.atx",
-            "vmf3_file":           "INPUT/GNSS/gnss_data/vmf3/2024/20240315.h00",
-            "ocean_loading_blq":   "INPUT/GNSS/gnss_data/blq/GOPE.BLQ",
+            "vmf3_file":           "INPUT/GNSS/gnss_data/vmf3/2024/VMF3_20240315.H00",
+            "ocean_loading_blq":   "",
             "if_combination":      true,
             "ambiguity_resolution": false,
             "max_iterations":          20,
@@ -67,15 +68,15 @@
             "ionosphere":    "ionex",
             "troposphere":   "saastamoinen",
             "sagnac":        true,
-            "solid_tides":   false,
-            "ocean_loading": false,
+            "solid_tides":   true,
+            "ocean_loading": true,
             "phase_windup":  true,
-            "pco_pcv":       false
+            "pco_pcv":       true
         },
 
         "quality": {
             "raim":      false,
-            "residuals": true,
+            "residuals": false,
             "dop":       false
         },
 

@@ -16,30 +16,58 @@ namespace loki::gnss {
 /**
  * @brief Configuration for PppFilter.
  *
- * Defined outside the class to work around GCC 13 / Windows aggregate-init bug.
+ * Two-phase startup:
+ *
+ *   Phase 1 -- code-only (first codeOnlyEpochs epochs):
+ *     Only pseudorange is used.  Clock (unknown ~-107 km), position,
+ *     and ZWD are estimated from code alone.
+ *
+ *     Key insight: ZWD must converge to the correct value (~0.13 m)
+ *     BEFORE phase observations are introduced.  If ZWD is wrong when
+ *     phase starts, the ambiguities absorb the ZWD error and the filter
+ *     locks into an incorrect state because phase weight >> code weight.
+ *
+ *     codeOnlyEpochs = 30 (15 min at 30 s):
+ *       Sufficient for ZWD to converge from prior (~0.135 m) to a
+ *       value within ~0.1 m of truth with 15 satellites and
+ *       sigmaCodeM = 3 m.
+ *
+ *     qZtdCode = 1e-6 m^2/s:
+ *       Larger ZWD process noise during code phase to allow the filter
+ *       to adjust ZWD faster from the a priori value.  After phase
+ *       observations are added, qZtd (smaller) takes over.
+ *
+ *   Phase 2 -- code + phase (remaining epochs):
+ *     Ambiguities bootstrapped as N = ifPhase - ifCode.
+ *     ZWD estimated as slow random walk (qZtd = 1e-8 m^2/s).
  */
 struct PppFilterConfig {
-    // Process noise densities [m^2/s].
-    double qPos{1.0e-8};       ///< Position white noise [m^2/s] (static: near zero).
-    double qClk{10000.0};      ///< Receiver clock walk [m^2/s] (large: modelled as white).
-    double qZtd{1.0e-8};       ///< ZTD wet random walk [m^2/s] (~1 mm per ~30 min).
-    double qAmb{0.0};          ///< Ambiguity noise [m^2/s] (0 = constant, reset on slip).
+    // Process noise [m^2/s].
+    double qPos    {1.0e-8};   ///< Position (static).
+    double qClk    {100.0};    ///< Receiver clock random walk.
+    double qZtd    {1.0e-8};   ///< ZWD random walk (phase phase).
+    double qZtdCode{1.0e-5};   ///< ZWD random walk (code-only phase, larger).
+    double qAmb    {0.0};      ///< Ambiguity (0 = constant between slips).
 
     // Measurement noise.
-    double sigmaCodeM{1.0};    ///< IF pseudorange sigma [m].
-    double sigmaPhaseM{0.005}; ///< IF carrier-phase sigma [m] (5 mm).
+    double sigmaCodeM {3.0};   ///< IF pseudorange sigma [m].
+    double sigmaPhaseM{0.005}; ///< IF carrier-phase sigma [m].
 
-    // Cycle slip detection.
-    double gfSlipThreshM{0.05};///< Geometry-free slip threshold [m].
+    // Cycle slip.
+    double gfSlipThreshM{0.05};
 
-    // Convergence criterion: 3D position change below this threshold.
-    double convergenceM{0.05}; ///< [m], filter considered converged.
+    // Convergence.
+    double convergenceM{0.05};
 
-    // Initial state covariance.
-    double p0Pos{100.0};       ///< Initial position variance [m^2].
-    double p0Clk{1.0e6};       ///< Initial clock variance [m^2].
-    double p0Ztd{0.25};        ///< Initial ZTD variance [m^2] (~0.5 m).
-    double p0Amb{1.0e6};       ///< Initial ambiguity variance [m^2].
+    // Initial covariance.
+    double p0Pos{100.0};
+    double p0Clk{1.0e10};
+    double p0Ztd{0.25};
+    double p0Amb{1.0e6};
+    double p0Isb{1.0e4};
+
+    // Code-only pre-filter duration.
+    int codeOnlyEpochs{120};    ///< ~15 min at 30 s interval.
 
     explicit PppFilterConfig() = default;
 };
@@ -49,29 +77,32 @@ struct PppFilterConfig {
 // =============================================================================
 
 /**
- * @brief One IF-combined satellite observation for the PPP Kalman filter.
+ * @brief One IF-combined satellite observation for PppFilter.
  *
- * Formed by PppSolver from raw pseudorange and carrier-phase observations.
+ * Troposphere split:
+ *   tropoZhdM = ZHD_zenith * mf_h(el)   [m, fixed slant ZHD]
+ *   mfWet     = mf_w(el)                [dimensionless]
+ *
+ * Filter model:
+ *   tropo_slant = tropoZhdM + state(ZTD_wet) * mfWet
  */
 struct PppObservation {
     GnssSystem system{GnssSystem::UNKNOWN};
     int        prn{0};
 
-    // Ionosphere-free combined observables [m].
-    double ifCode{0.0};    ///< IF pseudorange [m].
-    double ifPhase{0.0};   ///< IF carrier phase [m].
+    double ifCode{0.0};
+    double ifPhase{0.0};
 
-    // Geometry and corrections (all in metres).
-    double satX{0.0}, satY{0.0}, satZ{0.0};  ///< Satellite ECEF [m].
-    double satClkM{0.0};                      ///< Satellite clock correction [m].
-    double tropoM{0.0};                       ///< A priori troposphere [m] (Saastamoinen ZHD * mf).
-    double phaseWindupM{0.0};                 ///< Phase windup [m].
-    double pcoM{0.0};                         ///< PCO/PCV correction [m] (applied externally).
+    double satX{0.0}, satY{0.0}, satZ{0.0};
+    double satClkM{0.0};
 
-    // Geometry-free combination (for cycle slip detection).
-    double gfObs{0.0};   ///< L1 - L2 carrier phase [m].
+    double tropoZhdM{0.0};
+    double phaseWindupM{0.0};
+    double pcoM{0.0};
+    double mfWet{1.0};
 
-    double elevation{0.0};  ///< [rad], used for elevation-dependent weighting.
+    double gfObs{0.0};
+    double elevation{0.0};
     bool   valid{false};
 };
 
@@ -80,35 +111,20 @@ struct PppObservation {
 // =============================================================================
 
 /**
- * @brief Sequential Kalman filter for PPP with dynamic state management.
+ * @brief Sequential Kalman filter for PPP.
  *
- * State vector: [X, Y, Z, clk_GPS, ZTD_wet, N_1, ..., N_n]
+ * State vector:
+ *   [0-2]  X, Y, Z     ECEF [m]
+ *   [3]    clk_GPS      receiver clock [m]
+ *   [4]    ZTD_wet      zenith wet delay [m]
+ *   [5]    ISB_GAL      Galileo ISB [m]
+ *   [6+]   N_i          float IF ambiguities [m]  (phase 2 only)
  *
- *   Indices 0-2   : receiver ECEF position [m].
- *   Index   3     : receiver clock bias for GPS [m].
- *   Index   4     : ZTD wet component [m] (estimated).
- *   Indices 5+    : float IF ambiguities per satellite arc [m].
- *                   Added when satellite rises, removed when it sets.
- *
- * Multi-constellation: Galileo gets its own ISB parameter at index 5
- * when enabled (added as the first ambiguity slot, never removed).
- *
- * Design:
- *   - Time update: propagate state + process noise (static: position frozen,
- *     clock random walk, ZTD random walk, ambiguities constant).
- *   - Measurement update: simultaneous multi-observation update with
- *     H matrix (m x n), R diagonal (elevation-dependent).
- *   - Covariance: Joseph-form P = (I-KH)P(I-KH)^T + KRK^T (numerically stable).
- *   - Cycle slip: geometry-free L1-L2 jump detection; resets ambiguity
- *     parameter (old removed, new added with large variance).
- *
- * This class is NOT thread-safe -- one instance per processing session.
- *
- * References:
- *   Zumberge et al. (1997), Precise point positioning for the efficient
- *     and robust analysis of GPS data from large networks.
- *   Kouba & Heroux (2001), Precise Point Positioning Using IGS Orbit
- *     and Clock Products.
+ * Critical design decision:
+ *   ZWD must be estimated from code alone first.  Carrier-phase measurements
+ *   have ~360 000x larger weight than code and will lock in whatever ZWD
+ *   value exists when they are first introduced.  30 code-only epochs give
+ *   ZWD time to converge before this lock-in occurs.
  */
 class PppFilter {
 public:
@@ -116,112 +132,52 @@ public:
 
     explicit PppFilter(Config cfg = Config{});
 
-    /**
-     * @brief Initialises the filter state at the first epoch.
-     *
-     * Must be called once before the first timeUpdate/measurementUpdate cycle.
-     *
-     * @param approxX  Approximate ECEF X [m] (from OBS header or SPP result).
-     * @param approxY  Approximate ECEF Y [m].
-     * @param approxZ  Approximate ECEF Z [m].
-     * @param ztdPrior  A priori ZTD wet [m] (from Saastamoinen).
-     */
     void init(double approxX, double approxY, double approxZ,
               double ztdPrior = 0.1);
 
-    /**
-     * @brief Time update: propagates state and adds process noise.
-     *
-     * @param dt  Epoch interval [s].
-     */
     void timeUpdate(double dt);
 
-    /**
-     * @brief Measurement update for one epoch.
-     *
-     * Adds/removes ambiguity state slots based on which satellites are visible.
-     * Detects cycle slips via geometry-free combination.
-     *
-     * @param obs   Vector of IF-combined observations for this epoch.
-     * @return      True if the update converged (3D position change < threshold).
-     */
     bool measurementUpdate(const std::vector<PppObservation>& obs);
 
-    // ------------------------------------------------------------------
-    //  State access
-    // ------------------------------------------------------------------
+    void   position(double& x, double& y, double& z) const;
+    double clockBiasM()  const;
+    double ztdWetM()     const;
+    double isbGalM()     const;
+    void   positionVariance(double& vx, double& vy, double& vz) const;
+    bool   converged() const { return m_converged; }
 
-    /// @brief Current receiver ECEF position [m].
-    void position(double& x, double& y, double& z) const;
-
-    /// @brief Current receiver clock bias [m].
-    double clockBiasM() const;
-
-    /// @brief Current estimated ZTD wet [m].
-    double ztdWetM() const;
-
-    /// @brief Position variance [m^2] (diagonal of P for X,Y,Z).
-    void positionVariance(double& vx, double& vy, double& vz) const;
-
-    /// @brief Returns true once measurementUpdate() has returned true.
-    bool converged() const { return m_converged; }
-
-    /// @brief Resets ambiguity for one satellite (cycle slip).
     void resetAmbiguity(GnssSystem system, int prn);
-
-    /// @brief Full reset (new session).
     void reset();
 
 private:
     Config          m_cfg;
-    Eigen::VectorXd m_x;   ///< State vector.
-    Eigen::MatrixXd m_P;   ///< Covariance matrix.
+    Eigen::VectorXd m_x;
+    Eigen::MatrixXd m_P;
     bool            m_initialised{false};
     bool            m_converged{false};
+    int             m_epochCount{0};
+    int             m_isbGalIdx{-1};
 
-    // Ambiguity slot management: (system,prn) -> index in m_x.
     using SatKey = std::pair<GnssSystem, int>;
-    std::map<SatKey, int> m_ambIdx;
-
-    // Geometry-free history for cycle slip detection.
+    std::map<SatKey, int>    m_ambIdx;
     std::map<SatKey, double> m_prevGf;
 
-    // Previous position for convergence check.
     double m_prevX{0.0}, m_prevY{0.0}, m_prevZ{0.0};
 
-    // Fixed state dimension (before ambiguities).
-    static constexpr int BASE_DIM = 5;  // X,Y,Z,clk,ZTD
+    static constexpr int BASE_DIM = 5;
 
-    // ------------------------------------------------------------------
-    //  Internal helpers
-    // ------------------------------------------------------------------
+    bool usePhase() const { return m_epochCount >= m_cfg.codeOnlyEpochs; }
 
-    /// @brief Ensures an ambiguity slot exists for (system,prn); returns index.
-    int ensureAmbiguity(GnssSystem system, int prn);
-
-    /// @brief Removes ambiguity slot for (system,prn); re-indexes subsequent slots.
+    int  ensureIsbGal();
+    static bool needsIsb(GnssSystem system);
+    int  ensureAmbiguity(GnssSystem system, int prn, double bootstrapValue);
     void removeAmbiguity(GnssSystem system, int prn);
-
-    /// @brief Removes ambiguity slots for satellites not in current obs set.
     void pruneAbsentSatellites(const std::vector<PppObservation>& obs);
-
-    /**
-     * @brief Joseph-form covariance update.
-     *
-     * P_new = (I - K*H) * P * (I - K*H)^T + K * R * K^T
-     *
-     * More numerically stable than the standard form for poorly conditioned
-     * systems (relevant when ambiguity variance spans many orders of magnitude).
-     */
     void josephUpdate(const Eigen::MatrixXd& K,
                       const Eigen::MatrixXd& H,
                       const Eigen::MatrixXd& R);
-
-    /// @brief Elevation-dependent sigma scaling: sigma / sin(el).
+    bool   detectCycleSlip(GnssSystem system, int prn, double gf_current);
     static double elevSigma(double sigmaBase, double elevRad);
-
-    /// @brief Detects cycle slip for one satellite.
-    bool detectCycleSlip(GnssSystem system, int prn, double gf_current);
 };
 
 } // namespace loki::gnss

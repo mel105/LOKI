@@ -24,6 +24,7 @@ add_library(loki_gnss STATIC
     src/phaseWindup.cpp
     src/pppFilter.cpp
     src/pppSolver.cpp
+    src/obsBiasParser.cpp
 )
 
 target_include_directories(loki_gnss

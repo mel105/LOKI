@@ -760,3 +760,211 @@ sphericalHarmonics, legendrePolynomials, stokesIntegral -- gravity module (later
   Other modules use PlotConfig booleans as before.
 - PlotConfig in config.hpp has geodesy plot flags (geodCovariancePanel,
   geodDistanceBar) -- added but parsePlots patch not yet applied to configLoader.
+
+  ---
+
+## loki_gnss -- PPP Current State (Thread May 2026)
+
+### Status
+PPP pipeline compiles and runs but produces WRONG results:
+- Position error: ~10 m RMS (expected: ~1-5 cm after convergence)
+- ZTD wet: oscillates -4000 to +3000 mm (expected: ~100 mm stable)
+- ZTD total: oscillates wildly (CSRS-PPP reference: 2.22-2.29 m stable)
+- Convergence criterion fires but filter is in wrong local minimum
+
+### Files implemented this thread
+All new PPP files are in libs/loki_gnss/:
+  include/loki/gnss/sp3Parser.hpp/.cpp       -- SP3-d parser (fixed: was 22-line header limit, SP3-d has 32+ lines)
+  include/loki/gnss/clkParser.hpp/.cpp       -- RINEX CLK parser (token-based, handles nvals+bias glued)
+  include/loki/gnss/antexParser.hpp/.cpp     -- ANTEX parser (implemented, NOT YET APPLIED to orbits)
+  include/loki/gnss/sp3Orbit.hpp/.cpp        -- SP3+CLK orbit model; pre-built O(log n) clock index
+  include/loki/gnss/phaseWindup.hpp/.cpp     -- Phase windup accumulator (Meeus Sun ephemeris)
+  include/loki/gnss/pppFilter.hpp/.cpp       -- Kalman filter (broken -- see diagnosis below)
+  include/loki/gnss/pppSolver.hpp/.cpp       -- PPP orchestrator
+  include/loki/gnss/obsBiasParser.hpp/.cpp   -- BIAS-SINEX OSB parser
+  loki_core/math/interpolation.hpp/.cpp      -- Lagrange order-9 (for SP3)
+
+Modified files:
+  gnssResult.hpp      -- added PppResult, PppSummary, hasPpp
+  gnssAnalyzer.hpp/.cpp -- added _runPpp(), _computePppSummary()
+  gnssProtocol.hpp/.cpp -- added _writePppResults() with geodetic coords
+  gnssCsvExport.hpp/.cpp -- added exportPppEpochs(), exportPppTropo()
+  plotGnss.hpp/.cpp   -- added plotPppPositionError(), plotPppTroposphere(), plotPppClockBias()
+  troposphere.hpp/.cpp -- extended: zhd(), zwd(), NiellMappingFunction, IwvConverter
+  config.hpp          -- GnssPppConfig.osbFile added (removed duplicate osb_file field)
+  configLoader.cpp    -- _parseGnss() ppp block updated
+
+### Test data (confirmed working)
+Station: GOPE00CZE (Czech Republic, EUREF/EPN)
+Date: 2024-03-15 (DOY 075, GPS week 2305)
+SP3:   INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz
+CLK:   INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz
+OSB:   INPUT/GNSS/gnss_data/bias/COD0MGXFIN_20240750000_01D_01D_OSB.BIA.gz  (727 records)
+OBS:   INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz
+NAV:   INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz
+Reference ITRF2020: X=3979316.439 Y=1050312.253 Z=4857066.904
+CSRS-PPP reference ZTD total: 2.22-2.29 m (stable, slow variation)
+
+### Root cause of wrong results -- CONFIRMED by debug
+
+#### 1. ZWD diverges in code-only phase
+Debug output showed:
+  [CODE_INNOV ep1] mean_y=-106768  ZWD=0.111   <- hodiny neznáme, OK
+  [CODE_INNOV ep2] mean_y=-0.304   ZWD=0.085   <- ZWD zacina klesat
+  [CODE_INNOV ep5] mean_y=-0.510   ZWD=-0.001  <- uz zaporne po 5 epochach
+  [PHASE_SWITCH]   ZWD=-0.624      <- pri prepnuti na fazu je ZWD zle
+
+Mean code innovation = -0.3 to -0.6 m systematically (after clock correction).
+Filter absorbs this into ZWD (only free parameter with large enough gain).
+After 30 code-only epochs: ZWD = -0.6 m instead of correct +0.1 m.
+
+#### 2. Ambiguity bootstrap with wrong ZWD locks filter in wrong state
+When phase starts (epoch 31), bootstrap: N = ifPhase - ifCode (correct formula).
+But ZWD_state = -0.6 m, ZWD_real = +0.1 m => delta = 0.7 m.
+Slant ZWD error at el=40 deg: 0.7/sin(40) = 1.09 m.
+N_bootstrap = ifPhase - ifCode DOES cancel geometry but NOT the wrong ZWD.
+Wait -- actually N = ifPhase - ifCode cancels everything including ZWD error.
+The bootstrap itself is correct.
+
+BUT: after bootstrap, phase innovations are ~0 (by construction at bootstrap epoch).
+Code innovations remain ~-0.4 m. Filter weight: sigma_phase=0.005m vs sigma_code=3m.
+Phase weight 360000x larger than code.
+Filter drives ZWD down to make phase residuals zero, ignoring code residuals.
+Result: ZWD oscillates wildly following multipath/noise in phase, not physical ZWD.
+
+#### 3. Systematic -0.4 m bias in code after clock correction
+Source confirmed NOT to be:
+  - OSB correction (verified mathematically: alpha*(C1C-C1W) properly corrected)
+  - Phase windup (disabled, same result)
+  - Solid tides (disabled, same result)
+  - Sagnac (enabled, same as disabled for this test)
+Source suspected to be:
+  - Satellite PCO: SP3 orbits are to Center of Mass (CoM), CLK consistent with APC.
+    GPS IF PCO = alpha*280mm - beta*393mm = ~105 mm. Direction-dependent, averages ~0.1 m.
+    This alone does not explain -0.4 m but contributes.
+  - Real atmospheric ZHD error: Saastamoinen standard atmosphere may not match
+    actual pressure at GOPE on 2024-03-15. No met data available to verify.
+    Real ZTD from CSRS = 2.25 m, our ZHD = 2.149 m => real ZWD = 0.10 m (prior=0.135 m, close).
+    But if actual ZHD = 2.20 m (higher pressure), our ZHD is 0.05 m too small
+    => code innovations would be +0.05*mf ≈ +0.07 m (positive, not -0.4 m).
+  - CONCLUSION: The -0.4 m source is still not definitively identified.
+    Most likely combination of satellite PCO + receiver antenna PCO + small ZHD error.
+
+### What CSRS-PPP does that we don't (missing corrections)
+1. Satellite PCO/PCV from ANTEX (AntexParser exists but not applied to satellite position)
+2. Receiver antenna PCO/PCV from ANTEX (not implemented)
+3. VMF3 mapping functions (have files, not implemented -- using NMF instead)
+4. Phase windup lambda: using lambda_L1 (0.1903 m) instead of lambda_IF (~0.107 m)
+5. Ambiguity fixing (float only -- dm-level accuracy)
+6. Proper filter initialization from SPP (we use approxPos from OBS header)
+
+### PppFilter design problems
+Current implementation has these structural issues:
+
+a) NO EXTERNAL INITIALIZATION OF CLOCK:
+   filter.init() sets m_x(3) = 0 (clock unknown).
+   First epoch innovation = -106768 m (real clock offset for TRIMBLE ALLOY at GOPE).
+   With p0Clk = 1e10, filter correctly assigns this to clock in ep1.
+   But correlation between ZWD and clock in ep1 causes ZWD shift.
+   FIX: Initialize clock from SPP result before starting PPP filter.
+
+b) CODE-ONLY PHASE DOES NOT CONVERGE ZWD:
+   30 epochs of code-only with sigma_code=3m, 15 satellites.
+   Kalman gain for ZWD ≈ 0.5 per epoch.
+   But mean innovation = -0.4 m => ZWD drifts -0.4*0.5/mf ≈ -0.13 m per epoch.
+   After 30 epochs: ZWD ≈ 0.135 - 30*0.13 ≈ -3.7 m (even worse with 120 epochs).
+   The -0.4 m bias in code is the real problem -- filter cannot converge to correct ZWD
+   while this bias exists.
+
+c) FILTER CONFIG NOT IN JSON:
+   PppFilterConfig parameters (p0Pos, p0Clk, p0Ztd, qPos, qClk, qZtd, qAmb,
+   sigmaCodeM, sigmaPhaseM, codeOnlyEpochs) are hardcoded in pppFilter.hpp defaults.
+   Should remain as struct defaults -- these are algorithm tuning, not user config.
+   Current values:
+     p0Pos = 100 m^2, p0Clk = 1e10 m^2, p0Ztd = 0.25 m^2, p0Amb = 1e6 m^2
+     qPos = 1e-8, qClk = 100, qZtd = 1e-8, qZtdCode = 1e-5
+     sigmaCodeM = 3.0 m, sigmaPhaseM = 0.005 m
+     codeOnlyEpochs = 30 (was tested with 5, 30, 120 -- all fail for same reason)
+
+### Files to request at start of PPP fix thread
+Request ALL of these before writing any code:
+  libs/loki_gnss/include/loki/gnss/pppFilter.hpp
+  libs/loki_gnss/src/pppFilter.cpp
+  libs/loki_gnss/include/loki/gnss/pppSolver.hpp
+  libs/loki_gnss/src/pppSolver.cpp
+  libs/loki_gnss/include/loki/gnss/sp3Orbit.hpp
+  libs/loki_gnss/src/sp3Orbit.cpp
+  libs/loki_gnss/include/loki/gnss/gnssResult.hpp
+  libs/loki_gnss/src/gnssAnalyzer.cpp
+  config/gnss.json (the PPP config)
+
+### Recommended fix strategy for next thread
+
+STEP 1 -- Fix systematic code bias (most important):
+  Apply satellite PCO correction to SP3 orbit position.
+  In sp3Orbit.cpp, after Lagrange interpolation, add PCO offset:
+    sat_apc = sat_com + R_body * pco_vector
+  where R_body is satellite body frame rotation (nadir + solar panel direction).
+  Use AntexParser to get PCO for each satellite SVN.
+  This should reduce the -0.4 m systematic bias to near zero.
+
+STEP 2 -- Fix filter initialization:
+  In gnssAnalyzer.cpp _runPpp():
+    if (m_cfg.gnss.spp.enabled && result.hasSpp) {
+        // use last valid SPP epoch to initialize PPP clock
+        const auto& lastSpp = result.spp.back(); // find last valid
+        filter.initClock(lastSpp.clkBiasM);
+    }
+  Add PppFilter::initClock(double clkM) method.
+
+STEP 3 -- Fix phase windup wavelength:
+  In pppSolver.cpp, replace:
+    o.phaseWindupM = cycles * (SPEED_OF_LIGHT / GPS_F1);  // 0.1903 m/cycle
+  With:
+    constexpr double LAMBDA_IF = SPEED_OF_LIGHT / (GPS_F1 - GPS_F2); // ~0.862 m
+    // Or more precisely for IF combination narrow-lane:
+    constexpr double LAMBDA_NL = SPEED_OF_LIGHT / (GPS_F1 + GPS_F2); // ~0.1070 m
+    o.phaseWindupM = cycles * LAMBDA_NL;
+  Note: effect is small (<2 cm) but correct.
+
+STEP 4 -- Remove all debug cerr output:
+  pppFilter.cpp: remove [CODE_INNOV], [PHASE_SWITCH], #include <iostream>
+  pppSolver.cpp: remove [G01 ep], [RES], [WINDUP] debug blocks
+  pppFilter.hpp: remove codeOnlyEpochs tuning comment clutter
+
+STEP 5 -- Config cleanup:
+  gnss.json corrections section: valid values are:
+    ionosphere: "if_combination" (PPP only), "klobuchar" (SPP only), "none"
+    troposphere: "saastamoinen" (uses NMF internally for PPP)
+  These are informational strings for the protocol -- no functional effect for PPP
+  since ionosphere is eliminated by IF combination and troposphere uses
+  Saastamoinen+NMF regardless of this string.
+
+### Known working: SP3 parser fix
+Original sp3Parser.cpp had hardcoded "if (lineNo >= 22) break" in parseHeader().
+SP3-d files (CODE MGEX) have 32+ header lines.
+Fix: read until first '*' epoch line regardless of line count.
+This fix is in the current code -- DO NOT revert.
+
+### Known working: CLK index
+sp3Orbit.cpp builds O(log n) clock index at construction.
+346314 CLK records, ~11500 per satellite.
+Processing time: ~19 seconds (was 15 minutes with linear search).
+DO NOT revert to linear search.
+
+### OSB correction -- verified correct
+osbCorrection() in pppSolver.cpp:
+  GPS: correction = -GPS_ALPHA * (OSB_C1C - OSB_C1W) * c/1e9  [m, added to ifCode]
+  GAL: correction = -(GAL_ALPHA*(OSB_C1X-OSB_C1X) - GAL_BETA*(OSB_C5X-OSB_C5X)) = 0
+Verified analytically: formula aligns C1C+C2W user obs to C1W+C2W CLK reference.
+OSB file: COD0MGXFIN_20240750000_01D_01D_OSB.BIA.gz (727 records, loads correctly).
+
+### Performance (current)
+Parsing:    ~4 seconds (OBS Hatanaka + gzip)
+SP3+CLK:    ~4 seconds
+PPP filter: ~19 seconds for 2880 epochs
+Total:      ~27 seconds
+
+### IMPORTANT: debug output still in code
+pppFilter.cpp has: #include <iostream> and cerr blocks -- REMOVE before next session
+pppSolver.cpp may have cerr blocks -- REMOVE before next session

@@ -2693,7 +2693,7 @@ GnssConfig ConfigLoader::_parseGnss(const nlohmann::json& j,
     }
  
     // -- ppp -------------------------------------------------------------------
-    if (j.contains("ppp")) {
+     if (j.contains("ppp")) {
         const auto& p = j["ppp"];
         cfg.ppp.enabled               = p.value("enabled",                 false);
         cfg.ppp.ifCombination         = p.value("if_combination",          true);
@@ -2703,14 +2703,15 @@ GnssConfig ConfigLoader::_parseGnss(const nlohmann::json& j,
  
         auto pppPath = [&](const std::string& key) -> std::string {
             if (!p.contains(key) || p[key].get<std::string>().empty()) return {};
-            return toFwd(_resolvePath(p[key].get<std::string>(), workspaceDir));
+            return _resolvePath(p[key].get<std::string>(), workspaceDir).string();
         };
+ 
         cfg.ppp.sp3File         = pppPath("sp3_file");
         cfg.ppp.clkFile         = pppPath("clk_file");
         cfg.ppp.antexFile       = pppPath("antex_file");
         cfg.ppp.vmf3File        = pppPath("vmf3_file");
         cfg.ppp.oceanLoadingBlq = pppPath("ocean_loading_blq");
-        cfg.ppp.osb_file        = pppPath("osb_file");
+        cfg.ppp.osbFile         = pppPath("osb_file");   // unified -- removed osb_file duplicate
  
         if (cfg.ppp.enabled) {
             if (cfg.ppp.sp3File.empty())

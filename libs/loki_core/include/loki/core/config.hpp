@@ -1614,9 +1614,9 @@ struct GnssPppConfig {
     std::string antexFile             {};
     std::string vmf3File              {};
     std::string oceanLoadingBlq       {};
-    bool        ifCombination         {true};   ///< Use ionosphere-free LC
-    bool        ambiguityResolution   {false};  ///< PPP-AR (requires OSB/FCB products)
-    std::string osb_file              {};        ///< OSB/FCB for PPP-AR
+    std::string osbFile               {};       ///< OSB BIAS-SINEX file (CODE.OSB, for C1C->C1W correction).
+    bool        ifCombination         {true};   ///< Use ionosphere-free combination (always true for PPP).
+    bool        ambiguityResolution   {false};  ///< PPP-AR (requires OSB/FCB products, not yet implemented).
     int         maxIterations         {20};
     double      convergenceThresholdM {0.001};
 };

@@ -15,6 +15,7 @@
 #include <loki/gnss/pppSolver.hpp>
 #include <loki/gnss/troposphere.hpp>
 #include <loki/gnss/relativity.hpp>
+#include <loki/gnss/obsBiasParser.hpp>
 #include <loki/geodesy/coordTransform.hpp>
 #include <loki/math/ellipsoid.hpp>
 #include <loki/core/exceptions.hpp>
@@ -156,7 +157,6 @@ std::vector<SppResult> GnssAnalyzer::_runSpp(const NavFile& nav,
 std::vector<PppResult> GnssAnalyzer::_runPpp(const NavFile& /*nav*/,
                                                const ObsFile&  obs) const
 {
-   
     const GnssPppConfig& pppCfg = m_cfg.gnss.ppp;
  
     LOKI_INFO("PPP: loading SP3: " + pppCfg.sp3File);
@@ -169,50 +169,30 @@ std::vector<PppResult> GnssAnalyzer::_runPpp(const NavFile& /*nav*/,
  
     LOKI_INFO("PPP: SP3 epochs: " + std::to_string(sp3.epochs.size())
               + "  CLK records: " + std::to_string(clk.records.size()));
-
-              //////////////////////////////////////
-    // DEBUG -- pridaj za "LOKI_INFO PPP: SP3 epochs" riadok
-if (!sp3.epochs.empty()) {
-    const auto& ep0 = sp3.epochs.front();
-    const auto& ep1 = sp3.epochs.back();
-    LOKI_INFO("SP3 first epoch: week=" + std::to_string(ep0.time.week)
-              + " sow=" + std::to_string(static_cast<int>(ep0.time.sow))
-              + " nSats=" + std::to_string(ep0.satellites.size()));
-    LOKI_INFO("SP3 last  epoch: week=" + std::to_string(ep1.time.week)
-              + " sow=" + std::to_string(static_cast<int>(ep1.time.sow)));
-    // Prvý satelit v prvej epoche
-    if (!ep0.satellites.empty()) {
-        const auto& s = ep0.satellites.front();
-        LOKI_INFO("SP3 sat[0]: sys=" + std::to_string(static_cast<int>(s.system))
-                  + " prn=" + std::to_string(s.prn)
-                  + " x=" + std::to_string(s.x)
-                  + " posMissing=" + std::to_string(s.posMissing)
-                  + " clkMissing=" + std::to_string(s.clockMissing));
-    }
-}
-// Prvá OBS epocha
-const auto& obsEp0 = obs.epochs.front();
-LOKI_INFO("OBS first epoch: week=" + std::to_string(obsEp0.time.week)
-          + " sow=" + std::to_string(static_cast<int>(obsEp0.time.sow)));
-
-
-          //////////////////////////////
  
-    // Build Sp3Orbit (orbit + clock from precise products).
+    // Load OSB (Observable-Specific Biases) if available.
+    OsbFile osb;
+    if (!pppCfg.osbFile.empty()) {
+        try {
+            ObsBiasParser osbParser;
+            osb = osbParser.parseGz(pppCfg.osbFile);
+            LOKI_INFO("PPP: OSB records: " + std::to_string(osb.records.size()));
+        } catch (const LOKIException& ex) {
+            LOKI_WARNING("PPP: OSB load failed: " + std::string(ex.what())
+                         + " -- proceeding without bias correction.");
+        }
+    }
+ 
     auto orbit = std::make_shared<Sp3Orbit>(std::move(sp3), std::move(clk));
  
-    // Build PppSolverConfig from AppConfig.
     PppSolverConfig solverCfg;
     solverCfg.constellations = m_cfg.gnss.constellations;
     solverCfg.elevMaskDeg    = m_cfg.gnss.elevationMaskDeg;
     solverCfg.phaseWindup    = m_cfg.gnss.corrections.phaseWindup;
     solverCfg.pcoPcv         = m_cfg.gnss.corrections.pcoPcv;
+    solverCfg.applyOsb       = !osb.records.empty();
  
-    // No additional CorrectionModel injections for PPP --
-    // ZHD is computed internally in PppSolver::saastamoinenZhd().
-    // ZWD is a filter parameter.
- 
-    PppSolver solver(solverCfg, orbit);
+    PppSolver solver(solverCfg, orbit, std::move(osb));
     return solver.solveAll(obs, {}, m_cfg.gnss);
 }
  
