@@ -56,23 +56,27 @@ struct PppSolverConfig {
 /**
  * @brief Precise Point Positioning solver (ionosphere-free combination).
  *
+ * Corrections applied per observation:
+ *   - Satellite clock from RINEX CLK (AS records, O(log n) lookup).
+ *   - Ionosphere-free combination eliminates first-order iono.
+ *   - Troposphere: ZHD fixed (Saastamoinen + NMF); ZWD estimated by filter.
+ *   - Satellite PCO: SP3 orbits are to Centre of Mass (CoM); CLK products
+ *     are generated consistent with the Antenna Phase Centre (APC).
+ *     The correction moves the CoM position to APC:
+ *       sat_apc = sat_com + R_body * pco_body
+ *     where R_body is constructed from the nadir and solar-panel unit
+ *     vectors.  PCO values [mm] are taken from the ANTEX file (IGS20).
+ *     IF-combined PCO = alpha*PCO_L1 - beta*PCO_L2 applied as a scalar
+ *     range correction (dot product with LoS unit vector).
+ *   - Receiver antenna height offset (antDeltaH from OBS header) applied
+ *     to translate from marker to ARP before processing.
+ *   - Phase windup (carrier phase only, lambda = c/(f1+f2)).
+ *   - OSB code bias alignment to CLK reference signals.
+ *
  * OSB correction:
  *   CODE MGEX CLK products are consistent with C1W/C2W observations.
- *   When C1C is used (TRIMBLE ALLOY and most receivers), a systematic
- *   bias of alpha*(OSB_C1C - OSB_C1W) must be applied to each satellite.
- *   Values are typically 0.3-3 m per satellite and differ between SVs,
- *   causing ~1-7 m code residuals if uncorrected.
- *
- *   The correction applied to IF pseudorange:
- *     P_IF_corrected = P_IF_raw
- *                    - [alpha*OSB_P1 - beta*OSB_P2] * c/1e9   (user signals)
- *                    + [alpha*OSB_C1W - beta*OSB_C2W] * c/1e9 (CLK ref signals)
- *
- *   Simplified (since C2W is used for both user and CLK reference on L2):
- *     correction = -alpha * (OSB_C1C - OSB_C1W) * c/1e9   [m]
- *
- *   For Galileo C1X/C5X, the CLK products are generated with C1X/C5X
- *   so no OSB correction is needed (OSB_C1X - OSB_C1X = 0).
+ *   When C1C is used, a systematic bias alpha*(OSB_C1C - OSB_C1W) must
+ *   be applied per satellite.  Values are 0.3-3 m and satellite-specific.
  */
 class PppSolver {
 public:
@@ -80,12 +84,13 @@ public:
 
     /**
      * @brief Constructs the PPP solver.
-     * @param osb  Optional OSB file for code bias corrections.
-     *             Pass empty OsbFile{} if not available.
+     * @param osb    Optional OSB file for code bias corrections.
+     * @param antex  Optional ANTEX file for satellite PCO corrections.
      */
     explicit PppSolver(Config                                         cfg,
                        std::shared_ptr<Sp3Orbit>                      orbit,
-                       OsbFile                                        osb = {},
+                       OsbFile                                        osb   = {},
+                       AntexFile                                      antex = {},
                        std::vector<std::unique_ptr<CorrectionModel>>  corrections = {});
 
     [[nodiscard]] std::vector<PppResult> solveAll(
@@ -97,6 +102,7 @@ private:
     Config                                        m_cfg;
     std::shared_ptr<Sp3Orbit>                     m_orbit;
     OsbFile                                       m_osb;
+    AntexFile                                     m_antex;
     std::vector<std::unique_ptr<CorrectionModel>> m_corrections;
 
     static constexpr double GPS_F1 = 1575.42e6;
@@ -110,33 +116,43 @@ private:
     static constexpr double GAL_ALPHA = (GAL_F1*GAL_F1) / (GAL_F1*GAL_F1 - GAL_F5*GAL_F5);
     static constexpr double GAL_BETA  = (GAL_F5*GAL_F5) / (GAL_F1*GAL_F1 - GAL_F5*GAL_F5);
 
+    // Narrow-lane wavelength for IF phase windup [m].
+    // lambda_NL = c / (f1 + f2).  For GPS: ~0.1070 m.
+    static constexpr double GPS_LAMBDA_NL =
+        SPEED_OF_LIGHT / (GPS_F1 + GPS_F2);
+    static constexpr double GAL_LAMBDA_NL =
+        SPEED_OF_LIGHT / (GAL_F1 + GAL_F5);
+
     bool isEnabled(GnssSystem system) const;
 
-    /**
-     * @brief Forms IF-combined observations and applies OSB correction.
-     *
-     * @param osb   OSB table (may be empty -- no correction applied).
-     */
     PppObservation formIfObs(const SatObs& satObs, GnssSystem system) const;
 
     static double selectPhase(const SatObs& satObs, GnssSystem system,
                                int freqIdx);
 
-    /**
-     * @brief Computes IF code bias correction [m] using OSB records.
-     *
-     * For GPS using C1C + C2W:
-     *   correction = -(alpha * OSB_C1C - beta * OSB_C2W) * c/1e9
-     *               + (alpha * OSB_C1W - beta * OSB_C2W) * c/1e9
-     *             = -alpha * (OSB_C1C - OSB_C1W) * c/1e9
-     *
-     * For Galileo using C1X + C5X: correction ≈ 0 (CLK consistent with C1X).
-     *
-     * @return Correction to ADD to raw IF pseudorange [m].
-     */
     double osbCorrection(GnssSystem system, int prn,
                           const std::string& codeL1,
                           const std::string& codeL2) const;
+
+    /**
+     * @brief Returns the IF-combined satellite PCO range correction [m].
+     *
+     * Looks up PCO for L1 and L2 (or E1/E5a) from the ANTEX file by
+     * antenna type prefix (e.g. "BLOCK II", "GAL-").  Applies
+     * IF combination: pco_if = alpha*pco_L1 - beta*pco_L2.
+     * Projects the result onto the satellite-to-receiver line-of-sight.
+     *
+     * The correction is ADDED to the modeled range (moving CoM -> APC
+     * increases the range from receiver to satellite phase centre).
+     *
+     * @param system   Constellation.
+     * @param satX/Y/Z Satellite ECEF position [m] (CoM).
+     * @param rxX/Y/Z  Receiver ECEF position [m].
+     * @return         Range correction [m] to ADD to modeled range.
+     */
+    double satPcoCorrection(GnssSystem system,
+                             double satX, double satY, double satZ,
+                             double rxX,  double rxY,  double rxZ) const;
 };
 
 } // namespace loki::gnss

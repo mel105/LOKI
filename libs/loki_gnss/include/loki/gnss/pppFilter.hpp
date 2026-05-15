@@ -16,37 +16,22 @@ namespace loki::gnss {
 /**
  * @brief Configuration for PppFilter.
  *
- * Two-phase startup:
+ * Single-phase startup: carrier phase is used from the first epoch.
+ * Ambiguities are bootstrapped as N = ifPhase - ifCode on first appearance.
+ * The bootstrap absorbs any code bias; the phase residual is near zero by
+ * construction, so the filter drives ZWD and position from phase innovations
+ * (weight ~360 000x larger than code).  Code observations remain in the
+ * update to weakly constrain the clock but cannot corrupt ZWD.
  *
- *   Phase 1 -- code-only (first codeOnlyEpochs epochs):
- *     Only pseudorange is used.  Clock (unknown ~-107 km), position,
- *     and ZWD are estimated from code alone.
- *
- *     Key insight: ZWD must converge to the correct value (~0.13 m)
- *     BEFORE phase observations are introduced.  If ZWD is wrong when
- *     phase starts, the ambiguities absorb the ZWD error and the filter
- *     locks into an incorrect state because phase weight >> code weight.
- *
- *     codeOnlyEpochs = 30 (15 min at 30 s):
- *       Sufficient for ZWD to converge from prior (~0.135 m) to a
- *       value within ~0.1 m of truth with 15 satellites and
- *       sigmaCodeM = 3 m.
- *
- *     qZtdCode = 1e-6 m^2/s:
- *       Larger ZWD process noise during code phase to allow the filter
- *       to adjust ZWD faster from the a priori value.  After phase
- *       observations are added, qZtd (smaller) takes over.
- *
- *   Phase 2 -- code + phase (remaining epochs):
- *     Ambiguities bootstrapped as N = ifPhase - ifCode.
- *     ZWD estimated as slow random walk (qZtd = 1e-8 m^2/s).
+ * ZWD convergence: with ~15 satellites and sigma_phase = 5 mm, ZWD sigma
+ * drops below 1 cm within ~10 minutes.  No code-only pre-filter is needed.
  */
 struct PppFilterConfig {
     // Process noise [m^2/s].
     double qPos    {1.0e-8};   ///< Position (static).
     double qClk    {100.0};    ///< Receiver clock random walk.
-    double qZtd    {1.0e-8};   ///< ZWD random walk (phase phase).
-    double qZtdCode{1.0e-5};   ///< ZWD random walk (code-only phase, larger).
+    double qZtd    {1.0e-5};   ///< ZWD random walk [m^2/s] -- ~1 mm/sqrt(hr).
+    double qZtdCode{1.0e-5};   ///< Unused (kept for ABI compatibility).
     double qAmb    {0.0};      ///< Ambiguity (0 = constant between slips).
 
     // Measurement noise.
@@ -54,7 +39,7 @@ struct PppFilterConfig {
     double sigmaPhaseM{0.005}; ///< IF carrier-phase sigma [m].
 
     // Cycle slip.
-    double gfSlipThreshM{0.05};
+    double gfSlipThreshM{0.35};
 
     // Convergence.
     double convergenceM{0.05};
@@ -62,12 +47,22 @@ struct PppFilterConfig {
     // Initial covariance.
     double p0Pos{100.0};
     double p0Clk{1.0e10};
-    double p0Ztd{0.25};
+    double p0Ztd{0.5};
     double p0Amb{1.0e6};
     double p0Isb{1.0e4};
 
-    // Code-only pre-filter duration.
-    int codeOnlyEpochs{120};    ///< ~15 min at 30 s interval.
+    // Set to 0: use phase from the first epoch (recommended).
+    // Code-only pre-filter is harmful when a systematic code bias exists
+    // because the filter absorbs the bias into ZWD over many epochs.
+    int codeOnlyEpochs{0};
+
+    // ZWD soft constraint sigma [m].
+    // Each epoch a pseudo-observation pulls ZWD toward the Saastamoinen prior.
+    // sigma=0.5 m allows ~50cm deviation from prior before strong pull-back.
+    double sigmaZtdConstraint{0.05};
+
+    // epochs to keep ambiguity after satellite disappears
+    int ambiguityHoldEpochs{5};  
 
     explicit PppFilterConfig() = default;
 };
@@ -117,14 +112,13 @@ struct PppObservation {
  *   [0-2]  X, Y, Z     ECEF [m]
  *   [3]    clk_GPS      receiver clock [m]
  *   [4]    ZTD_wet      zenith wet delay [m]
- *   [5]    ISB_GAL      Galileo ISB [m]
- *   [6+]   N_i          float IF ambiguities [m]  (phase 2 only)
+ *   [5]    ISB_GAL      Galileo ISB [m]  (added on first Galileo obs)
+ *   [6+]   N_i          float IF ambiguities [m]  (added on first appearance)
  *
- * Critical design decision:
- *   ZWD must be estimated from code alone first.  Carrier-phase measurements
- *   have ~360 000x larger weight than code and will lock in whatever ZWD
- *   value exists when they are first introduced.  30 code-only epochs give
- *   ZWD time to converge before this lock-in occurs.
+ * Both code and phase are used from the first epoch.  Ambiguities are
+ * bootstrapped as N = ifPhase - ifCode, which absorbs any code biases.
+ * The phase weight is ~360 000x larger than code, so ZWD is driven by
+ * phase innovations and cannot be corrupted by code biases.
  */
 class PppFilter {
 public:
@@ -134,6 +128,10 @@ public:
 
     void init(double approxX, double approxY, double approxZ,
               double ztdPrior = 0.1);
+
+    /// @brief Sets the receiver clock state after a code-WLS bootstrap.
+    /// Call immediately after init(), before the first timeUpdate().
+    void initClock(double clkM);
 
     void timeUpdate(double dt);
 
@@ -161,11 +159,14 @@ private:
     using SatKey = std::pair<GnssSystem, int>;
     std::map<SatKey, int>    m_ambIdx;
     std::map<SatKey, double> m_prevGf;
+    std::map<SatKey, int>    m_satAbsentCount;
 
     double m_prevX{0.0}, m_prevY{0.0}, m_prevZ{0.0};
+    double m_ztdPrior{0.135};  // Saastamoinen prior [m], set in init()
 
     static constexpr int BASE_DIM = 5;
 
+    // With codeOnlyEpochs=0 this always returns true after init.
     bool usePhase() const { return m_epochCount >= m_cfg.codeOnlyEpochs; }
 
     int  ensureIsbGal();
@@ -176,7 +177,7 @@ private:
     void josephUpdate(const Eigen::MatrixXd& K,
                       const Eigen::MatrixXd& H,
                       const Eigen::MatrixXd& R);
-    bool   detectCycleSlip(GnssSystem system, int prn, double gf_current);
+    bool detectCycleSlip(GnssSystem system, int prn, double gf_current, double elevRad);
     static double elevSigma(double sigmaBase, double elevRad);
 };
 

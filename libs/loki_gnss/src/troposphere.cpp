@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <loki/core/logger.hpp>
+#include <string>
 
 namespace loki::gnss {
 
@@ -158,8 +160,25 @@ double NiellMappingFunction::hydrostatic(double lat_rad, double h_m,
     double mf = continuedFraction(a, b, c, el_rad);
 
     // Height correction.
-    const double ht_corr = continuedFraction(NH_HT_A, NH_HT_B, NH_HT_C, el_rad);
-    mf += (h_m / 1000.0) * ht_corr;   // h_m in km for this correction
+    const double mf_before = mf;
+
+    const double ht_corr = 1.0/std::sin(el_rad)
+                     - continuedFraction(NH_HT_A, NH_HT_B, NH_HT_C, el_rad);
+    mf += (h_m / 1000.0) * ht_corr;
+
+    static bool nmfLogged = false;
+
+    // debug
+    if (!nmfLogged) {
+        LOKI_INFO("PPP_DEBUG NMF: el_deg=" + std::to_string(el_rad*180.0/std::numbers::pi)
+                  + " mf_before_ht=" + std::to_string(mf_before)
+                  + " ht_corr=" + std::to_string(ht_corr)
+                  + " h_km=" + std::to_string(h_m/1000.0)
+                  + " mf_final=" + std::to_string(mf));
+        nmfLogged = true;
+    }
+
+    // end debug
 
     return mf;
 }

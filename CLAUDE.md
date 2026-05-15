@@ -46,6 +46,10 @@ Planned domains (see Long-Term Roadmap section):
 - Discuss approach, propose signatures, wait for approval -- THEN implement.
 - This avoids wasting conversation context on unwanted refactors.
 
+### Critical notes
+- Never apologize. I demand a very professional result. So approach the task very responsibly from the beginning. - CRITICAL
+- Don't write me explanatory sauces like: "look at the line...", "this is actually fine...I want a shortcut, one order and working code, you understand? I'm not interested in your thoughts. When the result is correct, I'll ask" - CRITICAL
+
 ---
 
 ## Workflow Rules

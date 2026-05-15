@@ -1,10 +1,12 @@
 #include <loki/gnss/pppFilter.hpp>
 #include <loki/core/exceptions.hpp>
+#include <loki/core/logger.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <iostream>
+#include <numbers>
+#include <set>
 
 using namespace loki;
 using namespace loki::gnss;
@@ -30,13 +32,14 @@ void PppFilter::init(double approxX, double approxY, double approxZ,
     m_x(2) = approxZ;
     m_x(3) = 0.0;
     m_x(4) = ztdPrior;
+    m_ztdPrior = ztdPrior;
 
     m_P = Eigen::MatrixXd::Zero(BASE_DIM, BASE_DIM);
     m_P(0,0) = m_cfg.p0Pos;
     m_P(1,1) = m_cfg.p0Pos;
     m_P(2,2) = m_cfg.p0Pos;
     m_P(3,3) = m_cfg.p0Clk;
-    m_P(4,4) = m_cfg.p0Ztd;
+    m_P(4,4) = 1.0e-4;   // ZWD starts tightly constrained to prior; grows via qZtd
 
     m_isbGalIdx  = -1;
     m_epochCount = 0;
@@ -47,6 +50,19 @@ void PppFilter::init(double approxX, double approxY, double approxZ,
     m_prevX = approxX;
     m_prevY = approxY;
     m_prevZ = approxZ;
+}
+
+// =============================================================================
+//  initClock
+// =============================================================================
+
+void PppFilter::initClock(double clkM)
+{
+    if (!m_initialised) return;
+    m_x(3)    = clkM;
+    // Tighten clock covariance: bootstrap gives ~1 m accuracy on clock,
+    // so 100 m^2 is a conservative but reasonable initial variance.
+    m_P(3, 3) = 100.0 * 100.0;
 }
 
 // =============================================================================
@@ -61,6 +77,7 @@ void PppFilter::reset()
     m_epochCount = 0;
     m_ambIdx.clear();
     m_prevGf.clear();
+    m_satAbsentCount.clear();
     m_initialised = false;
     m_converged   = false;
 }
@@ -78,12 +95,7 @@ void PppFilter::timeUpdate(double dt)
         m_P(i,i) += m_cfg.qPos * dt;
 
     m_P(3,3) += m_cfg.qClk * dt;
-
-    // Use larger ZWD process noise during code-only phase so that
-    // the filter can adjust ZWD from the a priori value before phase
-    // observations are introduced.
-    const double qZtdNow = usePhase() ? m_cfg.qZtd : m_cfg.qZtdCode;
-    m_P(4,4) += qZtdNow * dt;
+    m_P(4,4) += m_cfg.qZtd * dt;
 
     if (m_isbGalIdx >= 0)
         m_P(m_isbGalIdx, m_isbGalIdx) += 1.0e-8 * dt;
@@ -102,6 +114,19 @@ void PppFilter::timeUpdate(double dt)
 
 bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
 {
+
+    // NEW DEBUG
+    static int dbgFilt = 0;
+    if (dbgFilt < 5) {
+        LOKI_INFO("PPP_DEBUG filter ep=" + std::to_string(dbgFilt)
+                + " x(0)=" + std::to_string(m_x(0))
+                + " x(3)_clk=" + std::to_string(m_x(3))
+                + " x(4)_zwd=" + std::to_string(m_x(4))
+                + " P(4,4)=" + std::to_string(m_P(4,4))
+                + " nObs=" + std::to_string(obs.size()));
+        ++dbgFilt;
+    }
+    // END DEBUG
     if (!m_initialised)
         throw AlgorithmException(
             "PppFilter: call init() before measurementUpdate().");
@@ -112,19 +137,14 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
         if (o.valid) valid.push_back(&o);
 
     if (valid.empty()) return false;
-    // DEBUG
-    if (m_epochCount == m_cfg.codeOnlyEpochs - 1) {
-        std::cerr << "[PHASE_SWITCH] ZWD=" << m_x(4)
-                << " clk=" << m_x(3) << "\n";
-    }
-    // END DEBUG
+
     ++m_epochCount;
     const bool withPhase = usePhase();
 
     // Cycle slip detection (phase only).
     if (withPhase) {
         for (const auto* o : valid) {
-            if (detectCycleSlip(o->system, o->prn, o->gfObs))
+            if (detectCycleSlip(o->system, o->prn, o->gfObs, o->elevation))
                 resetAmbiguity(o->system, o->prn);
         }
         pruneAbsentSatellites(obs);
@@ -135,21 +155,34 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
         if (needsIsb(o->system)) { ensureIsbGal(); break; }
     }
 
-    // Ambiguity bootstrap (phase 2 only).
+    // Ambiguity bootstrap (phase only).
+    // N = ifPhase - modeled_range, where modeled_range uses current filter
+    // state. This gives a near-zero initial phase residual regardless of
+    // position error, preventing position/clock errors from corrupting ZWD.
     if (withPhase) {
+        const double rx0 = m_x(0);
+        const double ry0 = m_x(1);
+        const double rz0 = m_x(2);
         for (const auto* o : valid) {
-            // N_bootstrap = ifPhase - ifCode:
-            // Geometry (rho), clocks, and troposphere cancel in this difference.
-            // The result is the float IF ambiguity + small noise (~few metres).
-            // This works correctly because ZWD has already converged in phase 1.
-            const double bootstrapN = o->ifPhase - o->ifCode;
+            const double ddx = o->satX - rx0;
+            const double ddy = o->satY - ry0;
+            const double ddz = o->satZ - rz0;
+            const double rho = std::sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
+            const int    iIsb   = needsIsb(o->system) ? m_isbGalIdx : -1;
+            const double isbVal = (iIsb >= 0) ? m_x(iIsb) : 0.0;
+            const double modeled = rho + m_x(3) + isbVal
+                                 - o->satClkM
+                                 + o->tropoZhdM
+                                 + m_x(4) * o->mfWet;
+            const double bootstrapN = o->ifPhase - modeled - o->phaseWindupM;
             ensureAmbiguity(o->system, o->prn, bootstrapN);
         }
     }
 
     const int n          = static_cast<int>(m_x.size());
     const int rowsPerSat = withPhase ? 2 : 1;
-    const int m          = static_cast<int>(valid.size()) * rowsPerSat;
+    const int mSat       = static_cast<int>(valid.size()) * rowsPerSat;
+    const int m          = mSat + 1;  // +1 for ZWD soft constraint
 
     Eigen::VectorXd y(m);
     Eigen::MatrixXd H = Eigen::MatrixXd::Zero(m, n);
@@ -173,6 +206,8 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
         const int    iIsb   = needsIsb(o->system) ? m_isbGalIdx : -1;
         const double isbVal = (iIsb >= 0) ? m_x(iIsb) : 0.0;
 
+        // Modeled pseudorange (same for code and phase rows; ambiguity added
+        // for phase row below).
         const double modeled = rho
                              + m_x(3)
                              + isbVal
@@ -194,7 +229,7 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
         const double sc = elevSigma(m_cfg.sigmaCodeM, o->elevation);
         R(ic, ic) = sc * sc;
 
-        // ---- Phase row (phase 2 only) ----
+        // ---- Phase row (when withPhase == true) ----
         if (withPhase) {
             const int ip   = i * rowsPerSat + 1;
             const int iAmb = m_ambIdx.at({o->system, o->prn});
@@ -207,6 +242,7 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
             if (iIsb >= 0) H(ip, iIsb) = 1.0;
             H(ip, iAmb) = 1.0;
 
+            // Phase observation minus modeled range minus ambiguity minus windup.
             y(ip) = o->ifPhase - modeled - m_x(iAmb) - o->phaseWindupM;
 
             const double sp = elevSigma(m_cfg.sigmaPhaseM, o->elevation);
@@ -214,16 +250,39 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
         }
     }
 
-    // Kalman update.
+    // ---- ZWD soft constraint row ----
+    // Pulls ZWD toward Saastamoinen prior with sigma = sigmaZtdConstraint.
+    // Prevents unbounded drift when phase innovations are dominated by
+    // multipath or when geometry is poor.
+    H(mSat, 4) = 1.0;
+    y(mSat)    = m_ztdPrior - m_x(4);
+    R(mSat, mSat) = m_cfg.sigmaZtdConstraint * m_cfg.sigmaZtdConstraint;
+
+    // Kalman update (Joseph-form for numerical stability).
     const Eigen::MatrixXd PHt = m_P * H.transpose();
     const Eigen::MatrixXd S   = H * PHt + R;
     const Eigen::MatrixXd K   = PHt * S.ldlt().solve(
         Eigen::MatrixXd::Identity(m, m));
 
     m_x += K * y;
+
+    // DEBUG
+    static int dbgUpd = 0;
+    if (dbgUpd < 5 || (dbgUpd % 100 == 0 && dbgUpd < 1000)) {
+        LOKI_INFO("PPP_DEBUG update ep=" + std::to_string(dbgUpd)
+                + " x(4)_zwd_after=" + std::to_string(m_x(4))
+                + " x(3)_clk=" + std::to_string(m_x(3))
+                + " y_zwd_constraint=" + std::to_string(y(mSat))
+                + " K_zwd_norm=" + std::to_string(K.col(4).norm())
+                + " stateSize=" + std::to_string(m_x.size()));
+    }
+    ++dbgUpd;
+    
+    // END DEBUG
+
     josephUpdate(K, H, R);
 
-    // Convergence (phase 2 only).
+    // Convergence check (only meaningful once phase is active).
     if (withPhase) {
         const double dx  = m_x(0) - m_prevX;
         const double dy  = m_x(1) - m_prevY;
@@ -236,15 +295,19 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs)
     m_prevY = m_x(1);
     m_prevZ = m_x(2);
 
-    // Na konci measurementUpdate(), pred return, v kódovej fáze:
-    if (!withPhase && m_epochCount <= 5) {
-        double sumY = 0.0;
-        for (int i = 0; i < static_cast<int>(valid.size()); ++i)
-            sumY += y(i);
-        std::cerr << "[CODE_INNOV ep" << m_epochCount 
-                << "] mean_y=" << sumY / valid.size()
-                << " ZWD=" << m_x(4) << "\n";
+    // DEBUG
+    static int dbgRes = 0;
+    if (dbgRes == 100) {
+        for (int i = 0; i < static_cast<int>(valid.size()); ++i) {
+            const int ic = i * rowsPerSat;
+            LOKI_INFO("PPP_DEBUG residual ep=100 prn=" + std::to_string(valid[i]->prn)
+                    + " sys=" + std::to_string(static_cast<int>(valid[i]->system))
+                    + " y_code=" + std::to_string(y(ic))
+                    + (withPhase ? " y_phase=" + std::to_string(y(ic+1)) : ""));
+        }
     }
+    ++dbgRes;
+    // END DEBUG
 
     return m_converged;
 }
@@ -330,6 +393,16 @@ int PppFilter::ensureAmbiguity(GnssSystem system, int prn,
     Eigen::VectorXd xNew(idx + 1);
     xNew.head(idx) = m_x;
     xNew(idx)      = bootstrapValue;
+
+    /* // DEBUG
+    LOKI_INFO("PPP_DEBUG ambiguity bootstrap: prn="
+          + std::to_string(prn)
+          + " sys=" + std::to_string(static_cast<int>(system))
+          + " bootstrapN=" + std::to_string(bootstrapValue)
+          + " idx=" + std::to_string(idx));
+    //END DEBUG
+    */
+   
     m_x = std::move(xNew);
 
     Eigen::MatrixXd pNew = Eigen::MatrixXd::Zero(idx + 1, idx + 1);
@@ -377,23 +450,34 @@ void PppFilter::resetAmbiguity(GnssSystem system, int prn)
 
 void PppFilter::pruneAbsentSatellites(const std::vector<PppObservation>& obs)
 {
-    std::vector<SatKey> visible;
+    // Build set of currently visible satellites.
+    std::set<SatKey> visible;
     for (const auto& o : obs)
-        if (o.valid) visible.emplace_back(o.system, o.prn);
+        if (o.valid) visible.insert({o.system, o.prn});
 
+    // Increment absent counter for satellites not currently visible.
+    // Only remove ambiguity after it has been absent for ambiguityHoldEpochs.
     std::vector<SatKey> toRemove;
     for (const auto& kv : m_ambIdx) {
-        if (!std::any_of(visible.begin(), visible.end(),
-                [&](const SatKey& k){ return k == kv.first; }))
-            toRemove.push_back(kv.first);
+        if (visible.count(kv.first) == 0) {
+            m_satAbsentCount[kv.first]++;
+            if (m_satAbsentCount[kv.first] >= m_cfg.ambiguityHoldEpochs)
+                toRemove.push_back(kv.first);
+        } else {
+            m_satAbsentCount.erase(kv.first);
+        }
     }
 
+    // Remove in reverse index order to keep indices consistent.
     std::sort(toRemove.begin(), toRemove.end(),
         [this](const SatKey& a, const SatKey& b){
             return m_ambIdx.at(a) > m_ambIdx.at(b);
         });
-    for (const auto& k : toRemove)
+    for (const auto& k : toRemove) {
+        m_satAbsentCount.erase(k);
         removeAmbiguity(k.first, k.second);
+    }
+    
 }
 
 // =============================================================================
@@ -415,7 +499,8 @@ void PppFilter::josephUpdate(const Eigen::MatrixXd& K,
 //  detectCycleSlip
 // =============================================================================
 
-bool PppFilter::detectCycleSlip(GnssSystem system, int prn, double gf_current)
+bool PppFilter::detectCycleSlip(GnssSystem system, int prn,
+                                  double gf_current, double elevRad)
 {
     const SatKey key{system, prn};
     const auto it = m_prevGf.find(key);
@@ -423,9 +508,26 @@ bool PppFilter::detectCycleSlip(GnssSystem system, int prn, double gf_current)
         m_prevGf[key] = gf_current;
         return false;
     }
+
     const double delta = std::abs(gf_current - it->second);
     it->second = gf_current;
-    return delta > m_cfg.gfSlipThreshM;
+
+    // Elevation-dependent threshold: at low elevations ionospheric
+    // gradient can cause GF to drift ~0.02-0.03 m/epoch even without
+    // a cycle slip, so we scale the threshold by 1/sin(el).
+    const double sinEl  = std::sin(std::max(elevRad, 0.1));
+    const double thresh = m_cfg.gfSlipThreshM / sinEl;
+
+    // debug
+    //if ((prn == 16 || prn == 7) && system == GnssSystem::GPS) {
+      //  LOKI_INFO("PPP_DEBUG GF prn=" + std::to_string(prn)
+        //          + " delta=" + std::to_string(delta)
+          //        + " thresh=" + std::to_string(thresh)
+            //      + " slip=" + (delta > thresh ? "YES" : "no"));
+    //}
+    // end debug
+ 
+    return delta > thresh;
 }
 
 // =============================================================================

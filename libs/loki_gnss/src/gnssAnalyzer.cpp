@@ -13,7 +13,6 @@
 #include <loki/gnss/antexParser.hpp>
 #include <loki/gnss/sp3Orbit.hpp>
 #include <loki/gnss/pppSolver.hpp>
-#include <loki/gnss/troposphere.hpp>
 #include <loki/gnss/relativity.hpp>
 #include <loki/gnss/obsBiasParser.hpp>
 #include <loki/geodesy/coordTransform.hpp>
@@ -60,9 +59,6 @@ ParseResult GnssAnalyzer::_buildParseSummary(const NavFile& nav,
     os.nEpochs      = obs.epochs.size();
     os.intervalSec  = obs.interval;
 
-    // Collect observation codes from the first epoch that has each constellation.
-    // ObsFile stores obsCodes per system in the header via the epoch satellite list.
-    // We derive them from what satellites actually appear and what obs they carry.
     if (!obs.epochs.empty()) {
         os.spanStartMjd = obs.epochs.front().time.toTimeStamp().mjd();
         os.spanEndMjd   = obs.epochs.back().time.toTimeStamp().mjd();
@@ -70,7 +66,6 @@ ParseResult GnssAnalyzer::_buildParseSummary(const NavFile& nav,
         std::size_t minS = SIZE_MAX, maxS = 0;
         double sumS = 0.0;
 
-        // Used to collect unique obs codes per constellation char
         std::map<char, std::set<std::string>> codesSeen;
 
         for (const auto& ep : obs.epochs) {
@@ -101,7 +96,6 @@ ParseResult GnssAnalyzer::_buildParseSummary(const NavFile& nav,
         os.maxSatsPerEpoch  = maxS;
         os.meanSatsPerEpoch = sumS / static_cast<double>(os.nEpochs);
 
-        // Convert sets to sorted vectors
         for (const auto& [ch, codes] : codesSeen)
             os.obsCodes[ch] = std::vector<std::string>(codes.begin(), codes.end());
     }
@@ -154,23 +148,24 @@ std::vector<SppResult> GnssAnalyzer::_runSpp(const NavFile& nav,
 // =============================================================================
 //  _runPpp
 // =============================================================================
+
 std::vector<PppResult> GnssAnalyzer::_runPpp(const NavFile& /*nav*/,
                                                const ObsFile&  obs) const
 {
     const GnssPppConfig& pppCfg = m_cfg.gnss.ppp;
- 
+
     LOKI_INFO("PPP: loading SP3: " + pppCfg.sp3File);
     Sp3Parser sp3Parser;
     Sp3File sp3 = sp3Parser.parseGz(pppCfg.sp3File);
- 
+
     LOKI_INFO("PPP: loading CLK: " + pppCfg.clkFile);
     ClkParser clkParser;
     ClkFile clk = clkParser.parseGz(pppCfg.clkFile);
- 
+
     LOKI_INFO("PPP: SP3 epochs: " + std::to_string(sp3.epochs.size())
               + "  CLK records: " + std::to_string(clk.records.size()));
- 
-    // Load OSB (Observable-Specific Biases) if available.
+
+    // Load OSB (Observable-Specific Biases).
     OsbFile osb;
     if (!pppCfg.osbFile.empty()) {
         try {
@@ -182,41 +177,61 @@ std::vector<PppResult> GnssAnalyzer::_runPpp(const NavFile& /*nav*/,
                          + " -- proceeding without bias correction.");
         }
     }
- 
+
+    // Load ANTEX for satellite PCO corrections.
+    AntexFile antex;
+    if (!pppCfg.antexFile.empty()) {
+        try {
+            AntexParser antexParser;
+            antex = antexParser.parse(pppCfg.antexFile);
+            // Count satellite antenna entries for diagnostics.
+            std::size_t nSat = 0;
+            for (const auto& a : antex.antennas)
+                if (a.satellite) ++nSat;
+            LOKI_INFO("PPP: ANTEX loaded: " + std::to_string(antex.antennas.size())
+                      + " entries (" + std::to_string(nSat) + " satellite).");
+        } catch (const LOKIException& ex) {
+            LOKI_WARNING("PPP: ANTEX load failed: " + std::string(ex.what())
+                         + " -- proceeding without PCO correction.");
+        }
+    }
+
     auto orbit = std::make_shared<Sp3Orbit>(std::move(sp3), std::move(clk));
- 
+
     PppSolverConfig solverCfg;
     solverCfg.constellations = m_cfg.gnss.constellations;
     solverCfg.elevMaskDeg    = m_cfg.gnss.elevationMaskDeg;
     solverCfg.phaseWindup    = m_cfg.gnss.corrections.phaseWindup;
     solverCfg.pcoPcv         = m_cfg.gnss.corrections.pcoPcv;
     solverCfg.applyOsb       = !osb.records.empty();
- 
-    PppSolver solver(solverCfg, orbit, std::move(osb));
+
+    PppSolver solver(solverCfg, orbit, std::move(osb), std::move(antex));
     return solver.solveAll(obs, {}, m_cfg.gnss);
 }
- 
+
+// =============================================================================
+//  _computePppSummary
+// =============================================================================
+
 PppSummary GnssAnalyzer::_computePppSummary(
     const std::vector<PppResult>& results) const
 {
     PppSummary s;
     s.nEpochsTotal = results.size();
- 
-    // Reference position.
+
     const bool hasRef = m_cfg.gnss.referencePosition.enabled;
     if (hasRef) {
-        s.hasReference  = true;
-        s.refX          = m_cfg.gnss.referencePosition.x;
-        s.refY          = m_cfg.gnss.referencePosition.y;
-        s.refZ          = m_cfg.gnss.referencePosition.z;
+        s.hasReference    = true;
+        s.refX            = m_cfg.gnss.referencePosition.x;
+        s.refY            = m_cfg.gnss.referencePosition.y;
+        s.refZ            = m_cfg.gnss.referencePosition.z;
         s.referenceSource = m_cfg.gnss.referencePosition.source;
     }
- 
-    // Collect post-convergence epochs.
+
     std::vector<double> xs, ys, zs, clks, ztds, nsats;
     std::vector<double> errors3d;
     double firstConvSec = -1.0;
- 
+
     for (const auto& r : results) {
         if (!r.valid) continue;
         ++s.nEpochsValid;
@@ -230,7 +245,7 @@ PppSummary GnssAnalyzer::_computePppSummary(
             clks.push_back(r.clkBiasM);
             ztds.push_back(r.ztdWetM);
             nsats.push_back(static_cast<double>(r.nSats));
- 
+
             if (hasRef) {
                 const double ex = r.x - s.refX;
                 const double ey = r.y - s.refY;
@@ -239,12 +254,12 @@ PppSummary GnssAnalyzer::_computePppSummary(
             }
         }
     }
- 
+
     if (!results.empty() && firstConvSec > 0.0) {
         const double startSec = results.front().time.totalSeconds();
         s.convergenceTimeMin = (firstConvSec - startSec) / 60.0;
     }
- 
+
     auto mean = [](const std::vector<double>& v) {
         if (v.empty()) return 0.0;
         double sum = 0.0;
@@ -264,7 +279,7 @@ PppSummary GnssAnalyzer::_computePppSummary(
         for (double x : v) ss += x*x;
         return std::sqrt(ss / static_cast<double>(v.size()));
     };
- 
+
     s.meanX        = mean(xs);
     s.meanY        = mean(ys);
     s.meanZ        = mean(zs);
@@ -274,16 +289,13 @@ PppSummary GnssAnalyzer::_computePppSummary(
     s.meanClkBiasM = mean(clks);
     s.meanZtdWetM  = mean(ztds);
     s.meanNSats    = mean(nsats);
- 
+
     if (hasRef && !errors3d.empty()) {
         s.mean3dErrorM = mean(errors3d);
         s.std3dErrorM  = stddev(errors3d);
         s.rmsErrorM    = rms(errors3d);
     }
- 
-    // Geodetic mean (approximate: convert mean ECEF).
-    // (Proper conversion uses ecef2geod -- left to caller if needed.)
- 
+
     return s;
 }
 
@@ -335,7 +347,6 @@ SppSummary GnssAnalyzer::_computeSppSummary(
     s.meanPdop     /= n;
     s.meanNSats    /= n;
 
-    // Mean geodetic position from mean ECEF
     {
         const loki::geodesy::EcefPoint ep{s.meanX, s.meanY, s.meanZ};
         const loki::geodesy::GeodPoint gp = loki::geodesy::ecef2geod(ep, wgs84);
@@ -352,7 +363,6 @@ SppSummary GnssAnalyzer::_computeSppSummary(
         s.refZ            = gcfg.referencePosition.z;
         s.referenceSource = gcfg.referencePosition.source;
 
-        // Reference geodetic
         {
             const loki::geodesy::EcefPoint ep{s.refX, s.refY, s.refZ};
             const loki::geodesy::GeodPoint gp = loki::geodesy::ecef2geod(ep, wgs84);
