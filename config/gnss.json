@@ -81,9 +81,9 @@
         },
 
         "figures": {
-            "satcount":              true,
-            "elevation":             true,
-            "skyplot_constellation": true,
+            "satcount":              false,
+            "elevation":             false,
+            "skyplot_constellation": false,
             "skyplot_prn":           false,
             "dop":                   false,
 
@@ -97,10 +97,10 @@
             },
 
             "ppp": {
-                "position_error": true,
-                "troposphere":    true,
+                "position_error": false,
+                "troposphere":    false,
                 "ambiguity":      false,
-                "clock_bias":     true
+                "clock_bias":     false
             },
 
             "rtk": {

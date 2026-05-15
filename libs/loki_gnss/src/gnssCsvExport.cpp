@@ -276,11 +276,15 @@ void GnssCsvExport::exportPppEpochs(const GnssResult& result) const
         const loki::geodesy::EcefPoint ep{r.x, r.y, r.z};
         const loki::geodesy::GeodPoint gp = loki::geodesy::ecef2geod(ep, wgs84);
 
-        auto rms = [](const std::vector<double>& v) -> double {
-            if (v.empty()) return 0.0;
-            double s = 0.0;
-            for (double x : v) s += x * x;
-            return std::sqrt(s / static_cast<double>(v.size()));
+        // Compute RMS code and phase residuals from per-satellite residuals.
+        auto residualRms = [&](bool phase) -> double {
+            double s = 0.0; int n = 0;
+            for (const auto& sr : r.satResiduals) {
+                if (phase && !sr.hasPhase) continue;
+                const double v = phase ? sr.phaseResM : sr.codeResM;
+                s += v * v; ++n;
+            }
+            return (n > 0) ? std::sqrt(s / static_cast<double>(n)) : 0.0;
         };
 
         f << std::fixed << std::setprecision(9) << r.time.toTimeStamp().mjd() << ";"
@@ -294,8 +298,8 @@ void GnssCsvExport::exportPppEpochs(const GnssResult& result) const
           << r.ztdTotalM << ";"
           << r.nSats << ";"
           << (r.converged ? 1 : 0) << ";"
-          << std::setprecision(5) << rms(r.residualsCode)  << ";"
-          << rms(r.residualsPhase) << "\n";
+          << std::setprecision(5) << residualRms(false) << ";"
+          << residualRms(true) << "\n";
     }
     LOKI_INFO("GnssCsvExport: " + path);
 }

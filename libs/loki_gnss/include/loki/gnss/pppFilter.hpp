@@ -41,28 +41,29 @@ struct PppFilterConfig {
     // Cycle slip.
     double gfSlipThreshM{0.35};
 
-    // Convergence.
-    double convergenceM{0.05};
+    // Convergence: position shift must stay below convergenceM for
+    // convergenceEpochs consecutive epochs before m_converged is set.
+    double convergenceM     {0.05};
+    int    convergenceEpochs{10};
 
     // Initial covariance.
     double p0Pos{100.0};
     double p0Clk{1.0e10};
-    double p0Ztd{0.5};
+    double p0Ztd{0.25};    ///< Initial ZWD variance [m^2] -- sigma ~0.5 m.
     double p0Amb{1.0e6};
     double p0Isb{1.0e4};
 
     // Set to 0: use phase from the first epoch (recommended).
-    // Code-only pre-filter is harmful when a systematic code bias exists
-    // because the filter absorbs the bias into ZWD over many epochs.
     int codeOnlyEpochs{0};
 
-    // ZWD soft constraint sigma [m].
-    // Each epoch a pseudo-observation pulls ZWD toward the Saastamoinen prior.
-    // sigma=0.5 m allows ~50cm deviation from prior before strong pull-back.
-    double sigmaZtdConstraint{0.05};
+    // ZWD soft constraint: pseudo-observation pulling ZWD toward prior.
+    // sigma=0.5 m allows the filter to deviate substantially from the
+    // Saastamoinen prior and estimate the true ZWD from phase innovations.
+    // Use 0.0 to disable the constraint entirely (not recommended).
+    double sigmaZtdConstraint{0.5};
 
-    // epochs to keep ambiguity after satellite disappears
-    int ambiguityHoldEpochs{5};  
+    // Epochs to keep an ambiguity state after satellite disappears.
+    int ambiguityHoldEpochs{5};
 
     explicit PppFilterConfig() = default;
 };
@@ -102,6 +103,21 @@ struct PppObservation {
 };
 
 // =============================================================================
+//  PppSatResidual
+// =============================================================================
+
+/**
+ * @brief Post-fit residuals for one satellite in one epoch.
+ */
+struct PppSatResidual {
+    GnssSystem system{GnssSystem::UNKNOWN};
+    int        prn{0};
+    double     codeResM {0.0};   ///< Post-fit code residual [m].
+    double     phaseResM{0.0};   ///< Post-fit phase residual [m].
+    bool       hasPhase {false};
+};
+
+// =============================================================================
 //  PppFilter
 // =============================================================================
 
@@ -130,18 +146,33 @@ public:
               double ztdPrior = 0.1);
 
     /// @brief Sets the receiver clock state after a code-WLS bootstrap.
-    /// Call immediately after init(), before the first timeUpdate().
     void initClock(double clkM);
 
     void timeUpdate(double dt);
 
-    bool measurementUpdate(const std::vector<PppObservation>& obs);
+    /**
+     * @brief Kalman measurement update.
+     *
+     * @param obs          Vector of valid IF observations for this epoch.
+     * @param residualsOut If non-null, filled with per-satellite post-fit
+     *                     residuals (code + phase) after the update.
+     * @return             True when the filter has converged.
+     */
+    bool measurementUpdate(const std::vector<PppObservation>& obs,
+                           std::vector<PppSatResidual>* residualsOut = nullptr);
 
     void   position(double& x, double& y, double& z) const;
     double clockBiasM()  const;
     double ztdWetM()     const;
     double isbGalM()     const;
-    void   positionVariance(double& vx, double& vy, double& vz) const;
+
+    /// @brief Returns formal sigma [m] for each position component.
+    void   positionSigma(double& sx, double& sy, double& sz) const;
+    /// @brief Returns formal sigma [m] for ZWD.
+    double ztdSigmaM()   const;
+    /// @brief Returns formal sigma [m] for receiver clock.
+    double clkSigmaM()   const;
+
     bool   converged() const { return m_converged; }
 
     void resetAmbiguity(GnssSystem system, int prn);
@@ -154,6 +185,7 @@ private:
     bool            m_initialised{false};
     bool            m_converged{false};
     int             m_epochCount{0};
+    int             m_convergenceStreak{0};  ///< Consecutive epochs below threshold.
     int             m_isbGalIdx{-1};
 
     using SatKey = std::pair<GnssSystem, int>;
@@ -162,11 +194,10 @@ private:
     std::map<SatKey, int>    m_satAbsentCount;
 
     double m_prevX{0.0}, m_prevY{0.0}, m_prevZ{0.0};
-    double m_ztdPrior{0.135};  // Saastamoinen prior [m], set in init()
+    double m_ztdPrior{0.135};
 
     static constexpr int BASE_DIM = 5;
 
-    // With codeOnlyEpochs=0 this always returns true after init.
     bool usePhase() const { return m_epochCount >= m_cfg.codeOnlyEpochs; }
 
     int  ensureIsbGal();
@@ -177,7 +208,8 @@ private:
     void josephUpdate(const Eigen::MatrixXd& K,
                       const Eigen::MatrixXd& H,
                       const Eigen::MatrixXd& R);
-    bool detectCycleSlip(GnssSystem system, int prn, double gf_current, double elevRad);
+    bool detectCycleSlip(GnssSystem system, int prn,
+                          double gf_current, double elevRad);
     static double elevSigma(double sigmaBase, double elevRad);
 };
 

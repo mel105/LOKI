@@ -1,0 +1,136 @@
+[LOKI] Building (incremental)...
+mingw32-make: Entering directory 'C:/Users/eliasmichal/Documents/Osobne/LOKI/build/debug'
+[ 17%] Built target loki_core
+[ 20%] Built target loki_outlier
+[ 25%] Built target loki_filter
+[ 26%] Built target loki_stationarity
+[ 31%] Built target loki_regression
+[ 34%] Built target loki_spectral
+[ 38%] Built target loki_decomposition
+[ 39%] Built target loki_ssa
+[ 42%] Built target loki_kalman
+[ 44%] Built target loki_qc
+[ 47%] Built target loki_evt
+[ 49%] Built target loki_clustering
+[ 50%] Built target loki_kriging
+[ 50%] Built target loki_spline
+[ 53%] Built target loki_spatial
+[ 55%] Built target loki_geodesy
+[ 60%] Built target loki_multivariate
+[ 61%] Built target loki_filter_app
+[ 63%] Built target loki_stationarity_app
+[ 63%] Built target loki_regression_app
+[ 65%] Built target loki_ssa_app
+[ 65%] Built target loki_decomposition_app
+[ 66%] Built target loki_spectral_app
+[ 66%] Built target loki_kalman_app
+[ 68%] Built target loki_qc_app
+[ 69%] Built target loki_clustering_app
+[ 69%] Built target loki_evt_app
+[ 71%] Built target loki_kriging_app
+[ 73%] Built target loki_spline_app
+[ 73%] Built target loki_spatial_app
+[ 73%] Built target loki_geodesy_app
+[ 74%] Built target loki_multivariate_app
+[ 74%] Built target demo_sampling
+[ 74%] Built target demo_bootstrap
+[ 76%] Built target demo_permutation
+[ 80%] Built target loki_homogeneity
+[ 84%] Built target loki_arima
+[ 84%] Built target homogenization
+[ 85%] Built target loki
+[ 85%] Built target loki_outlier_app
+[ 85%] Built target loki_arima_app
+[ 85%] Building CXX object libs/loki_gnss/CMakeFiles/loki_gnss.dir/src/pppFilter.cpp.obj
+[ 88%] Built target loki_simulate
+[ 88%] Built target loki_simulate_app
+[ 88%] Linking CXX static library libloki_gnss.a
+[100%] Built target loki_gnss
+[100%] Linking CXX executable loki_gnss.exe
+[100%] Built target loki_gnss_app
+mingw32-make: Leaving directory 'C:/Users/eliasmichal/Documents/Osobne/LOKI/build/debug'
+[LOKI] Running: build/debug/apps/loki_gnss/loki_gnss.exe config/gnss.json
+-----------------------------------------------
+[2026-05-15 10:49:58.921] [INFO   ] [load                  ] Loaded config: config/gnss.json
+[2026-05-15 10:49:58.922] [INFO   ] [main                  ] loki_gnss 0.1.0 started.
+[2026-05-15 10:49:58.923] [INFO   ] [main                  ] Config:  config/gnss.json
+[2026-05-15 10:49:58.923] [INFO   ] [main                  ] Station: GOPE
+[2026-05-15 10:49:58.923] [INFO   ] [main                  ] Task:    ppp
+[2026-05-15 10:49:58.923] [INFO   ] [main                  ] Stage:   PPP enabled (SP3 + CLK).
+[2026-05-15 10:49:58.923] [INFO   ] [main                  ] Parsing NAV: C:/Users/eliasmichal/Documents/Osobne/INPUT/GNSS/gnss_data/nav/2024/075/BRDC00IGS_R_20240750000_01D_MN.rnx.gz
+[2026-05-15 10:49:59.966] [INFO   ] [main                  ] NAV: GPS=566 GAL=10747 GLO=1206
+[2026-05-15 10:49:59.966] [INFO   ] [main                  ] Parsing OBS: C:/Users/eliasmichal/Documents/Osobne/INPUT/GNSS/gnss_data/obs/2024/075/gope/GOPE00CZE_R_20240750000_01D_30S_MO.crx.gz
+[2026-05-15 10:50:03.166] [INFO   ] [main                  ] OBS: 2880 epochs.
+[2026-05-15 10:50:03.699] [INFO   ] [_runPpp               ] PPP: loading SP3: C:/Users/eliasmichal/Documents/Osobne\INPUT/GNSS/gnss_data/sp3/2024/075/COD0MGXFIN_20240750000_01D_05M_ORB.SP3.gz
+[2026-05-15 10:50:04.360] [INFO   ] [_runPpp               ] PPP: loading CLK: C:/Users/eliasmichal/Documents/Osobne\INPUT/GNSS/gnss_data/clk/2024/075/COD0MGXFIN_20240750000_01D_30S_CLK.CLK.gz
+[2026-05-15 10:50:07.793] [INFO   ] [_runPpp               ] PPP: SP3 epochs: 289  CLK records: 346314
+[2026-05-15 10:50:07.882] [INFO   ] [_runPpp               ] PPP: OSB records: 727
+[2026-05-15 10:50:32.911] [INFO   ] [_runPpp               ] PPP: ANTEX loaded: 899 entries (406 satellite).
+[2026-05-15 10:50:33.125] [INFO   ] [solveAll              ] [!!! NOVY DEBUG]PPP_DEBUG tropo: ZHD_zen=2.148757 ZWD_prior=0.135042 lat_deg=49.913702 h_m=592.713370
+[2026-05-15 10:50:33.125] [INFO   ] [solveAll              ] PppSolver: lat=49.913702 deg  h=592.713370 m  ZHD=2.148757 m  ZWD_prior=0.135042 m  OSB_records=727  ANTEX_entries=899  antDeltaH=0.111400 m
+[2026-05-15 10:50:33.125] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=20 corr=-1.683292
+[2026-05-15 10:50:33.125] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=3 corr=0.601394
+[2026-05-15 10:50:33.125] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=11 corr=0.352136
+[2026-05-15 10:50:33.125] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=26 corr=0.083340
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=19 corr=-1.729617
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=4 corr=0.323440
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=6 corr=0.425249
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=16 corr=-1.161499
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=7 corr=0.097001
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=9 corr=-0.272535
+[2026-05-15 10:50:33.126] [INFO   ] [formIfObs             ] PPP_DEBUG OSB prn=30 corr=-0.356486
+[2026-05-15 10:50:33.131] [INFO   ] [solveAll              ] PppSolver bootstrap: clk=-106762.930777 m  pos_shift=8.968014 m
+[2026-05-15 10:50:33.131] [INFO   ] [solveAll              ] [!!! NOVY DEBUG] PPP_DEBUG bootstrap: bsX=3979314.470464 bsY=1050313.463822 bsZ=4857075.640214 bsClk=-106762.930777
+[2026-05-15 10:50:33.131] [INFO   ] [solveAll              ] PPP_DEBUG MF: el_deg=14.055855 el_rad=0.245321 latRad=0.871158 hM=592.713370 doy=74 MF_h=6.481741 ZHD=2.148757 tropoZhdM=13.927684
+[2026-05-15 10:50:33.133] [INFO   ] [solveAll              ] PPP_DEBUG ep=0 prn=20 ifCode=24169204.560600 ifPhase=24169213.565905 diff=9.005305 tropoZhdM=13.927684 mfWet=4.080152 el_deg=14.055855
+[2026-05-15 10:50:33.133] [INFO   ] [measurementUpdate     ] PPP_DEBUG filter ep=0 x(0)=3979314.470464 x(3)_clk=-106762.930777 x(4)_zwd=0.135042 P(4,4)=0.009100 nObs=9
+[2026-05-15 10:50:33.134] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=0 x(4)_zwd_after=0.134494 x(3)_clk=-106766.430810 y_zwd_constraint=0.000000 K_zwd_norm=1.136147 stateSize=14
+[2026-05-15 10:50:33.136] [INFO   ] [solveAll              ] PPP_DEBUG ep=1 prn=20 ifCode=24149577.125776 ifPhase=24149584.062250 diff=6.936474 tropoZhdM=13.748138 mfWet=4.027297 el_deg=14.247805
+[2026-05-15 10:50:33.136] [INFO   ] [measurementUpdate     ] PPP_DEBUG filter ep=1 x(0)=3979312.814453 x(3)_clk=-106766.430810 x(4)_zwd=0.134494 P(4,4)=0.013762 nObs=9
+[2026-05-15 10:50:33.136] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=1 x(4)_zwd_after=0.128824 x(3)_clk=-106771.596387 y_zwd_constraint=0.000548 K_zwd_norm=0.427271 stateSize=14
+[2026-05-15 10:50:33.138] [INFO   ] [solveAll              ] PPP_DEBUG ep=2 prn=20 ifCode=24129959.111762 ifPhase=24129967.067288 diff=7.955526 tropoZhdM=13.573094 mfWet=3.975776 el_deg=14.439945
+[2026-05-15 10:50:33.138] [INFO   ] [measurementUpdate     ] PPP_DEBUG filter ep=2 x(0)=3979313.327852 x(3)_clk=-106771.596387 x(4)_zwd=0.128824 P(4,4)=0.012240 nObs=9
+[2026-05-15 10:50:33.138] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=2 x(4)_zwd_after=0.122174 x(3)_clk=-106771.300678 y_zwd_constraint=0.006218 K_zwd_norm=0.241648 stateSize=14
+[2026-05-15 10:50:33.140] [INFO   ] [solveAll              ] PPP_DEBUG ep=3 prn=20 ifCode=24110353.485317 ifPhase=24110362.806203 diff=9.320886 tropoZhdM=13.402393 mfWet=3.925541 el_deg=14.632267
+[2026-05-15 10:50:33.140] [INFO   ] [measurementUpdate     ] PPP_DEBUG filter ep=3 x(0)=3979314.023925 x(3)_clk=-106771.300678 x(4)_zwd=0.122174 P(4,4)=0.011442 nObs=9
+[2026-05-15 10:50:33.140] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=3 x(4)_zwd_after=0.108049 x(3)_clk=-106771.421983 y_zwd_constraint=0.012868 K_zwd_norm=0.155017 stateSize=14
+[2026-05-15 10:50:33.142] [INFO   ] [solveAll              ] PPP_DEBUG ep=4 prn=20 ifCode=24090762.952297 ifPhase=24090771.682339 diff=8.730042 tropoZhdM=13.235881 mfWet=3.876546 el_deg=14.824770
+[2026-05-15 10:50:33.142] [INFO   ] [measurementUpdate     ] PPP_DEBUG filter ep=4 x(0)=3979313.910602 x(3)_clk=-106771.421983 x(4)_zwd=0.108049 P(4,4)=0.010950 nObs=9
+[2026-05-15 10:50:33.142] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=4 x(4)_zwd_after=0.088913 x(3)_clk=-106771.572214 y_zwd_constraint=0.026992 K_zwd_norm=0.108313 stateSize=14
+[2026-05-15 10:50:33.404] [INFO   ] [solveAll              ] PPP_DEBUG ep=100 prn=20 ifCode=22325518.026391 ifPhase=22325525.778832 diff=7.752441 tropoZhdM=6.112079 mfWet=1.786639 el_deg=33.986220
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=100 x(4)_zwd_after=-0.698271 x(3)_clk=-106764.744160 y_zwd_constraint=0.835696 K_zwd_norm=0.002161 stateSize=13
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=20 sys=0 y_code=-1.741022 y_phase=-0.370395
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=11 sys=0 y_code=-1.797904 y_phase=0.461529
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=4 sys=0 y_code=-5.633947 y_phase=-0.703769
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=6 sys=0 y_code=-0.985571 y_phase=-0.135516
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=16 sys=0 y_code=-3.736580 y_phase=1.031273
+[2026-05-15 10:50:33.404] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=7 sys=0 y_code=6.388903 y_phase=-0.539273
+[2026-05-15 10:50:33.405] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=9 sys=0 y_code=-0.228432 y_phase=0.347964
+[2026-05-15 10:50:33.405] [INFO   ] [measurementUpdate     ] PPP_DEBUG residual ep=100 prn=30 sys=0 y_code=2.786522 y_phase=0.117600
+[2026-05-15 10:50:33.579] [INFO   ] [solveAll              ] PPP_DEBUG ep=200 prn=20 ifCode=20993444.557747 ifPhase=20993454.374473 diff=9.816725 tropoZhdM=4.268245 mfWet=1.247294 el_deg=53.271185
+[2026-05-15 10:50:33.579] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=200 x(4)_zwd_after=-2.459553 x(3)_clk=-106758.401541 y_zwd_constraint=2.601782 K_zwd_norm=0.000160 stateSize=14
+[2026-05-15 10:50:33.767] [INFO   ] [solveAll              ] PPP_DEBUG ep=300 prn=20 ifCode=20578369.516896 ifPhase=20578378.538696 diff=9.021801 tropoZhdM=3.917625 mfWet=1.144782 el_deg=60.852646
+[2026-05-15 10:50:33.767] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=300 x(4)_zwd_after=-3.143775 x(3)_clk=-106761.648548 y_zwd_constraint=3.287471 K_zwd_norm=0.000338 stateSize=13
+[2026-05-15 10:50:33.966] [INFO   ] [solveAll              ] PPP_DEBUG ep=400 prn=15 ifCode=23779714.592495 ifPhase=23779655.385460 diff=-59.207034 tropoZhdM=14.077475 mfWet=4.124254 el_deg=13.899540
+[2026-05-15 10:50:33.967] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=400 x(4)_zwd_after=1.624074 x(3)_clk=-106780.601150 y_zwd_constraint=-1.491139 K_zwd_norm=0.001087 stateSize=16
+[2026-05-15 10:50:34.200] [INFO   ] [solveAll              ] PPP_DEBUG ep=500 prn=15 ifCode=21859635.599426 ifPhase=21859577.146516 diff=-58.452910 tropoZhdM=6.011522 mfWet=1.757212 el_deg=34.637971
+[2026-05-15 10:50:34.201] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=500 x(4)_zwd_after=0.420618 x(3)_clk=-106785.788778 y_zwd_constraint=-0.302034 K_zwd_norm=0.001307 stateSize=14
+[2026-05-15 10:50:34.437] [INFO   ] [solveAll              ] PPP_DEBUG ep=600 prn=15 ifCode=20517839.712808 ifPhase=20517780.913564 diff=-58.799244 tropoZhdM=4.121068 mfWet=1.204262 el_deg=56.115749
+[2026-05-15 10:50:34.438] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=600 x(4)_zwd_after=-1.257176 x(3)_clk=-106775.031082 y_zwd_constraint=1.398114 K_zwd_norm=0.000335 stateSize=14
+[2026-05-15 10:50:34.688] [INFO   ] [solveAll              ] PPP_DEBUG ep=700 prn=15 ifCode=20155950.724493 ifPhase=20155891.936227 diff=-58.788266 tropoZhdM=3.704003 mfWet=1.082331 el_deg=67.493922
+[2026-05-15 10:50:34.688] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=700 x(4)_zwd_after=-0.795733 x(3)_clk=-106772.229437 y_zwd_constraint=0.940075 K_zwd_norm=0.000177 stateSize=14
+[2026-05-15 10:50:34.931] [INFO   ] [solveAll              ] PPP_DEBUG ep=800 prn=15 ifCode=20946021.243498 ifPhase=20945963.617480 diff=-57.626019 tropoZhdM=4.288027 mfWet=1.253078 el_deg=52.917549
+[2026-05-15 10:50:34.932] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=800 x(4)_zwd_after=-0.055380 x(3)_clk=-106775.361540 y_zwd_constraint=0.227136 K_zwd_norm=0.000167 stateSize=15
+[2026-05-15 10:50:35.167] [INFO   ] [solveAll              ] PPP_DEBUG ep=900 prn=15 ifCode=22670111.817623 ifPhase=22670052.236115 diff=-59.581508 tropoZhdM=6.716603 mfWet=1.963580 el_deg=30.558951
+[2026-05-15 10:50:35.167] [INFO   ] [measurementUpdate     ] PPP_DEBUG update ep=900 x(4)_zwd_after=-0.050175 x(3)_clk=-106779.873184 y_zwd_constraint=0.181782 K_zwd_norm=0.000564 stateSize=16
+[2026-05-15 10:50:39.319] [INFO   ] [solveAll              ] PppSolver: processed 2880 epochs, 2880 results.
+[2026-05-15 10:50:39.382] [INFO   ] [write                 ] GnssProtocol: written to C:/Users/eliasmichal/Documents/Osobne\OUTPUT\PROTOCOLS/gnss_GOPE_ppp_protocol.txt
+[2026-05-15 10:50:39.808] [INFO   ] [plotSatCount          ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_satcount_timeseries.png
+[2026-05-15 10:50:40.243] [INFO   ] [plotElevation         ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_elevation_timeseries.png
+[2026-05-15 10:50:42.431] [INFO   ] [_plotSkyplotImpl      ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_skyplot_polar.png
+[2026-05-15 10:50:43.369] [INFO   ] [plotPppPositionError  ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_ppp_position_error.png
+[2026-05-15 10:50:44.114] [INFO   ] [plotPppTroposphere    ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_ppp_troposphere.png
+[2026-05-15 10:50:44.713] [INFO   ] [plotPppClockBias      ] PlotGnss: C:/Users/eliasmichal/Documents/Osobne/OUTPUT/IMG/gnss_GOPE_ppp_clockbias.png
+[2026-05-15 10:50:44.910] [INFO   ] [exportPppEpochs       ] GnssCsvExport: C:/Users/eliasmichal/Documents/Osobne\OUTPUT\CSV/gnss_GOPE_ppp_epochs.csv
+[2026-05-15 10:50:44.928] [INFO   ] [exportPppTropo        ] GnssCsvExport: C:/Users/eliasmichal/Documents/Osobne\OUTPUT\CSV/gnss_GOPE_ppp_tropo.csv
+[2026-05-15 10:50:44.928] [INFO   ] [main                  ] loki_gnss finished successfully.
