@@ -148,6 +148,35 @@ bool PppFilter::measurementUpdate(const std::vector<PppObservation>& obs,
         if (needsIsb(o->system)) { ensureIsbGal(); break; }
     }
 
+    // Galileo ISB bootstrap: estimate ISB from median code prefit offset
+    // (GAL - GPS) on first epoch when ISB state is added.
+    // Uses code measurements only for robustness against phase ambiguity errors.
+    // Runs only once (when |ISB| < 0.1 m, i.e. at initialisation).
+    if (m_isbGalIdx >= 0 && std::abs(m_x(m_isbGalIdx)) < 0.1) {
+        const double rx0 = m_x(0), ry0 = m_x(1), rz0 = m_x(2);
+        std::vector<double> gpsPf, galPf;
+        gpsPf.reserve(valid.size());
+        galPf.reserve(valid.size());
+        for (const auto* o : valid) {
+            const double dx  = o->satX - rx0;
+            const double dy  = o->satY - ry0;
+            const double dz  = o->satZ - rz0;
+            const double rho = std::sqrt(dx*dx + dy*dy + dz*dz);
+            // Code prefit without clock (common to all): obs - (rho - satClk + tropo + ztd*mf)
+            const double pf = o->ifCode
+                            - (rho - o->satClkM + o->tropoZhdM + m_x(4) * o->mfWet);
+            if (needsIsb(o->system)) galPf.push_back(pf);
+            else                     gpsPf.push_back(pf);
+        }
+        if (!gpsPf.empty() && !galPf.empty()) {
+            std::sort(gpsPf.begin(), gpsPf.end());
+            std::sort(galPf.begin(), galPf.end());
+            const double medGps = gpsPf[gpsPf.size() / 2];
+            const double medGal = galPf[galPf.size() / 2];
+            m_x(m_isbGalIdx) = medGal - medGps;
+        }
+    }
+
     // Ambiguity bootstrap.
     // N = ifPhase - modeled_range using current filter state.
     // Near-zero initial phase residual prevents position/clock errors

@@ -8,6 +8,7 @@
 #include <loki/core/exceptions.hpp>
 #include <loki/core/logger.hpp>
 
+#include <Eigen/Dense>
 #include <cmath>
 #include <numbers>
 
@@ -67,7 +68,10 @@ double PppSolver::osbCorrection(GnssSystem system, int prn,
     if (system == GnssSystem::GPS) {
         const double osb_userL1 = m_osb.getBiasNs(system, prn, codeL1);
         const double osb_refL1  = m_osb.getBiasNs(system, prn, "C1W");
-        return -GPS_ALPHA * (osb_userL1 - osb_refL1) * NS_TO_M;
+        const double osb_userL2 = m_osb.getBiasNs(system, prn, codeL2);
+        const double osb_refL2  = m_osb.getBiasNs(system, prn, "C2W");
+        return -(GPS_ALPHA * (osb_userL1 - osb_refL1)
+               - GPS_BETA  * (osb_userL2 - osb_refL2)) * NS_TO_M;
     }
 
     if (system == GnssSystem::GALILEO) {
@@ -374,6 +378,41 @@ std::vector<PppResult> PppSolver::solveAll(
     // -------------------------------------------------------------------------
     double bsX = approxX, bsY = approxY, bsZ = approxZ, bsClk = 0.0;
     {
+        // Robust median clock bootstrap from first epoch.
+        // Position held at approxXYZ -- WLS was corrupted by G16/G26 outliers.
+        const auto& epoch0 = obs.epochs.front();
+        std::vector<double> clkSamples;
+        clkSamples.reserve(epoch0.satellites.size());
+        for (const auto& satObs : epoch0.satellites) {
+            if (satObs.system != GnssSystem::GPS) continue;
+            if (!isEnabled(satObs.system)) continue;
+            PppObservation o = formIfObs(satObs, satObs.system);
+            if (!o.valid) continue;
+            const double tof = o.ifCode / SPEED_OF_LIGHT;
+            GpsTime txTime = epoch0.time;
+            txTime.sow -= tof;
+            if (txTime.sow < 0.0) { txTime.sow += 604800.0; --txTime.week; }
+            const SatState sat = m_orbit->compute({}, satObs.system, satObs.prn, txTime);
+            if (!sat.valid) continue;
+            if (std::abs(sat.clkBias * SPEED_OF_LIGHT) > 300000.0) continue;
+            const auto rot = Relativity::rotateSatPosition({sat.x, sat.y, sat.z}, tof);
+            double elDeg = 0.0, azDeg = 0.0;
+            SatVisibility::ecefToElevAzim({rot[0], rot[1], rot[2]}, {bsX, bsY, bsZ}, elDeg, azDeg);
+            if (elDeg < m_cfg.elevMaskDeg) continue;
+            const double elRad = elDeg * (std::numbers::pi / 180.0);
+            const double tropoSl = (zhd_zen + zwet_prior) / std::sin(elRad);
+            const double ddx = rot[0]-bsX, ddy = rot[1]-bsY, ddz = rot[2]-bsZ;
+            const double rho = std::sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
+            clkSamples.push_back(o.ifCode + sat.clkBias*SPEED_OF_LIGHT - tropoSl - rho);
+        }
+        if (!clkSamples.empty()) {
+            std::sort(clkSamples.begin(), clkSamples.end());
+            bsClk = clkSamples[clkSamples.size() / 2];
+        }
+        LOKI_INFO("PppSolver bootstrap: clk=" + std::to_string(bsClk)
+                  + " m  (median of " + std::to_string(clkSamples.size()) + " GPS sats)");
+        // Discard old WLS bootstrap code below -- replaced by median above.
+        if (false) {
         static constexpr int    BS_EPOCHS   = 5;
         static constexpr int    BS_MAX_ITER = 10;
         static constexpr double BS_CONV_M   = 0.1;
@@ -473,6 +512,7 @@ std::vector<PppResult> PppSolver::solveAll(
                       (bsX-approxX)*(bsX-approxX) +
                       (bsY-approxY)*(bsY-approxY) +
                       (bsZ-approxZ)*(bsZ-approxZ))) + " m");
+        } // end if(false)
     }
 
     PppFilter filter(m_cfg.filter);
@@ -522,6 +562,21 @@ std::vector<PppResult> PppSolver::solveAll(
 
             if (std::abs(o.satClkM) > 300000.0) continue;
 
+            // Relativistic path range correction: Delta_rel = -2*r.v/c^2 [s]
+            // c*Delta_rel [m] applied to both code and phase (ESA TM-23 eq 5.15).
+            // Note: IGS CLK includes clock eccentricity dtr; this is the
+            // separate geometric path correction (~-1 m, satellite-dependent).
+            {
+                const auto satVelRel = m_orbit->velocity(
+                    satObs.system, satObs.prn, txTime);
+                const double r_dot_v = sat.x * satVelRel[0]
+                                     + sat.y * satVelRel[1]
+                                     + sat.z * satVelRel[2];
+                const double deltaRelM = -2.0 * r_dot_v / SPEED_OF_LIGHT;
+                o.ifCode  += deltaRelM;
+                o.ifPhase += deltaRelM;
+            }
+
             double elDeg = 0.0, azDeg = 0.0;
             SatVisibility::ecefToElevAzim({o.satX, o.satY, o.satZ},
                                            {rx, ry, rz}, elDeg, azDeg);
@@ -542,28 +597,102 @@ std::vector<PppResult> PppSolver::solveAll(
                 latRad, hM, doy, o.elevation);
             o.mfWet = NiellMappingFunction::wet(latRad, o.elevation);
 
-            // Receiver PCO (ARP -> APC), vertical component only.
+            // Receiver PCO (ARP -> APC).
+            //
+            // ANTEX gives the PCO offset in the local geodetic frame [mm]:
+            //   pcoN = North,  pcoE = East,  pcoU = Up
+            // for each signal frequency.
+            //
+            // The range correction is the projection of the 3-D PCO vector
+            // onto the receiver-to-satellite line-of-sight unit vector (ESA
+            // TM-23 eq. 5.75):
+            //   delta_rho = dot(pco_ecef, los_unit)
+            // where pco_ecef = R_enu_to_ecef * pco_enu  and
+            //       los_unit  points from receiver to satellite.
+            //
+            // Using only pcoU and dividing by sin(el) was incorrect because
+            // it ignores the N/E components and uses a scalar approximation
+            // that is only exact for a purely vertical PCO at zenith.
             if (m_cfg.pcoPcv && !m_antex.antennas.empty()) {
                 const std::string& antType = obs.receiver.antennaType;
+
+                // Select frequency codes depending on constellation.
+                const char* fq1 = (satObs.system == GnssSystem::GALILEO) ? "E01" : "G01";
+                const char* fq2 = (satObs.system == GnssSystem::GALILEO) ? "E05" : "G02";
+                const double alpha = (satObs.system == GnssSystem::GALILEO)
+                                     ? GAL_ALPHA : GPS_ALPHA;
+                const double beta  = (satObs.system == GnssSystem::GALILEO)
+                                     ? GAL_BETA  : GPS_BETA;
+
                 for (const auto& cal : m_antex.antennas) {
                     if (cal.satellite) continue;
-                    if (cal.antennaType.find(antType.substr(0, 8))
+                    // Match first 8 characters of antenna type (IGS convention).
+                    if (antType.size() < 1) break;
+                    const std::size_t cmpLen = std::min(antType.size(), std::size_t(8));
+                    if (cal.antennaType.find(antType.substr(0, cmpLen))
                             == std::string::npos) continue;
-                    double pcoU1 = 0.0, pcoU2 = 0.0;
+
+                    // Collect PCO (N, E, U) [mm] for both frequencies.
+                    double pcoN1 = 0.0, pcoE1 = 0.0, pcoU1 = 0.0;
+                    double pcoN2 = 0.0, pcoE2 = 0.0, pcoU2 = 0.0;
                     bool h1 = false, h2 = false;
                     for (const auto& freq : cal.freqs) {
-                        if (freq.obsCode == "G01") { pcoU1 = freq.pcoU; h1 = true; }
-                        if (freq.obsCode == "G02") { pcoU2 = freq.pcoU; h2 = true; }
+                        if (freq.obsCode == fq1) {
+                            pcoN1 = freq.pcoN; pcoE1 = freq.pcoE; pcoU1 = freq.pcoU;
+                            h1 = true;
+                        } else if (freq.obsCode == fq2) {
+                            pcoN2 = freq.pcoN; pcoE2 = freq.pcoE; pcoU2 = freq.pcoU;
+                            h2 = true;
+                        }
                     }
-                    if (h1 || h2) {
-                        const double pcoU_if = (h1 && h2)
-                            ? (GPS_ALPHA * pcoU1 - GPS_BETA * pcoU2)
-                            : (h1 ? pcoU1 : pcoU2);
-                        const double corr = (pcoU_if * 1.0e-3)
-                                            * std::sin(o.elevation);
-                        o.ifCode  -= corr;
-                        o.ifPhase -= corr;
-                    }
+
+                    if (!h1 && !h2) break;
+
+                    // Ionosphere-free PCO vector [mm] in local ENU.
+                    const double pcoN_if = (h1 && h2) ? (alpha*pcoN1 - beta*pcoN2)
+                                                      : (h1 ? pcoN1 : pcoN2);
+                    const double pcoE_if = (h1 && h2) ? (alpha*pcoE1 - beta*pcoE2)
+                                                      : (h1 ? pcoE1 : pcoE2);
+                    const double pcoU_if = (h1 && h2) ? (alpha*pcoU1 - beta*pcoU2)
+                                                      : (h1 ? pcoU1 : pcoU2);
+
+                    // Convert mm -> m.
+                    constexpr double MM_TO_M = 1.0e-3;
+                    const Eigen::Vector3d pco_enu{
+                        pcoE_if * MM_TO_M,   // East
+                        pcoN_if * MM_TO_M,   // North
+                        pcoU_if * MM_TO_M    // Up
+                    };
+
+                    // ENU -> ECEF rotation at the receiver position.
+                    // ecefEnuRotMat gives R such that enu = R * ecef_delta.
+                    // The transpose gives ecef_delta = R^T * enu.
+                    const loki::geodesy::GeodPoint rxGeod =
+                        loki::geodesy::ecef2geod({rx, ry, rz},
+                            loki::math::makeEllipsoid(
+                                loki::math::EllipsoidModel::WGS84));
+                    const Eigen::Matrix3d R_ecef_to_enu =
+                        loki::geodesy::ecefEnuRotMat(rxGeod.lat, rxGeod.lon);
+                    const Eigen::Vector3d pco_ecef =
+                        R_ecef_to_enu.transpose() * pco_enu;
+
+                    // Line-of-sight unit vector: receiver -> satellite.
+                    const double los_x = o.satX - rx;
+                    const double los_y = o.satY - ry;
+                    const double los_z = o.satZ - rz;
+                    const double rlos  = std::sqrt(los_x*los_x
+                                                 + los_y*los_y
+                                                 + los_z*los_z);
+                    if (rlos < 1.0) break;
+                    const Eigen::Vector3d los_unit{los_x/rlos,
+                                                   los_y/rlos,
+                                                   los_z/rlos};
+
+                    // Range correction: positive PCO shifts APC away from
+                    // satellite -> increases measured range -> subtract.
+                    const double corr = pco_ecef.dot(los_unit);
+                    o.ifCode  -= corr;
+                    o.ifPhase -= corr;
                     break;
                 }
             }

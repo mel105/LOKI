@@ -30,7 +30,7 @@ struct PppFilterConfig {
     // Process noise [m^2/s].
     double qPos    {1.0e-8};   ///< Position (static).
     double qClk    {100.0};    ///< Receiver clock random walk.
-    double qZtd    {1.0e-5};   ///< ZWD random walk [m^2/s] -- ~1 mm/sqrt(hr).
+    double qZtd    {2.78e-8};  ///< ZWD random walk [m^2/s] -- ESA: 1 cm^2/h.
     double qZtdCode{1.0e-5};   ///< Unused (kept for ABI compatibility).
     double qAmb    {0.0};      ///< Ambiguity (0 = constant between slips).
 
@@ -51,7 +51,7 @@ struct PppFilterConfig {
     double p0Clk{1.0e10};
     double p0Ztd{0.25};    ///< Initial ZWD variance [m^2] -- sigma ~0.5 m.
     double p0Amb{1.0e6};
-    double p0Isb{1.0e4};
+    double p0Isb{1.0e6};  ///< ISB initial variance [m^2] -- fast convergence, sigma~1000m.
 
     // Set to 0: use phase from the first epoch (recommended).
     int codeOnlyEpochs{0};
@@ -60,7 +60,7 @@ struct PppFilterConfig {
     // sigma=0.5 m allows the filter to deviate substantially from the
     // Saastamoinen prior and estimate the true ZWD from phase innovations.
     // Use 0.0 to disable the constraint entirely (not recommended).
-    double sigmaZtdConstraint{0.5};
+    double sigmaZtdConstraint{0.25};  ///< Weak ZWD constraint [m] -- allows ±0.25 m from prior.
 
     // Epochs to keep an ambiguity state after satellite disappears.
     int ambiguityHoldEpochs{5};
